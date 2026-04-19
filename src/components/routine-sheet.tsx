@@ -269,7 +269,7 @@ export function RoutineSheet(props: Props) {
             >
               <Select
                 value={form.assigneeAgentId}
-                onValueChange={(v) => setForm({ ...form, assigneeAgentId: v })}
+                onValueChange={(v) => setForm({ ...form, assigneeAgentId: v ?? NONE })}
               >
                 <SelectTrigger className="w-full bg-input/40">
                   <SelectValue placeholder="Unassigned" />
@@ -462,9 +462,10 @@ function ScheduleTriggerConfig({
       <Select
         value={trigger.preset}
         onValueChange={(v) => {
-          const preset = SCHEDULE_PRESETS.find((p) => p.value === v);
+          const next = (v ?? "every-day-9am") as SchedulePreset;
+          const preset = SCHEDULE_PRESETS.find((p) => p.value === next);
           onUpdate({
-            preset: v as SchedulePreset,
+            preset: next,
             cron: preset && preset.value !== "custom" ? preset.cron : trigger.cron,
           });
         }}
@@ -553,7 +554,11 @@ function IntegrationTriggerConfig({
     <div className="flex flex-col gap-2">
       <Select
         value={trigger.event}
-        onValueChange={(v) => onUpdate({ event: v as IntegrationEvent })}
+        onValueChange={(v) =>
+          onUpdate({
+            event: (v ?? "fathom.meeting.ended") as IntegrationEvent,
+          })
+        }
       >
         <SelectTrigger className="w-full bg-input/40">
           <SelectValue />

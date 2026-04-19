@@ -220,7 +220,7 @@ export function AgentSheet(props: Props) {
               <Field label="Role">
                 <Select
                   value={form.role}
-                  onValueChange={(v) => setForm({ ...form, role: v as AgentRole })}
+                  onValueChange={(v) => setForm({ ...form, role: (v ?? "general") as AgentRole })}
                 >
                   <SelectTrigger className="w-full bg-input/40">
                     <SelectValue placeholder="Choose role" />
@@ -238,7 +238,7 @@ export function AgentSheet(props: Props) {
               <Field label="Reports to">
                 <Select
                   value={form.reportsTo}
-                  onValueChange={(v) => setForm({ ...form, reportsTo: v })}
+                  onValueChange={(v) => setForm({ ...form, reportsTo: v ?? NONE })}
                 >
                   <SelectTrigger className="w-full bg-input/40">
                     <SelectValue placeholder="No manager" />
@@ -275,7 +275,10 @@ export function AgentSheet(props: Props) {
               <Select
                 value={form.runtime}
                 onValueChange={(v) =>
-                  setForm({ ...form, runtime: v as AgentRuntime })
+                  setForm({
+                    ...form,
+                    runtime: (v ?? "claude-sonnet-4-5") as AgentRuntime,
+                  })
                 }
               >
                 <SelectTrigger className="w-full bg-input/40">
@@ -304,9 +307,10 @@ export function AgentSheet(props: Props) {
                   max={5000}
                   step={50}
                   value={[form.budget]}
-                  onValueChange={([v]) =>
-                    setForm({ ...form, budget: v ?? form.budget })
-                  }
+                  onValueChange={(v) => {
+                    const budget = Array.isArray(v) ? (v[0] ?? form.budget) : v;
+                    setForm({ ...form, budget });
+                  }}
                   className="flex-1"
                 />
                 <div className="min-w-21 rounded-md border border-border bg-input/40 px-3 py-1.5 text-right font-mono text-[13px] text-foreground">
