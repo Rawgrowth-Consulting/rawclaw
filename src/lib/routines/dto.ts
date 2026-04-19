@@ -1,0 +1,110 @@
+import type { Database } from "@/lib/supabase/types";
+import type {
+  IntegrationEvent,
+  RoutineStatus,
+  RoutineTrigger,
+  SchedulePreset,
+} from "./constants";
+
+type RoutineRow = Database["public"]["Tables"]["rgaios_routines"]["Row"];
+type TriggerRow =
+  Database["public"]["Tables"]["rgaios_routine_triggers"]["Row"];
+
+/**
+ * Client-facing routine shape. `triggers` is embedded (the UI always
+ * wants them together). Kind-specific config is flattened from the
+ * jsonb `config` column onto the trigger object so the UI can read
+ * `trigger.preset` / `trigger.cron` directly.
+ */
+export type Routine = {
+  id: string;
+  title: string;
+  description: string;
+  assigneeAgentId: string | null;
+  status: RoutineStatus;
+  lastRunAt: string | null;
+  createdAt: string;
+  triggers: RoutineTrigger[];
+};
+
+export function routineFromRows(
+  row: RoutineRow,
+  triggers: TriggerRow[],
+): Routine {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description ?? "",
+    assigneeAgentId: row.assignee_agent_id,
+    status: row.status,
+    lastRunAt: row.last_run_at,
+    createdAt: row.created_at,
+    triggers: triggers.map(triggerFromRow),
+  };
+}
+
+export function triggerFromRow(row: TriggerRow): RoutineTrigger {
+  const cfg = (row.config ?? {}) as Record<string, unknown>;
+  switch (row.kind) {
+    case "schedule":
+      return {
+        id: row.id,
+        kind: "schedule",
+        enabled: row.enabled,
+        preset: (cfg.preset as SchedulePreset) ?? "custom",
+        cron: (cfg.cron as string) ?? "",
+        timezone: (cfg.timezone as string) ?? "UTC",
+      };
+    case "webhook":
+      return {
+        id: row.id,
+        kind: "webhook",
+        enabled: row.enabled,
+        publicUrl: (cfg.publicUrl as string) ?? "",
+        signingSecret: (cfg.signingSecret as string) ?? "",
+      };
+    case "integration":
+      return {
+        id: row.id,
+        kind: "integration",
+        enabled: row.enabled,
+        event: (cfg.event as IntegrationEvent) ?? "fathom.meeting.ended",
+      };
+    case "manual":
+    case "telegram":
+      // Telegram triggers aren't modelled as a distinct UI kind yet — treat
+      // them as manual for display purposes until Phase 7 wires the adapter.
+      return { id: row.id, kind: "manual", enabled: row.enabled };
+    default: {
+      const _exhaustive: never = row.kind;
+      throw new Error(`Unknown trigger kind: ${String(_exhaustive)}`);
+    }
+  }
+}
+
+/** Extract the jsonb-shaped `config` from a UI-shaped trigger. */
+export function triggerConfigFor(
+  t: RoutineTrigger,
+): Record<string, unknown> {
+  switch (t.kind) {
+    case "schedule":
+      return { preset: t.preset, cron: t.cron, timezone: t.timezone };
+    case "webhook":
+      return { publicUrl: t.publicUrl, signingSecret: t.signingSecret };
+    case "integration":
+      return { event: t.event };
+    case "manual":
+      return {};
+  }
+}
+
+export type RoutineCreateInput = {
+  title: string;
+  description: string;
+  assigneeAgentId: string | null;
+  triggers: RoutineTrigger[];
+};
+
+export type RoutineUpdateInput = Partial<RoutineCreateInput> & {
+  status?: RoutineStatus;
+};

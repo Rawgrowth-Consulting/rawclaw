@@ -188,6 +188,7 @@ export type Database = {
           created_at: string;
         };
         Insert: {
+          id?: string;
           organization_id: string;
           routine_id: string;
           kind: "manual" | "schedule" | "webhook" | "integration" | "telegram";

@@ -29,11 +29,11 @@ import {
 import {
   AGENT_ROLES,
   AGENT_RUNTIMES,
-  useAgentsStore,
-  type Agent,
   type AgentRole,
   type AgentRuntime,
-} from "@/lib/agents-store";
+} from "@/lib/agents/constants";
+import { useAgents } from "@/lib/agents/use-agents";
+import type { Agent } from "@/lib/agents/dto";
 
 const NONE = "__none__";
 
@@ -92,10 +92,7 @@ type Props =
 export function AgentSheet(props: Props) {
   const isEdit = props.mode === "edit";
 
-  const agents = useAgentsStore((s) => s.agents);
-  const hireAgent = useAgentsStore((s) => s.hireAgent);
-  const updateAgent = useAgentsStore((s) => s.updateAgent);
-  const removeAgent = useAgentsStore((s) => s.removeAgent);
+  const { agents, hireAgent, updateAgent, removeAgent } = useAgents();
 
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isEdit ? props.open : uncontrolledOpen;
@@ -142,22 +139,22 @@ export function AgentSheet(props: Props) {
       budgetMonthlyUsd: form.budget,
     };
     if (isEdit) {
-      updateAgent(props.agent.id, payload);
+      void updateAgent(props.agent.id, payload);
     } else {
-      hireAgent(payload);
+      void hireAgent(payload);
     }
     setOpen(false);
   };
 
   const handleFire = () => {
     if (!isEdit) return;
-    removeAgent(props.agent.id);
+    void removeAgent(props.agent.id);
     setOpen(false);
   };
 
   const handlePauseToggle = () => {
     if (!isEdit) return;
-    updateAgent(props.agent.id, {
+    void updateAgent(props.agent.id, {
       status: props.agent.status === "paused" ? "idle" : "paused",
     });
   };

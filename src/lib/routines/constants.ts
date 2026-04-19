@@ -1,7 +1,8 @@
-"use client";
-
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
+/**
+ * Static routine metadata — trigger kinds, schedule presets, and the
+ * event catalog for integration triggers. Plus helpers for minting new
+ * trigger records on the client before they're saved.
+ */
 
 export const TRIGGER_KINDS = [
   {
@@ -91,6 +92,11 @@ export const INTEGRATION_EVENTS = [
 
 export type IntegrationEvent = (typeof INTEGRATION_EVENTS)[number]["value"];
 
+// ─── Trigger shape ─────────────────────────────────────────────────
+// Discriminated union — the UI reads `trigger.preset` / `trigger.cron` etc.
+// directly. Server-side we persist the kind-specific fields into the
+// routine_triggers.config jsonb column.
+
 export type RoutineTrigger =
   | {
       id: string;
@@ -119,41 +125,18 @@ export type RoutineTrigger =
       enabled: boolean;
     };
 
-export type RoutineStatus = "active" | "paused" | "archived";
-
-export type Routine = {
-  id: string;
-  title: string;
-  description: string;
-  assigneeAgentId: string | null;
-  triggers: RoutineTrigger[];
-  status: RoutineStatus;
-  lastRunAt: string | null;
-  createdAt: string;
-};
-
-type RoutinesStore = {
-  routines: Routine[];
-  hasHydrated: boolean;
-  setHasHydrated: (v: boolean) => void;
-  createRoutine: (
-    input: Omit<Routine, "id" | "status" | "lastRunAt" | "createdAt">,
-  ) => Routine;
-  updateRoutine: (id: string, patch: Partial<Routine>) => void;
-  removeRoutine: (id: string) => void;
-  toggleStatus: (id: string) => void;
-  runNow: (id: string) => void;
-};
-
-function uid(prefix = "rtn") {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+function clientUuid() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `trg_${Math.random().toString(36).slice(2, 14)}`;
 }
 
 export function newTrigger(kind: TriggerKind): RoutineTrigger {
   switch (kind) {
     case "schedule":
       return {
-        id: uid("trg"),
+        id: clientUuid(),
         kind: "schedule",
         enabled: true,
         preset: "every-day-9am",
@@ -165,7 +148,7 @@ export function newTrigger(kind: TriggerKind): RoutineTrigger {
       };
     case "webhook":
       return {
-        id: uid("trg"),
+        id: clientUuid(),
         kind: "webhook",
         enabled: true,
         publicUrl: `https://aios.rawgrowth.ai/webhooks/${Math.random()
@@ -175,64 +158,15 @@ export function newTrigger(kind: TriggerKind): RoutineTrigger {
       };
     case "integration":
       return {
-        id: uid("trg"),
+        id: clientUuid(),
         kind: "integration",
         enabled: true,
         event: "fathom.meeting.ended",
       };
     case "manual":
-      return { id: uid("trg"), kind: "manual", enabled: true };
+      return { id: clientUuid(), kind: "manual", enabled: true };
   }
 }
-
-export const useRoutinesStore = create<RoutinesStore>()(
-  persist(
-    (set) => ({
-      routines: [],
-      hasHydrated: false,
-      setHasHydrated: (v) => set({ hasHydrated: v }),
-      createRoutine: (input) => {
-        const routine: Routine = {
-          ...input,
-          id: uid(),
-          status: "active",
-          lastRunAt: null,
-          createdAt: new Date().toISOString(),
-        };
-        set((s) => ({ routines: [routine, ...s.routines] }));
-        return routine;
-      },
-      updateRoutine: (id, patch) =>
-        set((s) => ({
-          routines: s.routines.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-        })),
-      removeRoutine: (id) =>
-        set((s) => ({ routines: s.routines.filter((r) => r.id !== id) })),
-      toggleStatus: (id) =>
-        set((s) => ({
-          routines: s.routines.map((r) =>
-            r.id === id
-              ? { ...r, status: r.status === "active" ? "paused" : "active" }
-              : r,
-          ),
-        })),
-      runNow: (id) =>
-        set((s) => ({
-          routines: s.routines.map((r) =>
-            r.id === id ? { ...r, lastRunAt: new Date().toISOString() } : r,
-          ),
-        })),
-    }),
-    {
-      name: "rawgrowth.routines",
-      onRehydrateStorage: () => (state) => {
-        state?.setHasHydrated(true);
-      },
-    },
-  ),
-);
-
-// Helpers
 
 export function describeTrigger(t: RoutineTrigger): string {
   switch (t.kind) {
@@ -252,3 +186,6 @@ export function describeTrigger(t: RoutineTrigger): string {
       return "Manual only";
   }
 }
+
+export const ROUTINE_STATUSES = ["active", "paused", "archived"] as const;
+export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];

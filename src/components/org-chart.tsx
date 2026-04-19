@@ -18,12 +18,9 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/empty-state";
 import { AgentSheet } from "@/components/agent-sheet";
-import {
-  AGENT_ROLES,
-  useAgentsStore,
-  type Agent,
-  type AgentStatus,
-} from "@/lib/agents-store";
+import { AGENT_ROLES, type AgentStatus } from "@/lib/agents/constants";
+import { useAgents } from "@/lib/agents/use-agents";
+import type { Agent } from "@/lib/agents/dto";
 
 // ────────────────────────── Role icons ──────────────────────────
 
@@ -285,8 +282,7 @@ function TreeNode({
 // ────────────────────────── Top-level component ──────────────────────────
 
 export function OrgChart() {
-  const hasHydrated = useAgentsStore((s) => s.hasHydrated);
-  const agents = useAgentsStore((s) => s.agents);
+  const { agents, hasHydrated } = useAgents();
 
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const editingAgent = useMemo(

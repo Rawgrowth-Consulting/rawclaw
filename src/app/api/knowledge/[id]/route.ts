@@ -1,0 +1,71 @@
+import { NextResponse, type NextRequest } from "next/server";
+import {
+  deleteKnowledgeFile,
+  getKnowledgeFile,
+  readKnowledgeFileContent,
+  updateKnowledgeFileTags,
+} from "@/lib/knowledge/queries";
+import { currentOrganizationId } from "@/lib/supabase/constants";
+
+export const runtime = "nodejs";
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const organizationId = currentOrganizationId();
+    const row = await getKnowledgeFile(organizationId, id);
+    if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const content = row.storage_path
+      ? await readKnowledgeFileContent(row.storage_path)
+      : "";
+    return NextResponse.json({ file: row, content });
+  } catch (err) {
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    await deleteKnowledgeFile(currentOrganizationId(), id);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const body = (await req.json()) as { tags?: string[] };
+    if (!Array.isArray(body.tags)) {
+      return NextResponse.json({ error: "tags[] required" }, { status: 400 });
+    }
+    const row = await updateKnowledgeFileTags(
+      currentOrganizationId(),
+      id,
+      body.tags.map((t) => String(t).trim()).filter(Boolean),
+    );
+    return NextResponse.json({ file: row });
+  } catch (err) {
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 500 },
+    );
+  }
+}

@@ -12,6 +12,7 @@ import {
   Settings2,
   Plug,
   Workflow,
+  BookOpen,
 } from "lucide-react";
 
 import {
@@ -47,9 +48,10 @@ const navSections: { label: string; items: NavItem[] }[] = [
     label: "Agents",
     items: [
       { label: "Agents", href: "/agents", icon: Bot },
+      { label: "Routines", href: "/routines", icon: Repeat },
+      { label: "Knowledge", href: "/knowledge", icon: BookOpen },
       { label: "Issues", href: "/issues", icon: CircleDot },
       { label: "Goals", href: "/goals", icon: Target },
-      { label: "Routines", href: "/routines", icon: Repeat },
     ],
   },
   {

@@ -24,13 +24,13 @@ import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/empty-state";
 import { RoutineSheet } from "@/components/routine-sheet";
 
-import { useAgentsStore } from "@/lib/agents-store";
+import { useAgents } from "@/lib/agents/use-agents";
 import {
   describeTrigger,
-  useRoutinesStore,
-  type Routine,
   type RoutineTrigger,
-} from "@/lib/routines-store";
+} from "@/lib/routines/constants";
+import { useRoutines } from "@/lib/routines/use-routines";
+import type { Routine } from "@/lib/routines/dto";
 
 const triggerIcon: Record<RoutineTrigger["kind"], typeof Zap> = {
   schedule: CalendarClock,
@@ -53,11 +53,8 @@ function formatRelative(iso: string | null) {
 }
 
 export function RoutinesView() {
-  const hasHydrated = useRoutinesStore((s) => s.hasHydrated);
-  const routines = useRoutinesStore((s) => s.routines);
-  const toggleStatus = useRoutinesStore((s) => s.toggleStatus);
-  const runNow = useRoutinesStore((s) => s.runNow);
-  const agents = useAgentsStore((s) => s.agents);
+  const { routines, hasHydrated, toggleStatus, runNow } = useRoutines();
+  const { agents } = useAgents();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = useMemo(
@@ -141,8 +138,8 @@ export function RoutinesView() {
               isPaused={isPaused}
               enabledTriggers={enabledTriggers}
               onEdit={() => setEditingId(r.id)}
-              onToggle={() => toggleStatus(r.id)}
-              onRun={() => runNow(r.id)}
+              onToggle={() => void toggleStatus(r.id)}
+              onRun={() => void runNow(r.id)}
             />
           );
         })}

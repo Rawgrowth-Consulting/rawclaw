@@ -48,7 +48,7 @@ import {
 
 import Link from "next/link";
 
-import { useAgentsStore } from "@/lib/agents-store";
+import { useAgents } from "@/lib/agents/use-agents";
 import { getIntegration } from "@/lib/integrations-catalog";
 import { useConnections } from "@/lib/connections/use-connections";
 import {
@@ -56,13 +56,13 @@ import {
   SCHEDULE_PRESETS,
   TRIGGER_KINDS,
   newTrigger,
-  useRoutinesStore,
   type IntegrationEvent,
-  type Routine,
   type RoutineTrigger,
   type SchedulePreset,
   type TriggerKind,
-} from "@/lib/routines-store";
+} from "@/lib/routines/constants";
+import { useRoutines } from "@/lib/routines/use-routines";
+import type { Routine } from "@/lib/routines/dto";
 
 /** Extract the integration id prefix from an event id: "fathom.meeting.ended" → "fathom". */
 function eventIntegrationId(event: string): string {
@@ -127,10 +127,8 @@ type Props =
 export function RoutineSheet(props: Props) {
   const isEdit = props.mode === "edit";
 
-  const agents = useAgentsStore((s) => s.agents);
-  const createRoutine = useRoutinesStore((s) => s.createRoutine);
-  const updateRoutine = useRoutinesStore((s) => s.updateRoutine);
-  const removeRoutine = useRoutinesStore((s) => s.removeRoutine);
+  const { agents } = useAgents();
+  const { createRoutine, updateRoutine, removeRoutine } = useRoutines();
 
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isEdit ? props.open : uncontrolledOpen;
@@ -189,16 +187,16 @@ export function RoutineSheet(props: Props) {
       triggers: form.triggers,
     };
     if (isEdit) {
-      updateRoutine(props.routine.id, payload);
+      void updateRoutine(props.routine.id, payload);
     } else {
-      createRoutine(payload);
+      void createRoutine(payload);
     }
     setOpen(false);
   };
 
   const handleDelete = () => {
     if (!isEdit) return;
-    removeRoutine(props.routine.id);
+    void removeRoutine(props.routine.id);
     setOpen(false);
   };
 
