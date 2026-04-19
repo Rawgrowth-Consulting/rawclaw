@@ -1,0 +1,371 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  Bot,
+  Crown,
+  Cpu,
+  Code,
+  Megaphone,
+  PhoneCall,
+  ClipboardList,
+  Palette,
+  Pencil,
+  Network,
+} from "lucide-react";
+
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty-state";
+import { AgentSheet } from "@/components/agent-sheet";
+import {
+  AGENT_ROLES,
+  useAgentsStore,
+  type Agent,
+  type AgentStatus,
+} from "@/lib/agents-store";
+
+// ────────────────────────── Role icons ──────────────────────────
+
+const roleIconMap = {
+  Crown,
+  Cpu,
+  Code,
+  Megaphone,
+  PhoneCall,
+  ClipboardList,
+  Palette,
+  Bot,
+} as const;
+
+type RoleIconName = keyof typeof roleIconMap;
+
+function roleMeta(role: Agent["role"]) {
+  return (
+    AGENT_ROLES.find((r) => r.value === role) ??
+    AGENT_ROLES[AGENT_ROLES.length - 1]
+  );
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+const statusStyle: Record<
+  AgentStatus,
+  { label: string; className: string; dotClass: string }
+> = {
+  idle: {
+    label: "Idle",
+    className: "bg-white/5 text-muted-foreground",
+    dotClass: "bg-muted-foreground/60",
+  },
+  running: {
+    label: "Running",
+    className: "bg-primary/15 text-primary",
+    dotClass: "bg-primary shadow-[0_0_6px_rgba(12,191,106,.6)]",
+  },
+  paused: {
+    label: "Paused",
+    className: "bg-amber-500/15 text-amber-400",
+    dotClass: "bg-amber-400",
+  },
+  error: {
+    label: "Error",
+    className: "bg-destructive/15 text-destructive",
+    dotClass: "bg-destructive",
+  },
+};
+
+// ────────────────────────── Tree building ──────────────────────────
+
+type AgentNode = Agent & { children: AgentNode[] };
+
+function buildTree(agents: Agent[]): AgentNode[] {
+  const map = new Map<string, AgentNode>();
+  for (const a of agents) map.set(a.id, { ...a, children: [] });
+
+  const roots: AgentNode[] = [];
+  const seen = new Set<string>();
+
+  for (const a of agents) {
+    const node = map.get(a.id);
+    if (!node) continue;
+
+    // Cycle guard: follow reportsTo chain; if it loops, treat as root.
+    let isCyclic = false;
+    if (a.reportsTo) {
+      const chain = new Set<string>([a.id]);
+      let cursor: string | null = a.reportsTo;
+      while (cursor) {
+        if (chain.has(cursor)) {
+          isCyclic = true;
+          break;
+        }
+        chain.add(cursor);
+        const next = agents.find((x) => x.id === cursor);
+        cursor = next?.reportsTo ?? null;
+      }
+    }
+
+    if (a.reportsTo && !isCyclic && map.has(a.reportsTo)) {
+      map.get(a.reportsTo)?.children.push(node);
+    } else {
+      roots.push(node);
+    }
+    seen.add(a.id);
+  }
+
+  // Sort siblings so ordering is stable (alphabetical by name)
+  const sortTree = (n: AgentNode) => {
+    n.children.sort((a, b) => a.name.localeCompare(b.name));
+    n.children.forEach(sortTree);
+  };
+  roots.sort((a, b) => a.name.localeCompare(b.name));
+  roots.forEach(sortTree);
+
+  return roots;
+}
+
+// ────────────────────────── Card ──────────────────────────
+
+function AgentCard({
+  agent,
+  onEdit,
+}: {
+  agent: Agent;
+  onEdit: (agent: Agent) => void;
+}) {
+  const role = roleMeta(agent.role);
+  const Icon = roleIconMap[role.icon as RoleIconName] ?? Bot;
+  const status = statusStyle[agent.status];
+  const pct =
+    agent.budgetMonthlyUsd > 0
+      ? Math.min(100, (agent.spentMonthlyUsd / agent.budgetMonthlyUsd) * 100)
+      : 0;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onEdit(agent)}
+      className="group relative w-60 rounded-xl border border-border bg-card/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-[0_12px_40px_rgba(12,191,106,.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex size-6 items-center justify-center rounded-md bg-primary/15 text-primary">
+          <Pencil className="size-3" />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-primary/10 text-primary">
+          <Icon className="size-5" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-semibold text-foreground">
+            {agent.name}
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground">
+            {agent.title || role.label}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-1">
+        <Badge variant="secondary" className={cn("gap-1", status.className)}>
+          <span className={cn("size-1.5 rounded-full", status.dotClass)} />
+          {status.label}
+        </Badge>
+        <Badge
+          variant="secondary"
+          className="bg-white/5 text-[10px] text-muted-foreground"
+        >
+          {role.label}
+        </Badge>
+      </div>
+
+      <div className="mt-3">
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>
+            <span className="text-foreground">
+              ${agent.spentMonthlyUsd.toLocaleString()}
+            </span>{" "}
+            / ${agent.budgetMonthlyUsd.toLocaleString()}
+          </span>
+          <span className="font-mono">{initials(agent.name)}</span>
+        </div>
+        <div className="mt-1 h-0.75 overflow-hidden rounded-full bg-white/5">
+          <div
+            className="h-full rounded-full bg-primary/70"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ────────────────────────── Tree renderer ──────────────────────────
+//
+// Each node renders as a column. When a node has children, a vertical stub
+// drops down from the card, then a row of "connector columns" — one per child.
+// Each child's connector column contains a horizontal segment (sized to stitch
+// into a continuous horizontal bar across siblings) plus a vertical drop into
+// the child card.
+
+const CARD_WIDTH = 240; // must match AgentCard width (w-60 = 240px)
+const SUBTREE_GAP = 32; // horizontal gap between sibling subtrees
+
+function TreeNode({
+  node,
+  onEdit,
+}: {
+  node: AgentNode;
+  onEdit: (agent: Agent) => void;
+}) {
+  const hasChildren = node.children.length > 0;
+  const multipleChildren = node.children.length > 1;
+
+  return (
+    <div className="flex flex-col items-center">
+      <AgentCard agent={node} onEdit={onEdit} />
+
+      {hasChildren && (
+        <>
+          {/* Parent's down-stub */}
+          <div className="h-6 w-px bg-border" />
+
+          {/* Children row */}
+          <div className="flex items-start">
+            {node.children.map((child, i) => {
+              const isFirst = i === 0;
+              const isLast = i === node.children.length - 1;
+              return (
+                <div
+                  key={child.id}
+                  className="flex flex-col items-center"
+                  style={{
+                    paddingLeft: i === 0 ? 0 : SUBTREE_GAP / 2,
+                    paddingRight: isLast ? 0 : SUBTREE_GAP / 2,
+                  }}
+                >
+                  {/* Connector zone above child */}
+                  <div className="relative flex h-6 w-full justify-center">
+                    {/* Horizontal segment — only when multiple children */}
+                    {multipleChildren && (
+                      <div
+                        className={cn(
+                          "absolute top-0 h-px bg-border",
+                          isFirst && "left-1/2 right-0",
+                          isLast && "left-0 right-1/2",
+                          !isFirst && !isLast && "left-0 right-0",
+                        )}
+                      />
+                    )}
+                    {/* Vertical drop into child */}
+                    <div className="w-px bg-border" />
+                  </div>
+
+                  <TreeNode node={child} onEdit={onEdit} />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────── Top-level component ──────────────────────────
+
+export function OrgChart() {
+  const hasHydrated = useAgentsStore((s) => s.hasHydrated);
+  const agents = useAgentsStore((s) => s.agents);
+
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const editingAgent = useMemo(
+    () => agents.find((a) => a.id === editingAgentId) ?? null,
+    [agents, editingAgentId],
+  );
+
+  const tree = useMemo(() => buildTree(agents), [agents]);
+  const totalBudget = agents.reduce((sum, a) => sum + a.budgetMonthlyUsd, 0);
+  const runningCount = agents.filter((a) => a.status === "running").length;
+
+  if (!hasHydrated) {
+    return (
+      <div className="h-105 animate-pulse rounded-2xl border border-border bg-card/20" />
+    );
+  }
+
+  if (agents.length === 0) {
+    return (
+      <EmptyState
+        icon={Network}
+        title="No agents yet — your org chart is empty"
+        description="Hire your first agent — a CEO at the top, or go straight to individual contributors. You can add reports underneath them later."
+        action={<AgentSheet triggerSize="lg" triggerLabel="Hire first agent" />}
+      />
+    );
+  }
+
+  return (
+    <>
+      {/* Toolbar */}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+          <span>
+            <span className="font-semibold text-foreground">{agents.length}</span>{" "}
+            agent{agents.length === 1 ? "" : "s"}
+          </span>
+          <span className="text-border">•</span>
+          <span>
+            <span className="font-semibold text-foreground">
+              {runningCount}
+            </span>{" "}
+            running
+          </span>
+          <span className="text-border">•</span>
+          <span>
+            <span className="font-semibold text-foreground">
+              ${totalBudget.toLocaleString()}
+            </span>
+            /mo allocated
+          </span>
+        </div>
+        <AgentSheet />
+      </div>
+
+      {/* Chart canvas — scrolls horizontally for wide orgs */}
+      <div className="relative overflow-x-auto rounded-2xl border border-border bg-card/30 p-10">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-primary/20 to-transparent" />
+        <div
+          className="mx-auto flex items-start justify-center gap-8"
+          style={{ minWidth: Math.max(CARD_WIDTH, tree.length * (CARD_WIDTH + 64)) }}
+        >
+          {tree.map((root) => (
+            <TreeNode key={root.id} node={root} onEdit={(a) => setEditingAgentId(a.id)} />
+          ))}
+        </div>
+      </div>
+
+      {/* Edit sheet (controlled) */}
+      {editingAgent && (
+        <AgentSheet
+          mode="edit"
+          agent={editingAgent}
+          open={!!editingAgent}
+          onOpenChange={(o) => {
+            if (!o) setEditingAgentId(null);
+          }}
+        />
+      )}
+    </>
+  );
+}

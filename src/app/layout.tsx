@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
-import { Inter, Instrument_Serif, Geist } from "next/font/google";
+import { Geist, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { AppShell } from "@/components/app-shell";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
 
 const instrumentSerif = Instrument_Serif({
   variable: "--font-serif",
@@ -14,9 +18,8 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Rawgrowth — Install Your Company's In-House AI Department",
-  description:
-    "We install done-for-you in-house AI departments for 7-9 figure businesses. Content, sales, and operations — running 24/7.",
+  title: "Rawgrowth",
+  description: "Rawgrowth AIOS",
 };
 
 export default function RootLayout({
@@ -27,9 +30,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("antialiased", instrumentSerif.variable, "font-sans", geist.variable)}
+      className={cn("dark antialiased", geist.variable, instrumentSerif.variable)}
     >
-      <body className="min-h-screen">{children}</body>
+      <body className="min-h-screen font-sans">
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }
