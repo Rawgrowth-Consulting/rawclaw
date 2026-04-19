@@ -4,6 +4,7 @@ import {
   parseBearer,
   resolveOrgFromToken,
 } from "@/lib/mcp/token-resolver";
+import { listPromptsForOrg, getPromptForOrg } from "@/lib/mcp/prompts";
 
 // Force the tools/ modules to register themselves on cold start.
 import "@/lib/mcp/tools";
@@ -21,6 +22,8 @@ import "@/lib/mcp/tools";
  *   - initialize
  *   - tools/list
  *   - tools/call
+ *   - prompts/list
+ *   - prompts/get
  */
 
 export const runtime = "nodejs";
@@ -76,8 +79,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           reply(msg.id, {
             protocolVersion: PROTOCOL_VERSION,
-            capabilities: { tools: {} },
-            serverInfo: { name: `rawgrowth-aios (${org.name})`, version: "0.3.0" },
+            capabilities: { tools: {}, prompts: {} },
+            serverInfo: { name: `rawgrowth-aios (${org.name})`, version: "0.4.0" },
           }),
         );
 
@@ -94,6 +97,22 @@ export async function POST(req: NextRequest) {
           organizationId: org.id,
         });
         return NextResponse.json(reply(msg.id, result));
+      }
+
+      case "prompts/list": {
+        const prompts = await listPromptsForOrg(org.id);
+        return NextResponse.json(reply(msg.id, { prompts }));
+      }
+
+      case "prompts/get": {
+        const name = String(msg.params?.name ?? "");
+        const prompt = await getPromptForOrg(org.id, name);
+        if (!prompt) {
+          return NextResponse.json(
+            replyError(msg.id, -32602, `Unknown prompt: ${name}`),
+          );
+        }
+        return NextResponse.json(reply(msg.id, prompt));
       }
 
       default:

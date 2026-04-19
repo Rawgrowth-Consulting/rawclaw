@@ -4,6 +4,7 @@ import {
   readKnowledgeFileContent,
 } from "@/lib/knowledge/queries";
 import { registerTool, text, textError } from "../registry";
+import { isSelfHosted } from "@/lib/deploy-mode";
 
 /**
  * Knowledge tools — read from the org's uploaded markdown files.
@@ -75,6 +76,21 @@ registerTool({
 
     const file = await getKnowledgeFile(ctx.organizationId, id);
     if (!file) return textError(`Knowledge file ${id} not found`);
+
+    if (isSelfHosted) {
+      // Self-hosted ships without Supabase Storage. Surface metadata only
+      // until S3/local storage lands in a follow-up.
+      return text(
+        [
+          `# ${file.title}`,
+          file.tags.length ? `*Tags: ${file.tags.join(", ")}*` : "",
+          "",
+          "_File contents are not yet available in self-hosted mode — storage backend is pending. Upload a small inline note in the description for now._",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+    }
 
     const content = file.storage_path
       ? await readKnowledgeFileContent(file.storage_path)

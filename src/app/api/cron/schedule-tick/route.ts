@@ -1,9 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { after } from "next/server";
 import { CronExpressionParser } from "cron-parser";
 
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { executeRun } from "@/lib/runs/executor";
+import { dispatchRun } from "@/lib/runs/dispatch";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -144,10 +143,8 @@ export async function GET(req: NextRequest) {
         .update({ last_run_at: now.toISOString() })
         .eq("id", routineId);
 
-      // 4. Fire the executor in background — HTTP response returns quickly
-      after(async () => {
-        await executeRun(run.id);
-      });
+      // 4. Route to the executor (hosted) or leave pending for Claude Code (self-hosted)
+      dispatchRun(run.id, orgId);
 
       fired.push({
         trigger_id: row.id,

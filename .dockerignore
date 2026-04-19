@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.env
+.env.local
+.env.*.local
+.vercel
+.DS_Store
+*.log
+npm-debug.log*
+coverage
+.vscode
+.idea
+docker/data
+docker/caddy-data
+docker/caddy-config

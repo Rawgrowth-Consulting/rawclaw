@@ -1,0 +1,12 @@
+# Caddyfile for a per-client rawgrowth VPS.
+# The $SUBDOMAIN env var is expanded at Caddy startup.
+# In local dev the compose file points this at :80 on localhost.
+
+{$CADDY_SITE_ADDRESS:localhost} {
+  encode gzip
+
+  # App — all HTTP traffic
+  reverse_proxy app:3000
+
+  # Do not expose postgres or postgrest through the public origin.
+}

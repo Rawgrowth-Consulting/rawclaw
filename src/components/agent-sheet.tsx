@@ -35,6 +35,7 @@ import {
 import { useAgents } from "@/lib/agents/use-agents";
 import type { Agent } from "@/lib/agents/dto";
 import { ToolsPicker, type WritePolicy } from "@/components/agents/tools-picker";
+import { useConfig } from "@/lib/use-config";
 
 const NONE = "__none__";
 
@@ -97,6 +98,7 @@ export function AgentSheet(props: Props) {
   const isEdit = props.mode === "edit";
 
   const { agents, hireAgent, updateAgent, removeAgent } = useAgents();
+  const { isSelfHosted } = useConfig();
 
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isEdit ? props.open : uncontrolledOpen;
@@ -273,31 +275,33 @@ export function AgentSheet(props: Props) {
               />
             </Field>
 
-            <Field label="Runtime" hint="Which model powers this agent.">
-              <Select
-                value={form.runtime}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    runtime: (v ?? "claude-sonnet-4-5") as AgentRuntime,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full bg-input/40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {AGENT_RUNTIMES.map((r) => (
-                    <SelectItem key={r.value} value={r.value}>
-                      <span className="font-medium">{r.label}</span>
-                      <span className="ml-2 text-[11px] text-muted-foreground">
-                        {r.provider}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+            {!isSelfHosted && (
+              <Field label="Runtime" hint="Which model powers this agent.">
+                <Select
+                  value={form.runtime}
+                  onValueChange={(v) =>
+                    setForm({
+                      ...form,
+                      runtime: (v ?? "claude-sonnet-4-5") as AgentRuntime,
+                    })
+                  }
+                >
+                  <SelectTrigger className="w-full bg-input/40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AGENT_RUNTIMES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        <span className="font-medium">{r.label}</span>
+                        <span className="ml-2 text-[11px] text-muted-foreground">
+                          {r.provider}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
 
             <Field
               label="Monthly budget"

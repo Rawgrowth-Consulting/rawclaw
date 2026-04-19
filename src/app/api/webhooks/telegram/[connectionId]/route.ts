@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { sendMessage, type TgUpdate } from "@/lib/telegram/client";
-import { executeRun } from "@/lib/runs/executor";
+import { dispatchRun } from "@/lib/runs/dispatch";
+import { isHosted } from "@/lib/deploy-mode";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -183,38 +184,40 @@ export async function POST(
     `✅ *${routine.title}* queued.${argsText ? `\nargs: \`${argsText}\`` : ""}`,
   );
 
-  // Kick off the actual execution asynchronously — the HTTP response to
-  // Telegram has already been sent. after() keeps the function alive until
-  // the agent loop finishes or hits maxDuration.
-  after(async () => {
-    await executeRun(run.id);
-    // Ping the user back once execution completes so they see the result
-    // without waiting on a second command.
-    try {
-      const { data: finished } = await supabaseAdmin()
-        .from("rgaios_routine_runs")
-        .select("status, output, error")
-        .eq("id", run.id)
-        .maybeSingle();
-      if (finished?.status === "succeeded") {
-        const out = (finished.output as { text?: string } | null)?.text ?? "";
-        const preview = out.slice(0, 1800);
-        await sendMessage(
-          token,
-          msg.chat.id,
-          `🎯 *${routine.title}* finished.\n\n${preview || "(no output)"}`,
-        );
-      } else if (finished?.status === "failed") {
-        await sendMessage(
-          token,
-          msg.chat.id,
-          `❌ *${routine.title}* failed: ${finished.error ?? "unknown error"}`,
-        );
+  // Route to executor in hosted, or leave pending for Claude Code in self-hosted.
+  dispatchRun(run.id, run.organization_id);
+
+  // In hosted mode, wait for completion and ping Telegram with the result.
+  // In self-hosted mode the executor doesn't exist, so we skip — Claude Code
+  // will pick the run up and the user can check the app for output.
+  if (isHosted) {
+    after(async () => {
+      try {
+        const { data: finished } = await supabaseAdmin()
+          .from("rgaios_routine_runs")
+          .select("status, output, error")
+          .eq("id", run.id)
+          .maybeSingle();
+        if (finished?.status === "succeeded") {
+          const out = (finished.output as { text?: string } | null)?.text ?? "";
+          const preview = out.slice(0, 1800);
+          await sendMessage(
+            token,
+            msg.chat.id,
+            `🎯 *${routine.title}* finished.\n\n${preview || "(no output)"}`,
+          );
+        } else if (finished?.status === "failed") {
+          await sendMessage(
+            token,
+            msg.chat.id,
+            `❌ *${routine.title}* failed: ${finished.error ?? "unknown error"}`,
+          );
+        }
+      } catch {
+        /* best-effort follow-up */
       }
-    } catch {
-      /* best-effort follow-up */
-    }
-  });
+    });
+  }
 
   return NextResponse.json({ ok: true, run_id: run.id });
 }

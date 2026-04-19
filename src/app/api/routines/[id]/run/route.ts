@@ -1,9 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { markRoutineRunNow } from "@/lib/routines/queries";
 import { currentOrganizationId } from "@/lib/supabase/constants";
-import { executeRun } from "@/lib/runs/executor";
+import { dispatchRun } from "@/lib/runs/dispatch";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -38,9 +37,7 @@ export async function POST(
 
     await markRoutineRunNow(organizationId, id);
 
-    after(async () => {
-      await executeRun(run.id);
-    });
+    dispatchRun(run.id, organizationId);
 
     return NextResponse.json(
       { ok: true, run_id: run.id },

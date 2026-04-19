@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { after } from "next/server";
-import { executeRun } from "@/lib/runs/executor";
+import { dispatchRun } from "@/lib/runs/dispatch";
 import { getRun } from "@/lib/runs/queries";
 
 export const runtime = "nodejs";
@@ -27,9 +26,7 @@ export async function POST(
     });
   }
 
-  after(async () => {
-    await executeRun(id);
-  });
+  dispatchRun(id, run.organization_id);
 
   return NextResponse.json({ ok: true, accepted: true }, { status: 202 });
 }

@@ -1,0 +1,95 @@
+# ──────────────────────────────────────────────────────────
+# Rawgrowth AIOS — self-hosted compose stack
+#
+#   postgres  — bare Postgres 16, data volume-persisted
+#   postgrest — HTTP layer over Postgres so supabase-js Just Works
+#   app       — Next.js standalone server (this repo's Dockerfile)
+#   caddy     — TLS + reverse proxy to app
+#
+# All secrets come from a .env file sitting next to this compose file.
+# See .env.self-hosted.example for the full list.
+# ──────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rawgrowth}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-rawgrowth}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Not exposed to host in prod; uncomment for local psql:
+    # ports:
+    #   - "5432:5432"
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rawgrowth}
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: ${POSTGRES_USER:-postgres}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      # supabase-js expects PostgREST at /rest/v1/* — we'll mount it there
+      # behind Caddy. Internally it listens on port 3000.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgrest:
+        condition: service_started
+    environment:
+      DEPLOY_MODE: self_hosted
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rawgrowth}
+      # supabase-js talks to PostgREST, which we reach at http://postgrest:3000
+      NEXT_PUBLIC_SUPABASE_URL: http://postgrest:3000
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@rawgrowth.local}
+      NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
+      NANGO_PUBLIC_KEY: ${NANGO_PUBLIC_KEY:-}
+      NANGO_WEBHOOK_SECRET: ${NANGO_WEBHOOK_SECRET:-}
+      # First-boot seed (no-op once any org exists)
+      SEED_ORG_NAME: ${SEED_ORG_NAME:-Local Dev}
+      SEED_ORG_SLUG: ${SEED_ORG_SLUG:-local-dev}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Admin}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-localhost}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  caddy-data:
+  caddy-config:
