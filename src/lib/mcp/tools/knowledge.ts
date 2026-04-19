@@ -8,8 +8,16 @@ import { isSelfHosted } from "@/lib/deploy-mode";
 
 /**
  * Knowledge tools — read from the org's uploaded markdown files.
- * No integration required; hits Supabase directly.
+ *
+ * Only registered in HOSTED mode. Self-hosted clients drag local files
+ * into Claude Code's context directly, so we don't need Supabase Storage.
  */
+
+// Skip registration entirely in self-hosted; the rest of this file is dead code there.
+if (isSelfHosted) {
+  // The file still loads (for module-import side-effects in tools/index.ts),
+  // but no tools are registered, so MCP /tools/list won't expose them.
+} else {
 
 registerTool({
   name: "list_knowledge_files",
@@ -77,21 +85,6 @@ registerTool({
     const file = await getKnowledgeFile(ctx.organizationId, id);
     if (!file) return textError(`Knowledge file ${id} not found`);
 
-    if (isSelfHosted) {
-      // Self-hosted ships without Supabase Storage. Surface metadata only
-      // until S3/local storage lands in a follow-up.
-      return text(
-        [
-          `# ${file.title}`,
-          file.tags.length ? `*Tags: ${file.tags.join(", ")}*` : "",
-          "",
-          "_File contents are not yet available in self-hosted mode — storage backend is pending. Upload a small inline note in the description for now._",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      );
-    }
-
     const content = file.storage_path
       ? await readKnowledgeFileContent(file.storage_path)
       : "";
@@ -110,3 +103,5 @@ registerTool({
     );
   },
 });
+
+} // end !isSelfHosted

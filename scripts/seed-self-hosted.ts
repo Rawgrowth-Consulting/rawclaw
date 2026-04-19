@@ -21,13 +21,16 @@ async function main() {
 
   const orgName = process.env.SEED_ORG_NAME ?? "Local Dev";
   const orgSlug = process.env.SEED_ORG_SLUG ?? "local-dev";
-  const adminEmail = process.env.SEED_ADMIN_EMAIL;
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@local").toLowerCase();
   const adminName = process.env.SEED_ADMIN_NAME ?? "Admin";
 
-  if (!adminEmail || !adminPassword) {
-    console.log("[seed] SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD not set — skipping seed");
-    return;
+  // If the operator didn't supply a password, generate a strong one and
+  // print it with the credentials banner — they only need to capture it once.
+  let adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "";
+  let generatedPassword = false;
+  if (!adminPassword) {
+    adminPassword = randomBytes(12).toString("base64url");
+    generatedPassword = true;
   }
   if (adminPassword.length < 8) {
     console.error("[seed] SEED_ADMIN_PASSWORD must be ≥ 8 chars");
@@ -69,11 +72,18 @@ async function main() {
   console.log("──────────────────────────────────────────────────────────");
   console.log(`  Organization:  ${orgName} (${orgSlug})`);
   console.log(`  Admin email:   ${adminEmail}`);
+  if (generatedPassword) {
+    console.log(`  Admin password (generated — save this!):`);
+    console.log(`    ${adminPassword}`);
+  } else {
+    console.log(`  Admin password: (from SEED_ADMIN_PASSWORD env)`);
+  }
   console.log(`  Admin role:    owner`);
   console.log("");
   console.log("  MCP token (paste into Claude Code config):");
   console.log(`    ${mcpToken}`);
   console.log("");
+  console.log("  Sign in:       http://localhost/auth/signin");
   console.log("  See CLAUDE_CODE_SETUP.md for the exact MCP config.");
   console.log("──────────────────────────────────────────────────────────");
   console.log("");

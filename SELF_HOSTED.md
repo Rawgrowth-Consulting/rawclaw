@@ -11,38 +11,54 @@ Claude Code plugin (Phase 3) are separate steps.
 ## What you need
 
 - Docker Desktop (or Docker Engine + Compose v2)
-- Node 20+ on your host for generating the JWT (one-off)
+- `openssl` (ships on every Mac and Linux)
 - ~2GB free RAM
 
-## One-time setup
+**You do NOT need Node installed** — the container handles all of that.
+
+## One command
+
+From a fresh checkout:
 
 ```bash
-# 1. Copy and fill in the env
-cp .env.self-hosted.example .env
-
-# 2. Generate strong secrets
-openssl rand -hex 32   # paste into POSTGRES_PASSWORD
-openssl rand -hex 32   # paste into JWT_SECRET
-openssl rand -hex 32   # paste into NEXTAUTH_SECRET
-
-# 3. Mint the service_role JWT for PostgREST using the JWT_SECRET above
-npm run self-hosted:jwt -- --secret "<your JWT_SECRET>"
-#  → copy the output into SUPABASE_SERVICE_ROLE_KEY in .env
+./scripts/bootstrap.sh
 ```
 
-Open `.env` and confirm:
+(or `npm run self-hosted:bootstrap` if you have Node, same script.)
+
+It will:
+
+1. Verify Docker is running
+2. Copy `.env.self-hosted.example` → `.env` (skipped if you already have one)
+3. Generate `POSTGRES_PASSWORD`, `JWT_SECRET`, `NEXTAUTH_SECRET` if they're still placeholders
+4. `docker compose up --build -d`
+5. Tail the app logs so you see the credentials banner
+
+The container mints its own service-role JWT from `JWT_SECRET` on boot —
+no manual step.
+
+You'll see a banner like:
+
+```
+[seed] First-boot bootstrap complete
+  Organization:  Local Dev (local-dev)
+  Admin email:   admin@local
+  Admin password (generated — save this!):
+    aB12cD34eF56...
+  MCP token (paste into Claude Code config):
+    rgmcp_a1b2c3...
+
+  Sign in:       http://localhost/auth/signin
+```
+
+Save both — the password is shown once, the MCP token can be re-fetched
+from the DB if you lose it (see CLAUDE_CODE_SETUP.md).
+
+Open `.env` and confirm if you want to customise:
 
 - `CADDY_SITE_ADDRESS` = `localhost` for local dev, or your subdomain in prod
 - `NEXTAUTH_URL` = `http://localhost` for local dev, or `https://<subdomain>` in prod
-
-## Run it
-
-```bash
-npm run self-hosted:up
-```
-
-First boot takes a minute (building the Next.js image, running migrations).
-Subsequent boots are ~15 seconds.
+- `SEED_ADMIN_EMAIL` if you want something other than `admin@local`
 
 Once up:
 

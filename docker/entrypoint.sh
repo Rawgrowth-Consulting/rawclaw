@@ -15,6 +15,16 @@ if [ -z "${DATABASE_URL}" ]; then
   exit 1
 fi
 
+# If the operator didn't provide a service_role JWT (clients shouldn't need
+# to mint one manually), derive one from JWT_SECRET on the fly. Same secret
+# means PostgREST will accept it. This token is ephemeral — only used by
+# this process for the lifetime of the container.
+if [ -z "${SUPABASE_SERVICE_ROLE_KEY}" ] && [ -n "${JWT_SECRET}" ]; then
+  echo "[entrypoint] minting service_role JWT from JWT_SECRET"
+  SUPABASE_SERVICE_ROLE_KEY="$(node --experimental-strip-types scripts/gen-jwt.ts --secret "${JWT_SECRET}" --role service_role | tr -d '\n')"
+  export SUPABASE_SERVICE_ROLE_KEY
+fi
+
 # Tiny retry loop in case postgres healthcheck isn't green yet
 tries=30
 until node -e "

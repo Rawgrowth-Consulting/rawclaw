@@ -32,6 +32,7 @@ import { UserMenu } from "@/components/user-menu";
 import { ChangeClientPopover } from "@/components/change-client-popover";
 import { ActivityNavBadge } from "@/components/activity-nav-badge";
 import { ApprovalsNavBadge } from "@/components/approvals-nav-badge";
+import { useConfig } from "@/lib/use-config";
 
 type Org = { id: string; name: string };
 
@@ -95,7 +96,16 @@ export function AppSidebar({
   orgs?: Org[];
 }) {
   const pathname = usePathname();
+  const { isSelfHosted } = useConfig();
   const displayName = orgName ?? "Rawgrowth";
+
+  // Self-hosted clients drag local files into Claude Code directly — no storage backend needed.
+  const filteredSections = navSections.map((section) => ({
+    ...section,
+    items: section.items.filter(
+      (item) => !(isSelfHosted && item.href === "/knowledge"),
+    ),
+  }));
 
   return (
     <Sidebar
@@ -124,7 +134,7 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        {navSections
+        {filteredSections
           .filter((s) => !s.adminOnly || isAdmin)
           .map((section) => (
           <SidebarGroup key={section.label}>

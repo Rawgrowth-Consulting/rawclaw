@@ -1,7 +1,28 @@
 # Connecting Claude Code to your self-hosted Rawgrowth
 
-This is the manual version of what the Phase 3 plugin will eventually
-automate. It takes ~60 seconds.
+**TL;DR for clients:** you don't install rawgrowth on your laptop. It
+runs on a VPS we set up for you. You just point your existing Claude Code
+at it with one command. No git clone, no Docker, no Node required.
+
+## One-liner (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/JamesWeb3/rawgrowth-aios/main/scripts/cc-install.sh \
+  | bash -s -- --token rgmcp_YOUR_TOKEN --url https://your-subdomain.rawgrowth.app
+```
+
+That installs:
+- The MCP server config in `~/.claude/settings.json`
+- Three slash commands in `~/.claude/commands/`:
+  - `/rawgrowth-status` — quick status across pending runs / approvals
+  - `/rawgrowth-triage` — pick up the oldest pending run and execute it
+  - `/rawgrowth-help` — discover what tools are available
+
+Restart Claude Code, type `/mcp`, confirm `rawgrowth` appears, then try `/rawgrowth-status`.
+
+---
+
+## Manual setup (if you don't trust curl-pipe)
 
 ## You'll need
 

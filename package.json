@@ -7,11 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "self-hosted:bootstrap": "./scripts/bootstrap.sh",
     "self-hosted:migrate": "tsx scripts/migrate.ts",
     "self-hosted:jwt": "tsx scripts/gen-jwt.ts",
     "self-hosted:up": "docker compose up --build",
     "self-hosted:down": "docker compose down",
-    "self-hosted:logs": "docker compose logs -f app"
+    "self-hosted:logs": "docker compose logs -f app",
+    "client:provision": "./scripts/provision-vps.sh",
+    "client:update": "./scripts/update-vps.sh",
+    "client:cc-install": "./scripts/cc-install.sh"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
