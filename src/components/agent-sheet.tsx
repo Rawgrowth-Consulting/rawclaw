@@ -34,6 +34,7 @@ import {
 } from "@/lib/agents/constants";
 import { useAgents } from "@/lib/agents/use-agents";
 import type { Agent } from "@/lib/agents/dto";
+import { ToolsPicker, type WritePolicy } from "@/components/agents/tools-picker";
 
 const NONE = "__none__";
 
@@ -45,6 +46,7 @@ type FormState = {
   reportsTo: string;
   runtime: AgentRuntime;
   budget: number;
+  writePolicy: WritePolicy;
 };
 
 function emptyForm(): FormState {
@@ -56,6 +58,7 @@ function emptyForm(): FormState {
     reportsTo: NONE,
     runtime: "claude-sonnet-4-5",
     budget: 500,
+    writePolicy: {},
   };
 }
 
@@ -68,6 +71,7 @@ function agentToForm(agent: Agent): FormState {
     reportsTo: agent.reportsTo ?? NONE,
     runtime: agent.runtime,
     budget: agent.budgetMonthlyUsd,
+    writePolicy: agent.writePolicy ?? {},
   };
 }
 
@@ -137,6 +141,7 @@ export function AgentSheet(props: Props) {
       reportsTo: form.reportsTo === NONE ? null : form.reportsTo,
       runtime: form.runtime,
       budgetMonthlyUsd: form.budget,
+      writePolicy: form.writePolicy,
     };
     if (isEdit) {
       void updateAgent(props.agent.id, payload);
@@ -314,6 +319,16 @@ export function AgentSheet(props: Props) {
                   ${form.budget.toLocaleString()}
                 </div>
               </div>
+            </Field>
+
+            <Field
+              label="Tools & integrations"
+              hint="Pick which tools this agent can call. For write actions, choose how much oversight you want."
+            >
+              <ToolsPicker
+                value={form.writePolicy}
+                onChange={(writePolicy) => setForm({ ...form, writePolicy })}
+              />
             </Field>
 
             {error && (

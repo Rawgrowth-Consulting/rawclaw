@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { PageShell } from "@/components/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
+import { DashboardStats } from "@/components/dashboard/stats";
 
 import { LineChart, Line } from "@/components/charts/line-chart";
 import { AreaChart, Area } from "@/components/charts/area-chart";
@@ -10,13 +11,6 @@ import { Bar } from "@/components/charts/bar";
 import { FunnelChart } from "@/components/charts/funnel-chart";
 import { Grid } from "@/components/charts/grid";
 import { ChartTooltip } from "@/components/charts/tooltip";
-
-const stats = [
-  { label: "Active agents", value: "—", hint: "0 running" },
-  { label: "Open issues", value: "—", hint: "0 backlog" },
-  { label: "Pending approvals", value: "—", hint: "0 awaiting" },
-  { label: "Spend this month", value: "$0.00", hint: "across all agents" },
-];
 
 // Brand palette pulled from globals.css
 const COLOR_PRIMARY = "#0cbf6a";
@@ -121,27 +115,7 @@ export default function DashboardPage() {
       title="Dashboard"
       description="Your AI company at a glance — goals, agents, tickets, spend."
     >
-      {/* Top summary cards */}
-      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-        {stats.map((s) => (
-          <Card
-            key={s.label}
-            className="border-border bg-card/50 backdrop-blur-sm"
-          >
-            <CardContent className="p-4">
-              <div className="text-[10px] font-medium uppercase tracking-[1.5px] text-muted-foreground">
-                {s.label}
-              </div>
-              <div className="mt-2 font-serif text-2xl text-foreground">
-                {s.value}
-              </div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                {s.hint}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <DashboardStats />
 
       {/* Core business pillars — 2x2 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

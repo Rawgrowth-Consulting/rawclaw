@@ -6,15 +6,14 @@ import {
   LayoutDashboard,
   CircleDot,
   Bot,
-  Target,
+  ShieldCheck,
   Repeat,
-  DollarSign,
   Settings2,
   Plug,
   Plus,
   BookOpen,
   Activity,
-  Building2,
+  KeyRound,
 } from "lucide-react";
 
 import {
@@ -40,6 +39,7 @@ type NavItem = {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: string;
+  comingSoon?: boolean;
 };
 
 type NavSection = { label: string; items: NavItem[]; adminOnly?: boolean };
@@ -49,7 +49,13 @@ const navSections: NavSection[] = [
     label: "Overview",
     items: [
       { label: "Dashboard", href: "/", icon: LayoutDashboard },
-      { label: "Custom Feature", href: "/custom-feature", icon: Plus },
+      { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+      {
+        label: "Custom Feature",
+        href: "/custom-feature",
+        icon: Plus,
+        comingSoon: true,
+      },
     ],
   },
   {
@@ -58,24 +64,16 @@ const navSections: NavSection[] = [
       { label: "Agents", href: "/agents", icon: Bot },
       { label: "Routines", href: "/routines", icon: Repeat },
       { label: "Activity", href: "/activity", icon: Activity },
-      { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+      { label: "Approvals", href: "/approvals", icon: ShieldCheck },
       { label: "Issues", href: "/issues", icon: CircleDot },
-      { label: "Goals", href: "/goals", icon: Target },
     ],
   },
   {
     label: "Settings",
     items: [
-      { label: "Costs", href: "/costs", icon: DollarSign },
       { label: "Integrations", href: "/integrations", icon: Plug },
+      { label: "MCP", href: "/settings/mcp", icon: KeyRound },
       { label: "Company", href: "/company", icon: Settings2 },
-    ],
-  },
-  {
-    label: "Admin",
-    adminOnly: true,
-    items: [
-      { label: "Clients", href: "/admin/clients", icon: Building2 },
     ],
   },
 ];
@@ -145,9 +143,16 @@ export function AppSidebar({
                         isActive={active}
                         tooltip={item.label}
                         render={<Link href={item.href} />}
+                        className={
+                          item.comingSoon
+                            ? "border border-dashed border-sidebar-border/70 bg-transparent text-muted-foreground/70 hover:text-foreground"
+                            : undefined
+                        }
                       >
                         <item.icon className="size-4" />
-                        <span>{item.label}</span>
+                        <span className={item.comingSoon ? "italic" : undefined}>
+                          {item.label}
+                        </span>
                         {item.href === "/activity" && <ActivityNavBadge />}
                         {item.badge && (
                           <span className="ml-auto rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.5px] text-amber-400 group-data-[collapsible=icon]:hidden">

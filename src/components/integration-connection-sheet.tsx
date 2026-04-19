@@ -84,28 +84,52 @@ export function IntegrationConnectionSheet({
       const NangoCtor = mod.default;
       const nango = new NangoCtor({ connectSessionToken: token });
 
-      // 3. Open Nango's hosted Connect UI. It handles the OAuth bounce /
-      //    API-key form and our webhook persists the connection.
-      await new Promise<void>((resolve, reject) => {
+      // 3. Open Nango's hosted Connect UI and capture the payload fired on
+      //    successful auth. The webhook also writes this row in prod, but
+      //    relying on it alone breaks local dev — so we persist client-side.
+      type ConnectPayload = {
+        providerConfigKey?: string;
+        connectionId?: string;
+      };
+      let captured: ConnectPayload | null = null;
+
+      await new Promise<void>((resolve) => {
         const controller = nango.openConnectUI({
           onEvent: (event) => {
             if (event.type === "connect") {
+              captured = (event.payload ?? null) as ConnectPayload | null;
               resolve();
             } else if (event.type === "close") {
               resolve();
             }
           },
         });
-        // Safety timeout if the UI never fires an event.
         setTimeout(() => {
           controller?.close?.();
           resolve();
         }, 5 * 60_000);
       });
 
-      // 4. Refetch connections — our webhook should have written the row by now.
-      // Small delay in case the webhook races the redirect.
-      await new Promise((r) => setTimeout(r, 400));
+      // 4. Persist the connection ourselves. The server re-fetches from Nango
+      //    to prove it exists before writing the row.
+      const payload = captured as ConnectPayload | null;
+      if (payload?.providerConfigKey && payload?.connectionId) {
+        const finalizeRes = await fetch("/api/connections/finalize", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            providerConfigKey: payload.providerConfigKey,
+            connectionId: payload.connectionId,
+          }),
+        });
+        if (!finalizeRes.ok) {
+          const { error } = (await finalizeRes
+            .json()
+            .catch(() => ({}))) as { error?: string };
+          throw new Error(error ?? "Failed to persist connection");
+        }
+      }
+
       await refresh();
     } catch (err) {
       setError((err as Error).message);

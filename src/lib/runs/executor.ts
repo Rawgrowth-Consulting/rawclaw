@@ -14,6 +14,7 @@ import {
   text as toolText,
 } from "@/lib/mcp/registry";
 import type { ToolContext } from "@/lib/mcp/types";
+import { createApproval } from "@/lib/approvals/queries";
 import {
   claimRun,
   finaliseRun,
@@ -57,7 +58,16 @@ export async function executeRun(runId: string): Promise<void> {
 
     const { routine, agent, run, trigger } = ctx;
     const toolCtx: ToolContext = { organizationId: run.organization_id };
-    const tools = buildToolset(toolCtx, run.id, agent?.id ?? null);
+    const writePolicy = (agent?.write_policy ?? {}) as Record<
+      string,
+      "direct" | "requires_approval" | "draft_only"
+    >;
+    const tools = buildToolset(
+      toolCtx,
+      run.id,
+      agent?.id ?? null,
+      writePolicy,
+    );
 
     const systemPrompt = buildSystemPrompt(routine.title, routine.description, agent);
     const userMessage = buildUserMessage(run, trigger);
@@ -160,19 +170,40 @@ function buildToolset(
   toolCtx: ToolContext,
   runId: string,
   agentId: string | null,
+  writePolicy: Record<string, "direct" | "requires_approval" | "draft_only">,
 ): ToolSet {
   const mcpTools = listTools();
+  const explicit = Object.keys(writePolicy).length > 0;
   const toolset: ToolSet = {};
   for (const t of mcpTools) {
+    // Explicit mode: only offer tools the user has enabled on the agent.
+    // Legacy mode (empty policy): offer everything — keeps older agents working.
+    if (explicit && !(t.name in writePolicy)) continue;
     toolset[t.name] = tool({
       description: t.description,
       inputSchema: jsonSchema(t.inputSchema as Record<string, unknown>),
       execute: async (args: unknown) => {
-        const result = await callTool(
-          t.name,
-          (args ?? {}) as Record<string, unknown>,
-          toolCtx,
-        );
+        const policy = writePolicy[t.name] ?? "direct";
+        const typedArgs = (args ?? {}) as Record<string, unknown>;
+
+        if (policy === "requires_approval") {
+          await createApproval({
+            organizationId: toolCtx.organizationId,
+            routineRunId: runId,
+            agentId,
+            toolName: t.name,
+            toolArgs: typedArgs,
+            reason: `Agent attempted ${t.name} — write policy requires approval.`,
+          });
+          await auditLog(toolCtx.organizationId, "approval_requested", {
+            run_id: runId,
+            agent_id: agentId,
+            tool: t.name,
+          });
+          return `Action "${t.name}" requires human approval and has been queued in the Approvals inbox. It will execute once a human approves. Do not retry.`;
+        }
+
+        const result = await callTool(t.name, typedArgs, toolCtx);
         await auditLog(toolCtx.organizationId, "tool_call", {
           run_id: runId,
           agent_id: agentId,

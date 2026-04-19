@@ -48,6 +48,7 @@ export type AgentCreateInput = {
   description: string;
   runtime: AgentRuntime;
   budgetMonthlyUsd: number;
+  writePolicy?: Record<string, "direct" | "requires_approval" | "draft_only">;
 };
 
 export type AgentUpdateInput = Partial<AgentCreateInput> & {

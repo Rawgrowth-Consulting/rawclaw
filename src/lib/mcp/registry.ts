@@ -22,6 +22,8 @@ export function listTools() {
     name: t.name,
     description: t.description,
     inputSchema: t.inputSchema,
+    requiresIntegration: t.requiresIntegration,
+    isWrite: t.isWrite,
   }));
 }
 

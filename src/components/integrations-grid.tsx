@@ -22,6 +22,13 @@ export function IntegrationsGrid() {
 
   const connectedCount = connections.length;
 
+  const sortedIntegrations = [...INTEGRATIONS].sort((a, b) => {
+    const aConn = !!byIntegrationId(a.id) && loaded;
+    const bConn = !!byIntegrationId(b.id) && loaded;
+    if (aConn !== bConn) return aConn ? -1 : 1;
+    return 0;
+  });
+
   return (
     <>
       <div className="mb-5 flex items-center gap-3 text-xs text-muted-foreground">
@@ -36,7 +43,7 @@ export function IntegrationsGrid() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {INTEGRATIONS.map((i) => {
+        {sortedIntegrations.map((i) => {
           const conn = byIntegrationId(i.id);
           const isConnected = !!conn && loaded;
           return (

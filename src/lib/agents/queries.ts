@@ -38,6 +38,7 @@ export async function createAgent(
       description: input.description || null,
       runtime: input.runtime,
       budget_monthly_usd: input.budgetMonthlyUsd,
+      ...(input.writePolicy ? { write_policy: input.writePolicy } : {}),
     })
     .select("*")
     .single();
