@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import useSWR from "swr";
+import { jsonFetcher } from "@/lib/swr";
 
 export type KnowledgeFileRow = {
   id: string;
@@ -14,21 +16,22 @@ export type KnowledgeFileRow = {
   uploaded_by: string | null;
 };
 
+const KNOWLEDGE_KEY = "/api/knowledge";
+
 export function useKnowledge() {
-  const [files, setFiles] = useState<KnowledgeFileRow[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { data, isLoading, mutate } = useSWR<{ files: KnowledgeFileRow[] }>(
+    KNOWLEDGE_KEY,
+    jsonFetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const files = data?.files ?? [];
+  const loaded = !isLoading;
   const [uploading, setUploading] = useState(false);
 
   const refresh = useCallback(async () => {
-    const res = await fetch("/api/knowledge");
-    const body = (await res.json()) as { files?: KnowledgeFileRow[] };
-    setFiles(body.files ?? []);
-    setLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    await mutate();
+  }, [mutate]);
 
   const upload = useCallback(
     async (file: File, tags: string[], title?: string) => {
@@ -38,41 +41,51 @@ export function useKnowledge() {
         fd.append("file", file);
         if (title) fd.append("title", title);
         if (tags.length) fd.append("tags", tags.join(","));
-        const res = await fetch("/api/knowledge", { method: "POST", body: fd });
+        const res = await fetch(KNOWLEDGE_KEY, { method: "POST", body: fd });
         if (!res.ok) {
           const { error } = (await res.json()) as { error?: string };
           throw new Error(error ?? "upload failed");
         }
-        await refresh();
+        await mutate();
       } finally {
         setUploading(false);
       }
     },
-    [refresh],
+    [mutate],
   );
 
   const remove = useCallback(
     async (id: string) => {
-      await fetch(`/api/knowledge/${id}`, { method: "DELETE" });
-      await refresh();
+      await fetch(`${KNOWLEDGE_KEY}/${id}`, { method: "DELETE" });
+      await mutate(
+        (prev) => ({ files: (prev?.files ?? []).filter((f) => f.id !== id) }),
+        { revalidate: true },
+      );
     },
-    [refresh],
+    [mutate],
   );
 
   const updateTags = useCallback(
     async (id: string, tags: string[]) => {
-      await fetch(`/api/knowledge/${id}`, {
+      await fetch(`${KNOWLEDGE_KEY}/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tags }),
       });
-      await refresh();
+      await mutate(
+        (prev) => ({
+          files: (prev?.files ?? []).map((f) =>
+            f.id === id ? { ...f, tags } : f,
+          ),
+        }),
+        { revalidate: true },
+      );
     },
-    [refresh],
+    [mutate],
   );
 
   const fetchContent = useCallback(async (id: string): Promise<string> => {
-    const res = await fetch(`/api/knowledge/${id}`);
+    const res = await fetch(`${KNOWLEDGE_KEY}/${id}`);
     if (!res.ok) throw new Error("fetch failed");
     const body = (await res.json()) as { content?: string };
     return body.content ?? "";

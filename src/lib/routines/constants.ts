@@ -21,6 +21,11 @@ export const TRIGGER_KINDS = [
     description: "Fire when a connected tool emits an event.",
   },
   {
+    value: "telegram",
+    label: "Telegram command",
+    description: "Fire when a user DMs your bot with a specific command.",
+  },
+  {
     value: "manual",
     label: "Manual",
     description: "Only fires when you click Run.",
@@ -123,6 +128,15 @@ export type RoutineTrigger =
       id: string;
       kind: "manual";
       enabled: boolean;
+    }
+  | {
+      id: string;
+      kind: "telegram";
+      enabled: boolean;
+      /** Bot command that fires this routine, including leading slash. e.g. "/proposal" */
+      command: string;
+      /** Human-readable description shown in the routine card + Telegram help text. */
+      description?: string;
     };
 
 function clientUuid() {
@@ -163,6 +177,14 @@ export function newTrigger(kind: TriggerKind): RoutineTrigger {
         enabled: true,
         event: "fathom.meeting.ended",
       };
+    case "telegram":
+      return {
+        id: clientUuid(),
+        kind: "telegram",
+        enabled: true,
+        command: "/run",
+        description: "",
+      };
     case "manual":
       return { id: clientUuid(), kind: "manual", enabled: true };
   }
@@ -182,6 +204,8 @@ export function describeTrigger(t: RoutineTrigger): string {
       const ev = INTEGRATION_EVENTS.find((e) => e.value === t.event);
       return ev ? ev.label : t.event;
     }
+    case "telegram":
+      return `Telegram: ${t.command}`;
     case "manual":
       return "Manual only";
   }

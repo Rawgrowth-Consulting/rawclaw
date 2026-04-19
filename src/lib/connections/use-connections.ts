@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import useSWR from "swr";
+import { jsonFetcher } from "@/lib/swr";
 import { providerConfigKeyFor } from "@/lib/nango/providers";
 
 export type ConnectionRow = {
@@ -15,42 +17,38 @@ export type ConnectionRow = {
   updated_at: string;
 };
 
-/**
- * Source-of-truth client hook for integration connections.
- * Reads from /api/connections, exposes refresh + disconnect helpers,
- * and a helper `isConnected(integrationId)` for components that think
- * in product-catalog ids.
- */
+const CONNECTIONS_KEY = "/api/connections";
+
 export function useConnections() {
-  const [connections, setConnections] = useState<ConnectionRow[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { data, isLoading, mutate } = useSWR<{ connections: ConnectionRow[] }>(
+    CONNECTIONS_KEY,
+    jsonFetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const connections = data?.connections ?? [];
+  const loaded = !isLoading;
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/connections");
-      const body = (await res.json()) as { connections?: ConnectionRow[] };
-      setConnections(body.connections ?? []);
-    } finally {
-      setLoaded(true);
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    await mutate();
+  }, [mutate]);
 
   const disconnect = useCallback(
     async (providerConfigKey: string) => {
       await fetch(
-        `/api/connections/${encodeURIComponent(providerConfigKey)}`,
+        `${CONNECTIONS_KEY}/${encodeURIComponent(providerConfigKey)}`,
         { method: "DELETE" },
       );
-      await refresh();
+      await mutate(
+        (prev) => ({
+          connections: (prev?.connections ?? []).filter(
+            (c) => c.provider_config_key !== providerConfigKey,
+          ),
+        }),
+        { revalidate: true },
+      );
     },
-    [refresh],
+    [mutate],
   );
 
   const byIntegrationId = useCallback(
@@ -70,7 +68,7 @@ export function useConnections() {
   return {
     connections,
     loaded,
-    loading,
+    loading: isLoading,
     refresh,
     disconnect,
     byIntegrationId,

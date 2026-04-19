@@ -70,10 +70,15 @@ export function triggerFromRow(row: TriggerRow): RoutineTrigger {
         enabled: row.enabled,
         event: (cfg.event as IntegrationEvent) ?? "fathom.meeting.ended",
       };
-    case "manual":
     case "telegram":
-      // Telegram triggers aren't modelled as a distinct UI kind yet — treat
-      // them as manual for display purposes until Phase 7 wires the adapter.
+      return {
+        id: row.id,
+        kind: "telegram",
+        enabled: row.enabled,
+        command: (cfg.command as string) ?? "/run",
+        description: (cfg.description as string) ?? "",
+      };
+    case "manual":
       return { id: row.id, kind: "manual", enabled: row.enabled };
     default: {
       const _exhaustive: never = row.kind;
@@ -93,6 +98,8 @@ export function triggerConfigFor(
       return { publicUrl: t.publicUrl, signingSecret: t.signingSecret };
     case "integration":
       return { event: t.event };
+    case "telegram":
+      return { command: t.command, description: t.description ?? "" };
     case "manual":
       return {};
   }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   ArrowUpRight,
+  Bot,
   Check,
   KeyRound,
   LogOut,
@@ -12,6 +13,8 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
@@ -22,7 +25,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { getIntegration } from "@/lib/integrations-catalog";
+import {
+  getIntegration,
+  type IntegrationEntry,
+} from "@/lib/integrations-catalog";
 import {
   useConnections,
   type ConnectionRow,
@@ -142,6 +148,8 @@ export function IntegrationConnectionSheet({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {connection ? (
             <CurrentConnectionCard connection={connection} />
+          ) : integration.connectStrategy === "telegram-bot" ? (
+            <TelegramBotForm integration={integration} onConnected={refresh} />
           ) : (
             <EmptyStateInstructions
               scopes={integration.oauth?.scopes ?? []}
@@ -155,7 +163,7 @@ export function IntegrationConnectionSheet({
             </div>
           )}
 
-          {!connection && (
+          {!connection && integration.connectStrategy !== "telegram-bot" && (
             <Button
               onClick={handleConnect}
               size="sm"
@@ -328,3 +336,138 @@ function StepNumber({ n }: { n: number }) {
 
 // Also re-export Webhook icon ref so lint doesn't flag an unused import
 void Webhook;
+
+// ────────────────────────── Telegram bot-token form ──────────────────────────
+
+function TelegramBotForm({
+  integration,
+  onConnected,
+}: {
+  integration: IntegrationEntry;
+  onConnected: () => void | Promise<void>;
+}) {
+  const [token, setToken] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [bot, setBot] = useState<{ first_name: string; username?: string } | null>(
+    null,
+  );
+
+  const submit = async () => {
+    setError(null);
+    if (!token.includes(":")) {
+      setError("That doesn't look like a bot token. Paste the full string BotFather gave you.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/connections/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: token.trim() }),
+      });
+      if (!res.ok) {
+        const { error: err } = (await res.json()) as { error?: string };
+        throw new Error(err ?? "Failed to connect");
+      }
+      const { bot: me } = (await res.json()) as {
+        bot: { first_name: string; username?: string };
+      };
+      setBot(me);
+      await onConnected();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-xl border border-border bg-card/40 p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Bot className="size-4 text-primary" />
+          <div className="text-[12.5px] font-semibold text-foreground">
+            How to get a bot token
+          </div>
+        </div>
+        <ol className="flex flex-col gap-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          <li>
+            1. Open Telegram and message{" "}
+            <code className="font-mono text-foreground/80">@BotFather</code>.
+          </li>
+          <li>
+            2. Send <code className="font-mono text-foreground/80">/newbot</code>{" "}
+            and follow the prompts to name your bot.
+          </li>
+          <li>3. BotFather replies with a token — paste it below.</li>
+        </ol>
+        {integration.apiKey?.docsUrl && (
+          <a
+            href={integration.apiKey.docsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+          >
+            Telegram bots tutorial <ArrowUpRight className="size-3" />
+          </a>
+        )}
+      </div>
+
+      <div>
+        <Label className="text-[12px] font-medium text-foreground">
+          Bot token
+        </Label>
+        <div className="mt-1.5 flex items-stretch gap-2">
+          <Input
+            type={show ? "text" : "password"}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={integration.apiKey?.placeholder}
+            className="flex-1 bg-input/40 font-mono text-[12.5px]"
+            autoComplete="off"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShow((s) => !s)}
+            className="shrink-0"
+          >
+            {show ? "Hide" : "Show"}
+          </Button>
+        </div>
+      </div>
+
+      {bot && (
+        <div className="rounded-md border border-primary/30 bg-primary/10 px-3 py-2 text-[12px] text-primary">
+          Connected as{" "}
+          <strong className="font-semibold">
+            {bot.username ? `@${bot.username}` : bot.first_name}
+          </strong>
+          . Webhook registered.
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          {error}
+        </div>
+      )}
+
+      <Button
+        onClick={submit}
+        disabled={busy}
+        size="sm"
+        className="btn-shine w-full bg-primary text-white hover:bg-primary/90"
+      >
+        <Plug className="size-4" />
+        {busy ? "Validating…" : "Connect bot"}
+      </Button>
+      <p className="text-center text-[10.5px] text-muted-foreground">
+        We verify the token with Telegram, register our webhook, and store the
+        token in your org&apos;s connection row.
+      </p>
+    </div>
+  );
+}

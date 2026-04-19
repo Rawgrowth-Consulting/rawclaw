@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   CalendarClock,
   Hand,
+  MessageCircle,
   MoreHorizontal,
   Pause,
   Pencil,
@@ -37,6 +38,7 @@ const triggerIcon: Record<RoutineTrigger["kind"], typeof Zap> = {
   webhook: Webhook,
   integration: Zap,
   manual: Hand,
+  telegram: MessageCircle,
 };
 
 function formatRelative(iso: string | null) {

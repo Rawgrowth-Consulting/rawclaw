@@ -7,6 +7,7 @@ import {
   Clock3,
   Copy,
   Hand,
+  MessageCircle,
   Plus,
   Save,
   Trash2,
@@ -79,6 +80,7 @@ const triggerIcon: Record<TriggerKind, typeof Zap> = {
   webhook: Webhook,
   integration: Zap,
   manual: Hand,
+  telegram: MessageCircle,
 };
 
 type FormState = {
@@ -437,6 +439,12 @@ function TriggerEditor({
           onUpdate={(patch) => onUpdate(patch as Partial<RoutineTrigger>)}
         />
       )}
+      {trigger.kind === "telegram" && (
+        <TelegramTriggerConfig
+          trigger={trigger}
+          onUpdate={(patch) => onUpdate(patch as Partial<RoutineTrigger>)}
+        />
+      )}
       {trigger.kind === "manual" && (
         <p className="text-[11px] text-muted-foreground">
           This trigger only fires when you click <strong>Run now</strong> on the
@@ -598,6 +606,67 @@ function IntegrationTriggerConfig({
           <span className="mt-0.5">
             {selectedIntegration?.name ?? "This integration"} isn&apos;t
             connected yet, so this trigger won&apos;t fire.
+          </span>
+          <Link
+            href="/integrations"
+            className="ml-auto shrink-0 font-semibold text-amber-400 hover:underline"
+          >
+            Connect →
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TelegramTriggerConfig({
+  trigger,
+  onUpdate,
+}: {
+  trigger: Extract<RoutineTrigger, { kind: "telegram" }>;
+  onUpdate: (patch: Partial<Extract<RoutineTrigger, { kind: "telegram" }>>) => void;
+}) {
+  const { isConnected } = useConnections();
+  const telegramConnected = isConnected("telegram");
+
+  // Normalise: always store with a leading slash, lowercase, no spaces.
+  const onCommandChange = (value: string) => {
+    const trimmed = value.trim().replace(/\s+/g, "");
+    const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+    onUpdate({ command: withSlash.toLowerCase() });
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Label className="text-[11px] font-medium text-foreground">Command</Label>
+      <Input
+        value={trigger.command}
+        onChange={(e) => onCommandChange(e.target.value)}
+        placeholder="/proposal"
+        className="bg-input/40 font-mono text-[12.5px]"
+      />
+      <Label className="text-[11px] font-medium text-foreground">
+        Description
+      </Label>
+      <Input
+        value={trigger.description ?? ""}
+        onChange={(e) => onUpdate({ description: e.target.value })}
+        placeholder="Generate a proposal for a customer"
+        className="bg-input/40"
+      />
+      {telegramConnected ? (
+        <p className="text-[11px] text-muted-foreground">
+          Fires whenever a user DMs your bot with{" "}
+          <code className="font-mono text-foreground/80">
+            {trigger.command} &lt;args&gt;
+          </code>
+          . Anything after the command lands in the run&apos;s input_payload
+          under <code className="font-mono">telegram.args</code>.
+        </p>
+      ) : (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-400/90">
+          <span className="mt-0.5">
+            Telegram isn&apos;t connected yet, so this trigger won&apos;t fire.
           </span>
           <Link
             href="/integrations"

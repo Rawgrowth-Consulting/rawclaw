@@ -11,6 +11,7 @@ import {
   SiFathom,
   SiGoogledrive,
   SiGmail,
+  SiTelegram,
 } from "react-icons/si";
 
 export type AuthMethod = "api_key" | "oauth" | "webhook";
@@ -19,6 +20,13 @@ export type IntegrationEventDef = {
   id: string; // e.g. "fathom.meeting.ended" — also the trigger event id
   label: string; // e.g. "Meeting ended"
 };
+
+/**
+ * How an integration is wired up under the hood. Most go through Nango;
+ * Telegram uses a dedicated bot-token flow because Nango doesn't handle
+ * Bot API auth natively.
+ */
+export type ConnectStrategy = "nango" | "telegram-bot";
 
 export type IntegrationEntry = {
   id: string;
@@ -30,6 +38,8 @@ export type IntegrationEntry = {
   brand: string;
   /** Auth methods this provider supports, in display order. */
   methods: AuthMethod[];
+  /** Runtime wiring. Defaults to "nango". */
+  connectStrategy?: ConnectStrategy;
   apiKey?: {
     placeholder: string;
     docsUrl: string;
@@ -227,6 +237,23 @@ export const INTEGRATIONS: IntegrationEntry[] = [
       exampleAccount: "james.oldham0604@gmail.com",
     },
     events: [{ id: "gmail.email.received", label: "Email received" }],
+  },
+  {
+    id: "telegram",
+    name: "Telegram",
+    description:
+      "Trigger routines from a Telegram bot. Your team DMs commands from their phones, routines fire.",
+    category: "Comms",
+    Icon: SiTelegram,
+    brand: "#26A5E4",
+    methods: ["api_key"],
+    connectStrategy: "telegram-bot",
+    apiKey: {
+      placeholder: "123456789:AAF••••••••••••••••••••••••••••",
+      docsUrl: "https://core.telegram.org/bots/tutorial",
+      where:
+        "Telegram → talk to @BotFather → /newbot → copy the bot token it returns",
+    },
   },
 ];
 

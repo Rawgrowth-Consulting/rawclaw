@@ -2,12 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { nango } from "@/lib/nango/server";
 import { deleteConnection, getConnection } from "@/lib/connections/queries";
 import { currentOrganizationId } from "@/lib/supabase/constants";
+import { deleteWebhook as deleteTelegramWebhook } from "@/lib/telegram/client";
 
 export const runtime = "nodejs";
 
 /**
  * DELETE /api/connections/[providerConfigKey]
- * Revokes the connection in Nango then removes our row.
+ * Revokes the connection at the upstream provider, then removes our row.
+ * Handles two strategies: Nango (default) and Telegram (bot-token + webhook).
  */
 export async function DELETE(
   _req: NextRequest,
@@ -21,14 +23,26 @@ export async function DELETE(
       return NextResponse.json({ ok: true, already: "disconnected" });
     }
 
-    // Best-effort revoke in Nango; local delete is authoritative.
-    try {
-      await nango().deleteConnection(
-        providerConfigKey,
-        existing.nango_connection_id,
-      );
-    } catch {
-      /* ignore — connection might already be gone upstream */
+    if (providerConfigKey === "telegram") {
+      const token =
+        (existing.metadata as { bot_token?: string } | null)?.bot_token;
+      if (token) {
+        try {
+          await deleteTelegramWebhook(token);
+        } catch {
+          /* ignore — token might already be invalid upstream */
+        }
+      }
+    } else {
+      // Best-effort revoke in Nango; local delete is authoritative.
+      try {
+        await nango().deleteConnection(
+          providerConfigKey,
+          existing.nango_connection_id,
+        );
+      } catch {
+        /* ignore — connection might already be gone upstream */
+      }
     }
 
     await deleteConnection(organizationId, providerConfigKey);

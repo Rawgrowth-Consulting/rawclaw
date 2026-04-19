@@ -1,30 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
+import useSWR from "swr";
+import { jsonFetcher } from "@/lib/swr";
 import type { Routine, RoutineCreateInput, RoutineUpdateInput } from "./dto";
 
-/**
- * Client hook for routine CRUD + status + run-now. Mirrors the old
- * Zustand store surface.
- */
+const ROUTINES_KEY = "/api/routines";
+
 export function useRoutines() {
-  const [routines, setRoutines] = useState<Routine[]>([]);
-  const [hasHydrated, setHasHydrated] = useState(false);
+  const { data, isLoading, mutate } = useSWR<{ routines: Routine[] }>(
+    ROUTINES_KEY,
+    jsonFetcher,
+    { revalidateOnFocus: false },
+  );
 
-  const refresh = useCallback(async () => {
-    const res = await fetch("/api/routines");
-    const body = (await res.json()) as { routines?: Routine[] };
-    setRoutines(body.routines ?? []);
-    setHasHydrated(true);
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const routines = data?.routines ?? [];
+  const hasHydrated = !isLoading;
 
   const createRoutine = useCallback(
     async (input: RoutineCreateInput): Promise<Routine> => {
-      const res = await fetch("/api/routines", {
+      const res = await fetch(ROUTINES_KEY, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
@@ -34,31 +29,49 @@ export function useRoutines() {
         throw new Error(error ?? "createRoutine failed");
       }
       const { routine } = (await res.json()) as { routine: Routine };
-      setRoutines((prev) => [routine, ...prev]);
+      await mutate(
+        (prev) => ({ routines: [routine, ...(prev?.routines ?? [])] }),
+        { revalidate: true },
+      );
       return routine;
     },
-    [],
+    [mutate],
   );
 
   const updateRoutine = useCallback(
     async (id: string, patch: RoutineUpdateInput): Promise<Routine | null> => {
-      const res = await fetch(`/api/routines/${id}`, {
+      const res = await fetch(`${ROUTINES_KEY}/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(patch),
       });
       if (!res.ok) return null;
       const { routine } = (await res.json()) as { routine: Routine };
-      setRoutines((prev) => prev.map((r) => (r.id === id ? routine : r)));
+      await mutate(
+        (prev) => ({
+          routines: (prev?.routines ?? []).map((r) =>
+            r.id === id ? routine : r,
+          ),
+        }),
+        { revalidate: false },
+      );
       return routine;
     },
-    [],
+    [mutate],
   );
 
-  const removeRoutine = useCallback(async (id: string) => {
-    await fetch(`/api/routines/${id}`, { method: "DELETE" });
-    setRoutines((prev) => prev.filter((r) => r.id !== id));
-  }, []);
+  const removeRoutine = useCallback(
+    async (id: string) => {
+      await fetch(`${ROUTINES_KEY}/${id}`, { method: "DELETE" });
+      await mutate(
+        (prev) => ({
+          routines: (prev?.routines ?? []).filter((r) => r.id !== id),
+        }),
+        { revalidate: true },
+      );
+    },
+    [mutate],
+  );
 
   const toggleStatus = useCallback(
     async (id: string) => {
@@ -72,16 +85,24 @@ export function useRoutines() {
 
   const runNow = useCallback(
     async (id: string) => {
-      await fetch(`/api/routines/${id}/run`, { method: "POST" });
-      // Optimistic bump of lastRunAt so the UI reflects immediately.
-      setRoutines((prev) =>
-        prev.map((r) =>
-          r.id === id ? { ...r, lastRunAt: new Date().toISOString() } : r,
-        ),
+      await fetch(`${ROUTINES_KEY}/${id}/run`, { method: "POST" });
+      await mutate(
+        (prev) => ({
+          routines: (prev?.routines ?? []).map((r) =>
+            r.id === id
+              ? { ...r, lastRunAt: new Date().toISOString() }
+              : r,
+          ),
+        }),
+        { revalidate: true },
       );
     },
-    [],
+    [mutate],
   );
+
+  const refresh = useCallback(async () => {
+    await mutate();
+  }, [mutate]);
 
   return {
     routines,
