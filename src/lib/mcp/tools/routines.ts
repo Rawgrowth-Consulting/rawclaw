@@ -6,7 +6,7 @@ import {
   updateRoutine,
 } from "@/lib/routines/queries";
 import type { RoutineTrigger } from "@/lib/routines/constants";
-import { randomBytes } from "crypto";
+import { randomUUID } from "crypto";
 
 /**
  * MCP tools for the routine lifecycle. Lets clients create, list, update,
@@ -19,7 +19,7 @@ import { randomBytes } from "crypto";
 const VALID_STATUS = ["active", "paused", "archived"] as const;
 
 function newTriggerId() {
-  return randomBytes(12).toString("hex");
+  return randomUUID();
 }
 
 function buildTriggers(schedule?: {
