@@ -110,15 +110,29 @@ npm run self-hosted:logs    # tail the app logs
 npm run self-hosted:migrate # run migrations against DATABASE_URL (host-side)
 ```
 
-## What doesn't work yet
+## How integrations work in self-hosted mode
 
-- **Executor / routines / scheduled runs** — agents can't run autonomously
-  in self-hosted mode. Phase 2 removes the executor entirely; for now
-  creating a "run" will just sit at `pending`. This is expected.
-- **Knowledge file uploads** — Supabase Storage isn't bundled. Uploads
-  will fail. Phase 1.5 will switch to local filesystem or S3.
-- **Nango connections** — still work, but share one hosted Nango account
-  across all client VPSs (scoped by `end_user.id` = org id).
+**Rawclaw does NOT OAuth into Gmail/Slack/etc. for you.** In self-hosted,
+the client's Claude Code is what drives every routine, and Claude Code
+already has native connectors for Gmail, Google Calendar, Google Drive,
+Slack, Notion, Linear, GitHub, Asana, Canva, and more. The client
+authorizes those once in Claude Desktop/Code settings and they're
+available to every routine.
+
+For tools Anthropic doesn't ship natively (Shopify, Stripe, custom APIs)
+the client installs a community MCP server in their Claude Code config.
+
+The `/integrations` page in the UI is a **reference + guide** in
+self-hosted mode — no OAuth bounce, no "connected" pill, nothing to
+configure.
+
+## What's deferred (Phase 1.5+)
+
+- **Executor / autonomous runs** — intentionally off in self-hosted;
+  the client's Claude Code is the executor. Runs stay `pending` until
+  Claude picks them up via `runs_claim`.
+- **Knowledge file uploads** — pulled from self-hosted entirely. Clients
+  drag local markdown into Claude Code's context window directly.
 
 ## Verifying it's healthy
 

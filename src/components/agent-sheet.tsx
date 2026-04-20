@@ -325,15 +325,26 @@ export function AgentSheet(props: Props) {
               </div>
             </Field>
 
-            <Field
-              label="Tools & integrations"
-              hint="Pick which tools this agent can call. For write actions, choose how much oversight you want."
-            >
-              <ToolsPicker
-                value={form.writePolicy}
-                onChange={(writePolicy) => setForm({ ...form, writePolicy })}
-              />
-            </Field>
+            {isSelfHosted ? (
+              <Field
+                label="Tools & integrations"
+                hint="In Rawclaw self-hosted, your Claude Code brings the tools — Gmail, Slack, Drive, and any MCP servers you've added. Set expectations in the job description above."
+              >
+                <div className="rounded-md border border-dashed border-border bg-card/30 px-3 py-3 text-[12px] text-muted-foreground">
+                  Nothing to configure here. Connectors live in Claude.
+                </div>
+              </Field>
+            ) : (
+              <Field
+                label="Tools & integrations"
+                hint="Pick which tools this agent can call. For write actions, choose how much oversight you want."
+              >
+                <ToolsPicker
+                  value={form.writePolicy}
+                  onChange={(writePolicy) => setForm({ ...form, writePolicy })}
+                />
+              </Field>
+            )}
 
             {error && (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">

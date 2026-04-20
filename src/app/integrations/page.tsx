@@ -1,5 +1,5 @@
 import { PageShell } from "@/components/page-shell";
-import { IntegrationsGrid } from "@/components/integrations-grid";
+import { IntegrationsView } from "@/components/integrations-view";
 
 export const metadata = {
   title: "Integrations — Rawgrowth",
@@ -9,9 +9,9 @@ export default function IntegrationsPage() {
   return (
     <PageShell
       title="Integrations"
-      description="Connect the tools your business already runs on. Rawgrowth syncs data across them so your agents have real context."
+      description="Your agents use the tools your business already runs on — Gmail, Slack, Drive, and more."
     >
-      <IntegrationsGrid />
+      <IntegrationsView />
     </PageShell>
   );
 }

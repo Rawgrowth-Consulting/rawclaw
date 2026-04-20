@@ -4,6 +4,13 @@
 runs on a VPS we set up for you. You just point your existing Claude Code
 at it with one command. No git clone, no Docker, no Node required.
 
+**Integrations live in Claude, not Rawclaw.** Your Claude Desktop/Code
+has native connectors for Gmail, Slack, Drive, Notion, Linear, GitHub,
+Asana, Calendar, Canva, and more. Authorize them once in Claude settings
+and every Rawclaw routine picks them up automatically. Anything Anthropic
+doesn't ship (Shopify, Stripe, custom APIs) — install a community MCP
+server in your Claude config.
+
 ## One-liner (recommended)
 
 ```bash

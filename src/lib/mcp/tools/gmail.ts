@@ -1,8 +1,15 @@
 import { registerTool, text, textError } from "../registry";
 import { nangoCall } from "../proxy";
+import { isSelfHosted } from "@/lib/deploy-mode";
 
 /**
  * Gmail tools via Nango proxy → Google Gmail API.
+ *
+ * ONLY registered in hosted mode. In self-hosted mode the client's Claude
+ * Code drives routines and already has Gmail via Anthropic's native
+ * connectors — we'd be shadowing a better-maintained integration if we
+ * registered these. Routine instructions in self-hosted mode say
+ * "use your Gmail tools" and Claude reaches for its native connector.
  *
  * Provider registered in Nango as `google-mail`; catalog integration id
  * is `gmail`. OAuth scopes required:
@@ -10,6 +17,10 @@ import { nangoCall } from "../proxy";
  *   - gmail.compose   (for draft)
  *   - gmail.send      (for direct send — gated by approvals later)
  */
+
+if (isSelfHosted) {
+  // No tools registered — the client's Claude Code has Gmail natively.
+} else {
 
 type GmailMessagesListResponse = {
   messages?: Array<{ id: string; threadId: string }>;
@@ -192,3 +203,5 @@ registerTool({
     );
   },
 });
+
+} // end !isSelfHosted

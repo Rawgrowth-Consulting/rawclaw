@@ -38,13 +38,22 @@ You arrive (or jump on Zoom) with everything pre-deployed. The client just needs
   (Dashboard, Agents, Routines, Approvals, Activity, Integrations, Members)
 - [ ] Encourage them to update the password under Members → their profile (TODO if not built)
 
-### 2. Connect their first integration (5 min)
+### 2. Connect their first integration — in CLAUDE, not Rawclaw (5 min)
 
-- [ ] Go to `/integrations`
-- [ ] Click their priority integration (Gmail in 9/10 cases)
-- [ ] Walk them through the Nango OAuth bounce
-- [ ] Confirm the green "Connected" pill appears
-- [ ] Show them where to come back to disconnect/reconnect
+Rawclaw does not own the OAuth. In self-hosted mode, integrations live
+in the client's Claude Desktop / Claude Code settings, using Anthropic's
+native connectors (Gmail, Slack, Drive, Notion, Linear, etc.).
+
+- [ ] Open Claude Desktop → Settings → Connectors
+      (or https://claude.ai/settings/connectors)
+- [ ] Authorize Gmail (the usual starter)
+- [ ] In a new Claude chat: "Do you have access to my Gmail?" — confirm
+- [ ] Open Rawclaw's `/integrations` page to show them the list of
+      available native connectors + how to add niche MCP servers
+      (Shopify, Stripe, etc.) for anything Anthropic doesn't ship
+
+**Talking point**: no second OAuth, no extra password, Rawclaw never
+touches their Gmail token. Their existing Claude login already has it.
 
 ### 3. Connect Claude Code (5 min)
 
@@ -141,5 +150,5 @@ it complete. Refresh the Activity tab — they see the run go from
 | --- | --- |
 | Caddy hasn't gotten a cert yet | Use http:// for the demo, fix DNS after |
 | MCP server doesn't connect | Have them run `/mcp` — read the error. Usually a token typo or stale Claude Code |
-| Gmail OAuth fails | Check Nango is configured for their domain; if not, fall back to demo mode |
+| Gmail connector in Claude not working | Have them re-authorize at claude.ai/settings/connectors; not our problem to debug Google OAuth |
 | Routine sits pending forever | Their Claude Code isn't watching — explain they have to drive it with `/rawgrowth-triage` |
