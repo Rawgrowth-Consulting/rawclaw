@@ -40,7 +40,6 @@ export default async function RootLayout({
       <body className="min-h-screen font-sans">
         <AppShell
           orgName={ctx?.activeOrgName ?? null}
-          orgSlug={ctx?.activeOrgSlug ?? null}
           isAdmin={ctx?.isAdmin ?? false}
           isImpersonating={ctx?.isImpersonating ?? false}
           homeOrgId={ctx?.homeOrgId ?? null}
