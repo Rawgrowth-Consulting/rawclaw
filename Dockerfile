@@ -36,19 +36,16 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Migration runner ships inside the image
+# Migration runner + entrypoint ship inside the image
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/supabase/migrations ./supabase/migrations
 COPY --from=builder --chown=nextjs:nodejs /app/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg ./node_modules/pg
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-types ./node_modules/pg-types
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-protocol ./node_modules/pg-protocol
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-connection-string ./node_modules/pg-connection-string
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-pool ./node_modules/pg-pool
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pg-int8 ./node_modules/pg-int8
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pgpass ./node_modules/pgpass
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/jsonwebtoken ./node_modules/jsonwebtoken
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
+
+# Install runtime tooling (pg + jsonwebtoken + bcryptjs) with their full
+# transitive trees. Hand-picking from the builder stage is fragile because
+# it skips deps like postgres-array, postgres-date, etc.
+RUN npm install --omit=dev --no-save --no-package-lock \
+      pg@^8 jsonwebtoken@^9 bcryptjs@^3
 
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
