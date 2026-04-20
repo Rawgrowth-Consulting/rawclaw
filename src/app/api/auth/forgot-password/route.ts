@@ -41,8 +41,12 @@ export async function POST(req: Request) {
 
   try {
     await sendPasswordResetEmail(user.email, resetUrl);
-  } catch {
-    return NextResponse.json({ ok: false, error: "Failed to send email" }, { status: 500 });
+  } catch (err) {
+    console.error("[forgot-password] Resend send failed:", err);
+    return NextResponse.json(
+      { ok: false, error: `Failed to send email: ${(err as Error).message}` },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ ok: true });
