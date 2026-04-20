@@ -21,6 +21,7 @@ import { AgentSheet } from "@/components/agent-sheet";
 import { AGENT_ROLES, type AgentStatus } from "@/lib/agents/constants";
 import { useAgents } from "@/lib/agents/use-agents";
 import type { Agent } from "@/lib/agents/dto";
+import { getConnector } from "@/lib/connectors";
 
 // ────────────────────────── Role icons ──────────────────────────
 
@@ -186,6 +187,8 @@ function AgentCard({
         </Badge>
       </div>
 
+      <ConnectorsRow ids={Object.keys(agent.writePolicy ?? {})} />
+
       <div className="mt-3">
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
           <span>
@@ -204,6 +207,46 @@ function AgentCard({
         </div>
       </div>
     </button>
+  );
+}
+
+function ConnectorsRow({ ids }: { ids: string[] }) {
+  if (ids.length === 0) return null;
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center gap-1">
+      {ids.slice(0, 6).map((id) => {
+        const c = getConnector(id);
+        if (c) {
+          return (
+            <div
+              key={id}
+              title={c.label}
+              className="flex size-5 items-center justify-center rounded border border-border"
+              style={{ backgroundColor: `${c.brand}1a` }}
+            >
+              <c.Icon
+                className="size-3"
+                style={{ color: c.brand === "#FFFFFF" ? "#fff" : c.brand }}
+              />
+            </div>
+          );
+        }
+        return (
+          <div
+            key={id}
+            title={id}
+            className="flex h-5 items-center rounded border border-border bg-card/40 px-1.5 text-[9px] font-mono text-muted-foreground"
+          >
+            {id}
+          </div>
+        );
+      })}
+      {ids.length > 6 && (
+        <div className="text-[9px] font-mono text-muted-foreground">
+          +{ids.length - 6}
+        </div>
+      )}
+    </div>
   );
 }
 

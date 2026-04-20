@@ -35,6 +35,7 @@ import {
 import { useAgents } from "@/lib/agents/use-agents";
 import type { Agent } from "@/lib/agents/dto";
 import { ToolsPicker, type WritePolicy } from "@/components/agents/tools-picker";
+import { ConnectorsPicker } from "@/components/agents/connectors-picker";
 import { useConfig } from "@/lib/use-config";
 
 const NONE = "__none__";
@@ -326,13 +327,11 @@ export function AgentSheet(props: Props) {
             </Field>
 
             {isSelfHosted ? (
-              <Field
-                label="Tools & integrations"
-                hint="In Rawclaw self-hosted, your Claude Code brings the tools — Gmail, Slack, Drive, and any MCP servers you've added. Set expectations in the job description above."
-              >
-                <div className="rounded-md border border-dashed border-border bg-card/30 px-3 py-3 text-[12px] text-muted-foreground">
-                  Nothing to configure here. Connectors live in Claude.
-                </div>
+              <Field label="Connectors">
+                <ConnectorsPicker
+                  value={form.writePolicy}
+                  onChange={(writePolicy) => setForm({ ...form, writePolicy })}
+                />
               </Field>
             ) : (
               <Field
