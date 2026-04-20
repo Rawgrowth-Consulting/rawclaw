@@ -60,7 +60,7 @@ Usage:
 
 Required:
   --host       Public IP or hostname of a fresh Ubuntu/Debian VPS
-  --domain     Subdomain DNS already points at this VPS, e.g. acme.rawgrowth.app
+  --domain     Subdomain DNS already points at this VPS, e.g. acme.rawgrowth.ai
   --email      Admin email seeded as the org's owner
   --org        Org display name (use quotes if it has spaces)
 
@@ -68,7 +68,18 @@ Optional:
   --ssh-user   SSH user (default: root)
   --repo       Git URL to clone (default: rawgrowth-aios main)
 
+Required environment variables (export before running):
+  RESEND_API_KEY   Rawgrowth's shared Resend key, used for invite + reset emails.
+                   Without this, client invites silently fail.
+
 USAGE
+  exit 1
+fi
+
+if [ -z "${RESEND_API_KEY:-}" ]; then
+  red "✗ RESEND_API_KEY is not set. Invites and password resets will fail."
+  red "  export RESEND_API_KEY=re_... before running this script, or pass it inline:"
+  red "    RESEND_API_KEY=re_... $0 --host ... --domain ... --email ... --org \"...\""
   exit 1
 fi
 
