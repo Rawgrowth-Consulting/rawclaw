@@ -12,7 +12,7 @@ set -euo pipefail
 #   ./cc-install.sh --token rgmcp_xxx --url https://acme.rawgrowth.app
 #
 # Or curl-pipe:
-#   curl -fsSL https://raw.githubusercontent.com/JamesWeb3/rawgrowth-aios/main/scripts/cc-install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/Rawgrowth-Consulting/rawclaw-installer/main/cc-install.sh \
 #     | bash -s -- --token rgmcp_xxx --url https://acme.rawgrowth.app
 # ─────────────────────────────────────────────────────────────
 
