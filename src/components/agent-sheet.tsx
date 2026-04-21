@@ -39,6 +39,8 @@ import { useConfig } from "@/lib/use-config";
 
 const NONE = "__none__";
 
+type Department = "marketing" | "sales" | "fulfilment" | "finance";
+
 type FormState = {
   name: string;
   title: string;
@@ -48,6 +50,7 @@ type FormState = {
   runtime: AgentRuntime;
   budget: number;
   writePolicy: WritePolicy;
+  department: Department | typeof NONE;
 };
 
 function emptyForm(): FormState {
@@ -60,6 +63,7 @@ function emptyForm(): FormState {
     runtime: "claude-sonnet-4-5",
     budget: 500,
     writePolicy: {},
+    department: NONE,
   };
 }
 
@@ -73,6 +77,7 @@ function agentToForm(agent: Agent): FormState {
     runtime: agent.runtime,
     budget: agent.budgetMonthlyUsd,
     writePolicy: agent.writePolicy ?? {},
+    department: (agent.department ?? NONE) as Department | typeof NONE,
   };
 }
 
@@ -144,6 +149,7 @@ export function AgentSheet(props: Props) {
       runtime: form.runtime,
       budgetMonthlyUsd: form.budget,
       writePolicy: form.writePolicy,
+      department: form.department === NONE ? null : form.department,
     };
     if (isEdit) {
       void updateAgent(props.agent.id, payload);
@@ -259,6 +265,29 @@ export function AgentSheet(props: Props) {
                 </Select>
               </Field>
             </div>
+
+            <Field
+              label="Department"
+              hint="Groups this agent under that pillar on the Departments page."
+            >
+              <Select
+                value={form.department}
+                onValueChange={(v) =>
+                  setForm({ ...form, department: (v ?? NONE) as Department | typeof NONE })
+                }
+              >
+                <SelectTrigger className="w-full bg-input/40">
+                  <SelectValue placeholder="No department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Unassigned</SelectItem>
+                  <SelectItem value="marketing">Marketing</SelectItem>
+                  <SelectItem value="sales">Sales</SelectItem>
+                  <SelectItem value="fulfilment">Fulfilment</SelectItem>
+                  <SelectItem value="finance">Finance</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
 
             <Field
               label="Job description"

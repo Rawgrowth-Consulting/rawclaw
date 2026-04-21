@@ -50,7 +50,7 @@ export type Database = {
           password_hash: string | null;
           email_verified: string | null;
           organization_id: string | null;
-          role: "owner" | "admin" | "member";
+          role: "owner" | "admin" | "member" | "developer";
           created_at: string;
           updated_at: string;
         };
@@ -62,7 +62,7 @@ export type Database = {
           password_hash?: string | null;
           email_verified?: string | null;
           organization_id?: string | null;
-          role?: "owner" | "admin" | "member";
+          role?: "owner" | "admin" | "member" | "developer";
         };
         Update: Partial<Database["public"]["Tables"]["rgaios_users"]["Row"]>;
         Relationships: [];
@@ -105,7 +105,7 @@ export type Database = {
           token_hash: string;
           email: string;
           name: string | null;
-          role: "owner" | "admin" | "member";
+          role: "owner" | "admin" | "member" | "developer";
           organization_id: string;
           invited_by: string | null;
           expires_at: string;
@@ -116,7 +116,7 @@ export type Database = {
           token_hash: string;
           email: string;
           name?: string | null;
-          role?: "owner" | "admin" | "member";
+          role?: "owner" | "admin" | "member" | "developer";
           organization_id: string;
           invited_by?: string | null;
           expires_at: string;
@@ -208,6 +208,7 @@ export type Database = {
             string,
             "direct" | "requires_approval" | "draft_only"
           >;
+          department: "marketing" | "sales" | "fulfilment" | "finance" | null;
           created_at: string;
           updated_at: string;
         };
@@ -224,8 +225,26 @@ export type Database = {
             string,
             "direct" | "requires_approval" | "draft_only"
           >;
+          department?: "marketing" | "sales" | "fulfilment" | "finance" | null;
         };
         Update: Partial<Database["public"]["Tables"]["rgaios_agents"]["Row"]>;
+        Relationships: [];
+      };
+      rgaios_agent_skills: {
+        Row: {
+          agent_id: string;
+          skill_id: string;
+          organization_id: string;
+          created_at: string;
+        };
+        Insert: {
+          agent_id: string;
+          skill_id: string;
+          organization_id: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["rgaios_agent_skills"]["Row"]
+        >;
         Relationships: [];
       };
       rgaios_routines: {

@@ -21,7 +21,7 @@ export async function GET() {
 
   const { data: org, error } = await supabaseAdmin()
     .from("rgaios_organizations")
-    .select("id, name, slug, mcp_token, created_at")
+    .select("id, name, slug, mcp_token, created_at, marketing, sales, fulfilment, finance")
     .eq("id", ctx.activeOrgId)
     .maybeSingle();
   if (error || !org) {
@@ -30,6 +30,12 @@ export async function GET() {
 
   return NextResponse.json({
     org,
+    pillars: {
+      marketing: org.marketing ?? false,
+      sales: org.sales ?? false,
+      fulfilment: org.fulfilment ?? false,
+      finance: org.finance ?? false,
+    },
     isAdmin: ctx.isAdmin,
     isImpersonating: ctx.isImpersonating,
   });

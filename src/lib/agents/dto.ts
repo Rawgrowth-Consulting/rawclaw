@@ -1,6 +1,9 @@
 import type { Database } from "@/lib/supabase/types";
 import type { AgentRole, AgentRuntime, AgentStatus } from "./constants";
 
+export type Department = "marketing" | "sales" | "fulfilment" | "finance";
+export const DEPARTMENTS: Department[] = ["marketing", "sales", "fulfilment", "finance"];
+
 type AgentRow = Database["public"]["Tables"]["rgaios_agents"]["Row"];
 
 /**
@@ -19,6 +22,7 @@ export type Agent = {
   spentMonthlyUsd: number;
   status: AgentStatus;
   writePolicy: Record<string, "direct" | "requires_approval" | "draft_only">;
+  department: Department | null;
   createdAt: string;
 };
 
@@ -35,6 +39,7 @@ export function agentFromRow(row: AgentRow): Agent {
     spentMonthlyUsd: row.spent_monthly_usd,
     status: row.status,
     writePolicy: row.write_policy,
+    department: (row.department ?? null) as Department | null,
     createdAt: row.created_at,
   };
 }
@@ -48,6 +53,7 @@ export type AgentCreateInput = {
   description: string;
   runtime: AgentRuntime;
   budgetMonthlyUsd: number;
+  department?: Department | null;
   writePolicy?: Record<string, "direct" | "requires_approval" | "draft_only">;
 };
 

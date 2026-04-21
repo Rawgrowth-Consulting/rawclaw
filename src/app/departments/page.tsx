@@ -1,6 +1,5 @@
-import { Building2 } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
-import { EmptyState } from "@/components/empty-state";
+import { DepartmentsView } from "@/components/departments/departments-view";
 
 export const metadata = {
   title: "Departments — Rawgrowth",
@@ -10,13 +9,9 @@ export default function DepartmentsPage() {
   return (
     <PageShell
       title="Departments"
-      description="Group your agents into departments that mirror your business pillars."
+      description="Organize your agents by business pillar. Every agent can belong to Marketing, Sales, Fulfilment, or Finance — or stay unassigned."
     >
-      <EmptyState
-        icon={Building2}
-        title="Departments coming soon"
-        description="Organize agents into Marketing, Sales, Fulfilment, and Finance teams. Departments map to your Dashboard pillars, so metrics and ownership stay aligned."
-      />
+      <DepartmentsView />
     </PageShell>
   );
 }

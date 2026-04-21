@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { hashToken } from "@/lib/auth/reset-token";
 import { hashPassword } from "@/lib/auth/password";
 
-export type MemberRole = "owner" | "admin" | "member";
+export type MemberRole = "owner" | "admin" | "member" | "developer";
 
 export type MemberRow = {
   id: string;

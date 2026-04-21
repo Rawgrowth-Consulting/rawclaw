@@ -15,11 +15,11 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     email?: string;
     name?: string;
-    role?: "owner" | "admin" | "member";
+    role?: "owner" | "admin" | "member" | "developer";
   };
   const email = String(body.email ?? "").trim();
   const name = body.name ? String(body.name).trim() : null;
-  const role = body.role && ["owner", "admin", "member"].includes(body.role)
+  const role = body.role && ["owner", "admin", "member", "developer"].includes(body.role)
     ? body.role
     : "member";
 

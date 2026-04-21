@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Mail, Plus, ShieldCheck, UserRound, Hourglass } from "lucide-react";
+import { toast } from "sonner";
+import { Mail, Plus, ShieldCheck, UserRound, Hourglass, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ import {
 } from "@/components/ui/sheet";
 import { jsonFetcher } from "@/lib/swr";
 
-type Role = "owner" | "admin" | "member";
+type Role = "owner" | "admin" | "member" | "developer";
 type Member = {
   id: string;
   email: string;
@@ -41,7 +42,12 @@ type PendingInvite = {
   created_at: string;
   expires_at: string;
 };
-type Response = { members: Member[]; invites: PendingInvite[] };
+type Response = {
+  members: Member[];
+  invites: PendingInvite[];
+  currentUserId: string | null;
+  currentUserRole: Role | null;
+};
 
 function roleBadgeClass(role: Role) {
   if (role === "owner") {
@@ -49,6 +55,9 @@ function roleBadgeClass(role: Role) {
   }
   if (role === "admin") {
     return "rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.5px] text-amber-400";
+  }
+  if (role === "developer") {
+    return "rounded-full border border-blue-400/30 bg-blue-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.5px] text-blue-400";
   }
   return "rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.5px] text-muted-foreground";
 }
@@ -60,9 +69,34 @@ export function MembersView() {
     { refreshInterval: 15_000 },
   );
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const members = data?.members ?? [];
   const invites = data?.invites ?? [];
+  const isOwner = data?.currentUserRole === "owner";
+  const myId = data?.currentUserId ?? null;
+
+  async function removeMember(m: Member) {
+    if (m.id === myId) {
+      toast.error("You can't remove yourself.");
+      return;
+    }
+    if (!confirm(`Remove ${m.name ?? m.email} from the organization?`)) return;
+    setRemovingId(m.id);
+    try {
+      const res = await fetch(`/api/members/${m.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Failed to remove");
+      }
+      toast.success(`Removed ${m.name ?? m.email}`);
+      mutate();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setRemovingId(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -94,52 +128,76 @@ export function MembersView() {
               <th className="px-4 py-2.5 font-medium">Role</th>
               <th className="px-4 py-2.5 font-medium">Joined</th>
               <th className="px-4 py-2.5 font-medium">Status</th>
+              <th className="px-4 py-2.5 font-medium" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {isLoading && !data ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
+                <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
                   Loading…
                 </td>
               </tr>
             ) : members.length === 0 && invites.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                   No members yet. Invite your first teammate to get started.
                 </td>
               </tr>
             ) : (
               <>
-                {members.map((m) => (
-                  <tr key={m.id} className="bg-background/30">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex size-7 items-center justify-center rounded-full border border-border bg-primary/10 text-primary">
-                          <UserRound className="size-3.5" />
+                {members.map((m) => {
+                  const isMe = m.id === myId;
+                  const canRemove = isOwner && !isMe;
+                  return (
+                    <tr key={m.id} className="bg-background/30">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex size-7 items-center justify-center rounded-full border border-border bg-primary/10 text-primary">
+                            <UserRound className="size-3.5" />
+                          </div>
+                          <span className="font-medium text-foreground">
+                            {m.name ?? "—"}
+                          </span>
+                          {isMe && (
+                            <span className="text-[10px] text-muted-foreground">
+                              (you)
+                            </span>
+                          )}
                         </div>
-                        <span className="font-medium text-foreground">
-                          {m.name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[12px] text-muted-foreground">
+                        {m.email}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={roleBadgeClass(m.role)}>{m.role}</span>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {new Date(m.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 text-[11px] text-primary">
+                          <ShieldCheck className="size-3" />
+                          Active
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[12px] text-muted-foreground">
-                      {m.email}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={roleBadgeClass(m.role)}>{m.role}</span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {new Date(m.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 text-[11px] text-primary">
-                        <ShieldCheck className="size-3" />
-                        Active
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {canRemove && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={removingId === m.id}
+                            onClick={() => removeMember(m)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="size-3.5" />
+                            {removingId === m.id ? "Removing…" : "Remove"}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {invites.map((inv) => (
                   <tr key={inv.email + inv.created_at} className="bg-background/10">
                     <td className="px-4 py-3">
@@ -167,6 +225,7 @@ export function MembersView() {
                         Pending
                       </span>
                     </td>
+                    <td className="px-4 py-3" />
                   </tr>
                 ))}
               </>
@@ -283,6 +342,7 @@ function InviteSheet({
                 <SelectItem value="owner">Owner</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="developer">Developer (Rawgrowth support)</SelectItem>
               </SelectContent>
             </Select>
           </div>

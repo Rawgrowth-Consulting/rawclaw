@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       runtime: body.runtime,
       budgetMonthlyUsd: Number(body.budgetMonthlyUsd ?? 500),
       writePolicy: body.writePolicy,
+      department: body.department ?? null,
     });
     return NextResponse.json({ agent }, { status: 201 });
   } catch (err) {

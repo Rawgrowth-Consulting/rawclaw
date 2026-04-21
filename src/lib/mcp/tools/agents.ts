@@ -6,6 +6,8 @@ import {
   updateAgent,
 } from "@/lib/agents/queries";
 import { AGENT_ROLES, type AgentRole } from "@/lib/agents/constants";
+import { listAssignments } from "@/lib/skills/queries";
+import { getSkill } from "@/lib/skills/catalog";
 
 /**
  * MCP tools for the agent lifecycle. Let clients create, list, update, and
@@ -30,19 +32,34 @@ registerTool({
     properties: {},
   },
   handler: async (_args, ctx) => {
-    const agents = await listAgentsForOrg(ctx.organizationId);
+    const [agents, assignments] = await Promise.all([
+      listAgentsForOrg(ctx.organizationId),
+      listAssignments(ctx.organizationId),
+    ]);
     if (agents.length === 0) {
       return text(
         "No agents yet. Create one with `agents_create` — minimum required is `name`.",
       );
     }
+    const skillsByAgent = new Map<string, string[]>();
+    for (const a of assignments) {
+      const skill = getSkill(a.skill_id);
+      if (!skill) continue;
+      const arr = skillsByAgent.get(a.agent_id) ?? [];
+      arr.push(skill.name);
+      skillsByAgent.set(a.agent_id, arr);
+    }
+
     const lines = [
       `Found ${agents.length} agent(s):`,
       "",
-      ...agents.map(
-        (a) =>
-          `- **${a.name}**${a.title ? ` — ${a.title}` : ""} · role: ${a.role} · status: ${a.status} · id: \`${a.id}\``,
-      ),
+      ...agents.map((a) => {
+        const skills = skillsByAgent.get(a.id) ?? [];
+        const skillsLine = skills.length
+          ? ` · skills: ${skills.join(", ")}`
+          : "";
+        return `- **${a.name}**${a.title ? ` — ${a.title}` : ""} · role: ${a.role} · status: ${a.status}${skillsLine} · id: \`${a.id}\``;
+      }),
     ];
     return text(lines.join("\n"));
   },
@@ -67,7 +84,7 @@ function integrationsToPolicy(
 registerTool({
   name: "agents_create",
   description:
-    "Hire a new agent. Required: name. Optional: title (e.g. 'Head of Growth'), role (one of: ceo, cto, engineer, marketer, sdr, ops, designer, general — default: general), description (what the agent is responsible for), reports_to (id of another agent), budget_monthly_usd (default 500), integrations (array of connector ids the agent uses — e.g. ['gmail','notion','slack']).",
+    "Hire a new agent. Required: name. Optional: title (e.g. 'Head of Growth'), role (one of: ceo, cto, engineer, marketer, sdr, ops, designer, general — default: general), description (what the agent is responsible for), reports_to (id of another agent), budget_monthly_usd (default 500), integrations (array of connector ids the agent uses — e.g. ['gmail','notion','slack']), department (one of: marketing, sales, fulfilment, finance).",
   isWrite: true,
   inputSchema: {
     type: "object",
@@ -97,6 +114,11 @@ registerTool({
         description:
           "Connector ids the agent uses. Native: gmail, google-calendar, google-drive, slack, notion, linear, github, asana, canva. Community: shopify, stripe, hubspot, telegram. Any string is accepted for custom MCP servers.",
       },
+      department: {
+        type: "string",
+        description:
+          "One of: marketing, sales, fulfilment, finance. Groups this agent under that pillar on the Departments page.",
+      },
     },
     required: ["name"],
   },
@@ -111,6 +133,19 @@ registerTool({
       );
     }
 
+    const DEPARTMENTS = ["marketing", "sales", "fulfilment", "finance"] as const;
+    type Department = typeof DEPARTMENTS[number];
+    let department: Department | null = null;
+    if (args.department !== undefined && args.department !== null) {
+      const d = String(args.department).toLowerCase();
+      if (!DEPARTMENTS.includes(d as Department)) {
+        return textError(
+          `department must be one of: ${DEPARTMENTS.join(", ")}. Got: ${d}`,
+        );
+      }
+      department = d as Department;
+    }
+
     const writePolicy = integrationsToPolicy(args.integrations);
 
     const agent = await createAgent(ctx.organizationId, {
@@ -121,6 +156,7 @@ registerTool({
       description: String(args.description ?? "").trim(),
       runtime: "claude-sonnet-4-5",
       budgetMonthlyUsd: Number(args.budget_monthly_usd ?? 500),
+      department,
       writePolicy,
     });
 
@@ -170,6 +206,11 @@ registerTool({
         type: "string",
         description: "One of: idle, running, paused, error.",
       },
+      department: {
+        type: "string",
+        description:
+          "One of: marketing, sales, fulfilment, finance. Pass empty string to unassign.",
+      },
     },
     required: ["id"],
   },
@@ -199,6 +240,17 @@ registerTool({
     if (args.integrations !== undefined) {
       // Explicit replacement — pass [] to clear.
       patch.writePolicy = integrationsToPolicy(args.integrations) ?? {};
+    }
+    if (args.department !== undefined) {
+      const d = String(args.department).trim().toLowerCase();
+      const DEPARTMENTS = ["marketing", "sales", "fulfilment", "finance"];
+      if (d === "") {
+        patch.department = null;
+      } else if (!DEPARTMENTS.includes(d)) {
+        return textError(`department must be one of: ${DEPARTMENTS.join(", ")}`);
+      } else {
+        patch.department = d;
+      }
     }
 
     const agent = await updateAgent(ctx.organizationId, id, patch);

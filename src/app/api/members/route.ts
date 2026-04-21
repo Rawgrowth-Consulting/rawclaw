@@ -14,7 +14,13 @@ export async function GET() {
       listMembers(ctx.activeOrgId),
       listPendingInvites(ctx.activeOrgId),
     ]);
-    return NextResponse.json({ members, invites });
+    const me = members.find((m) => m.id === ctx.userId);
+    return NextResponse.json({
+      members,
+      invites,
+      currentUserId: ctx.userId,
+      currentUserRole: me?.role ?? null,
+    });
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message },

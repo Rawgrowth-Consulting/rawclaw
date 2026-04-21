@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  CircleDot,
   Bot,
   ShieldCheck,
   Repeat,
@@ -62,7 +61,6 @@ const navSections: NavSection[] = [
       { label: "Routines", href: "/routines", icon: Repeat },
       { label: "Activity", href: "/activity", icon: Activity },
       { label: "Approvals", href: "/approvals", icon: ShieldCheck },
-      { label: "Issues", href: "/issues", icon: CircleDot },
     ],
   },
   {
