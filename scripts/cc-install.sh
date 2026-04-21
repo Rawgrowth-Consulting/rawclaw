@@ -135,6 +135,24 @@ Steps:
 Keep replies terse — Telegram, not email.
 "
 
+install_command "rawgrowth-skills-sync" \
+"Install every Claude Code skill that's assigned to any agent in my rawgrowth org, skipping skills that are already installed on this laptop.
+
+Steps:
+1. Call \`agents_list\` on the rawgrowth MCP server. The response lists each agent's assigned skills and, at the bottom, a list of install commands for every unique skill.
+2. For each skill in that list:
+   a. Check whether \`~/.claude/skills/<skill_directory>\` already exists on this laptop using a Bash ls or stat.
+   b. If it DOES exist, say '✓ <skill name> already installed' and move on.
+   c. If it DOES NOT exist, run the install command exactly as given (an \`npx skills add ...\` line) using the Bash tool.
+   d. After running the install, verify the directory now exists.
+3. When done, give me a single-line summary: how many were already installed, how many you installed now, and any that failed.
+
+Safety:
+- Only run \`npx skills add\` commands that came directly from the MCP response. Do not guess URLs.
+- If no agents have any skills assigned yet, say 'No skills to sync.' and stop.
+- Never uninstall or modify existing skills.
+"
+
 echo
 bold "▸ Done."
 echo
@@ -142,4 +160,5 @@ echo "  Next steps:"
 echo "    1. Restart Claude Code (or reload it)."
 echo "    2. Type   /mcp   — confirm 'rawgrowth' is listed."
 echo "    3. Try    /rawgrowth-status"
+echo "    4. Run    /rawgrowth-skills-sync   — installs any skills your agents need"
 echo

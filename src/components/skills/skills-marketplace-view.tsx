@@ -8,6 +8,9 @@ import {
   Palette,
   Component,
   Wrench,
+  Megaphone,
+  BadgeDollarSign,
+  Wallet,
   Search,
   Check,
   Copy,
@@ -36,6 +39,9 @@ const ICONS = {
   palette: Palette,
   component: Component,
   wrench: Wrench,
+  megaphone: Megaphone,
+  "badge-dollar": BadgeDollarSign,
+  wallet: Wallet,
 };
 
 type Assignment = { agent_id: string; skill_id: string; created_at: string };
@@ -90,9 +96,12 @@ export function SkillsMarketplaceView() {
   const categories: Array<SkillCategory | "all"> = [
     "all",
     "engineering",
+    "marketing",
+    "sales",
+    "ops",
     "design",
     "ui",
-    "ops",
+    "finance",
   ];
 
   return (

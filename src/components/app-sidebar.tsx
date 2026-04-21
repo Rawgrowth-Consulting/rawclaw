@@ -13,6 +13,7 @@ import {
   BookOpen,
   Activity,
   KeyRound,
+  Sparkles,
 } from "lucide-react";
 
 import {
@@ -67,6 +68,7 @@ const navSections: NavSection[] = [
     label: "Settings",
     items: [
       { label: "Channels", href: "/channels", icon: Radio },
+      { label: "Skills", href: "/skills", icon: Sparkles },
       { label: "MCP", href: "/settings/mcp", icon: KeyRound },
       { label: "Company", href: "/company", icon: Settings2 },
     ],
@@ -75,6 +77,8 @@ const navSections: NavSection[] = [
 
 export function AppSidebar({
   orgName,
+  userEmail = null,
+  userName = null,
   isAdmin = false,
   isImpersonating = false,
   homeOrgId = null,
@@ -82,6 +86,8 @@ export function AppSidebar({
   orgs = [],
 }: {
   orgName?: string;
+  userEmail?: string | null;
+  userName?: string | null;
   isAdmin?: boolean;
   isImpersonating?: boolean;
   homeOrgId?: string | null;
@@ -175,7 +181,10 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2">
-        <UserMenu name="James Oldham" email="james.oldham0604@gmail.com" />
+        <UserMenu
+          name={userName ?? userEmail ?? "Signed in"}
+          email={userEmail ?? ""}
+        />
       </SidebarFooter>
     </Sidebar>
   );

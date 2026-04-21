@@ -12,6 +12,8 @@ type Org = { id: string; name: string };
 export function AppShell({
   children,
   orgName,
+  userEmail,
+  userName,
   isAdmin,
   isImpersonating,
   homeOrgId,
@@ -20,6 +22,8 @@ export function AppShell({
 }: {
   children: React.ReactNode;
   orgName?: string | null;
+  userEmail?: string | null;
+  userName?: string | null;
   isAdmin?: boolean;
   isImpersonating?: boolean;
   homeOrgId?: string | null;
@@ -38,6 +42,8 @@ export function AppShell({
       <SidebarProvider>
         <AppSidebar
           orgName={orgName ?? undefined}
+          userEmail={userEmail ?? null}
+          userName={userName ?? null}
           isAdmin={isAdmin ?? false}
           isImpersonating={isImpersonating ?? false}
           homeOrgId={homeOrgId ?? null}

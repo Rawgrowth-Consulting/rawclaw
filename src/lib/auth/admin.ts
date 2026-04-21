@@ -10,6 +10,8 @@ export type OrgSummary = { id: string; name: string };
 
 export type OrgContext = {
   userId: string;
+  userEmail: string | null;
+  userName: string | null;
   isAdmin: boolean;
   homeOrgId: string | null;
   activeOrgId: string | null;
@@ -17,13 +19,23 @@ export type OrgContext = {
   isImpersonating: boolean;
 };
 
-async function getUserHomeOrgId(userId: string): Promise<string | null> {
+async function getUserProfile(
+  userId: string,
+): Promise<{
+  organization_id: string | null;
+  email: string | null;
+  name: string | null;
+}> {
   const { data } = await supabaseAdmin()
     .from("rgaios_users")
-    .select("organization_id")
+    .select("organization_id, email, name")
     .eq("id", userId)
     .maybeSingle();
-  return data?.organization_id ?? null;
+  return {
+    organization_id: data?.organization_id ?? null,
+    email: data?.email ?? null,
+    name: data?.name ?? null,
+  };
 }
 
 export async function getOrgContext(): Promise<OrgContext | null> {
@@ -31,7 +43,8 @@ export async function getOrgContext(): Promise<OrgContext | null> {
   const userId = session?.user?.id;
   if (!userId) return null;
 
-  const homeOrgId = await getUserHomeOrgId(userId);
+  const profile = await getUserProfile(userId);
+  const homeOrgId = profile.organization_id;
   const isAdmin = homeOrgId === ADMIN_ORG_ID;
 
   let activeOrgId = homeOrgId;
@@ -58,6 +71,8 @@ export async function getOrgContext(): Promise<OrgContext | null> {
 
   return {
     userId,
+    userEmail: profile.email,
+    userName: profile.name,
     isAdmin,
     homeOrgId,
     activeOrgId,

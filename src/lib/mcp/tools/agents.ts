@@ -7,7 +7,7 @@ import {
 } from "@/lib/agents/queries";
 import { AGENT_ROLES, type AgentRole } from "@/lib/agents/constants";
 import { listAssignments } from "@/lib/skills/queries";
-import { getSkill } from "@/lib/skills/catalog";
+import { getSkill, installCommand } from "@/lib/skills/catalog";
 
 /**
  * MCP tools for the agent lifecycle. Let clients create, list, update, and
@@ -42,9 +42,11 @@ registerTool({
       );
     }
     const skillsByAgent = new Map<string, string[]>();
+    const uniqueSkillIds = new Set<string>();
     for (const a of assignments) {
       const skill = getSkill(a.skill_id);
       if (!skill) continue;
+      uniqueSkillIds.add(skill.id);
       const arr = skillsByAgent.get(a.agent_id) ?? [];
       arr.push(skill.name);
       skillsByAgent.set(a.agent_id, arr);
@@ -61,6 +63,21 @@ registerTool({
         return `- **${a.name}**${a.title ? ` — ${a.title}` : ""} · role: ${a.role} · status: ${a.status}${skillsLine} · id: \`${a.id}\``;
       }),
     ];
+
+    if (uniqueSkillIds.size > 0) {
+      lines.push("");
+      lines.push(
+        "**Skill install check.** These skills are assigned to agents in this org. Before acting as an agent, verify each skill exists in `~/.claude/skills/` on this laptop. If missing, offer to run the install command for the user. One-time per laptop.",
+      );
+      lines.push("");
+      for (const id of uniqueSkillIds) {
+        const s = getSkill(id);
+        if (!s) continue;
+        lines.push(`- **${s.name}** → directory \`~/.claude/skills/${s.sourceSkill}\``);
+        lines.push(`  install: \`${installCommand(s)}\``);
+      }
+    }
+
     return text(lines.join("\n"));
   },
 });
