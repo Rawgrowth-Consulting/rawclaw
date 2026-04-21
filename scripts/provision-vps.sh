@@ -188,6 +188,9 @@ POSTGRES_PASSWORD=$(openssl rand -hex 32)
 JWT_SECRET=$(openssl rand -hex 32)
 SUPABASE_SERVICE_ROLE_KEY=
 
+# Secret the VPS-local minute tick sends when calling /api/cron/schedule-tick.
+CRON_SECRET=$(openssl rand -hex 32)
+
 NEXTAUTH_URL=https://${DOMAIN}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 NEXTAUTH_SECRET=$(openssl rand -hex 32)
@@ -270,38 +273,56 @@ sudo -iu rawclaw claude mcp add --scope user --transport http rawgrowth \
   "https://${DOMAIN}/api/mcp" \
   --header "Authorization: Bearer ${MCP_TOKEN}"
 
-# Drain server — tiny HTTP server that spawns Claude Code on POST.
-# Webhook handler in the app pings this; Claude drains the Telegram inbox and
-# replies. Listens on 0.0.0.0:9876; only reachable from host + docker bridge.
+# Drain server — tiny HTTP router that spawns Claude Code on POST.
+#   POST /chat    → /rawgrowth-chat (Telegram free-text replies)
+#   POST /triage  → /rawgrowth-triage (drain one pending routine run)
+#   POST /        → backward-compat alias for /chat
+# Per-command single-flight with redrive, so chat + triage can run
+# concurrently but two of the same won't stack. Listens on 0.0.0.0:9876
+# — only reachable from host + docker bridge.
 mkdir -p /opt/rawclaw-drain
 cat > /opt/rawclaw-drain/drain-server.mjs <<'JS'
 import http from "node:http";
 import { spawn } from "node:child_process";
+
 const PORT = 9876;
 const CLAUDE = "/usr/local/bin/claude";
-let running = false;
-let redrive = false;
-function trigger() {
-  if (running) { redrive = true; return; }
-  running = true;
-  redrive = false;
+
+const slots = new Map(); // command → { running, redrive }
+
+function trigger(command) {
+  const slot = slots.get(command) ?? { running: false, redrive: false };
+  slots.set(command, slot);
+  if (slot.running) { slot.redrive = true; return; }
+  slot.running = true;
+  slot.redrive = false;
   const started = Date.now();
   const child = spawn(CLAUDE, [
     "--print",
     "--dangerously-skip-permissions",
-    "/rawgrowth-chat",
+    `/${command}`,
   ], { stdio: ["ignore", "inherit", "inherit"], detached: true });
   child.on("exit", (code) => {
-    console.log(`drain exit=${code} duration=${Date.now()-started}ms`);
-    running = false;
-    if (redrive) trigger();
+    console.log(`drain[${command}] exit=${code} duration=${Date.now()-started}ms`);
+    slot.running = false;
+    if (slot.redrive) trigger(command);
   });
   child.unref();
 }
+
 http.createServer((req, res) => {
+  const path = (req.url ?? "/").split("?")[0];
+  let command;
+  if (path === "/triage") command = "rawgrowth-triage";
+  else if (path === "/chat" || path === "/") command = "rawgrowth-chat";
+  else {
+    res.writeHead(404, { "content-type": "text/plain" });
+    res.end("not found");
+    return;
+  }
   res.writeHead(200, { "content-type": "text/plain" });
   res.end("ok");
-  trigger();
+  trigger(command);
 }).listen(PORT, "0.0.0.0", () => {
   console.log(`rawclaw-drain listening on 0.0.0.0:${PORT}`);
 });
@@ -332,10 +353,95 @@ UNIT
 touch /var/log/rawclaw-drain.log
 chown rawclaw:rawclaw /var/log/rawclaw-drain.log
 
+# ─── Rawgrowth minute tick ───────────────────────────────────
+# Hits /api/cron/schedule-tick every minute to materialise scheduled
+# routine runs. If the tick reports fired>0 or pending_count>0 it also
+# pokes the drain daemon so Claude Code claims the pending work.
+mkdir -p /opt/rawgrowth-tick
+cat > /opt/rawgrowth-tick/tick.mjs <<'JS'
+import fs from "node:fs";
+
+const ENV_FILE = "/opt/rawgrowth/.env";
+const env = Object.fromEntries(
+  fs.readFileSync(ENV_FILE, "utf8")
+    .split("\n")
+    .filter((l) => l && !l.startsWith("#") && l.includes("="))
+    .map((l) => {
+      const i = l.indexOf("=");
+      const k = l.slice(0, i).trim();
+      let v = l.slice(i + 1).trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1);
+      }
+      return [k, v];
+    }),
+);
+
+const url = env.NEXTAUTH_URL || env.NEXT_PUBLIC_APP_URL;
+const secret = env.CRON_SECRET;
+if (!url) {
+  console.error("tick: NEXTAUTH_URL missing from .env — aborting");
+  process.exit(0);
+}
+
+try {
+  const res = await fetch(`${url}/api/cron/schedule-tick`, {
+    headers: secret ? { Authorization: `Bearer ${secret}` } : {},
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) {
+    console.error(`tick: schedule-tick ${res.status}`);
+    process.exit(0);
+  }
+  const body = await res.json();
+  const fired = Array.isArray(body.fired) ? body.fired.length : 0;
+  const pending = Number(body.pending_count ?? 0);
+  console.log(`tick ok fired=${fired} pending=${pending}`);
+  if (fired > 0 || pending > 0) {
+    await fetch("http://127.0.0.1:9876/triage", {
+      method: "POST",
+      signal: AbortSignal.timeout(1_000),
+    }).catch(() => {});
+  }
+} catch (err) {
+  console.error(`tick err: ${err && err.message ? err.message : err}`);
+}
+JS
+
+cat > /etc/systemd/system/rawgrowth-tick.service <<'UNIT'
+[Unit]
+Description=Rawgrowth minute tick — materialise schedules + wake drain
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/node /opt/rawgrowth-tick/tick.mjs
+StandardOutput=append:/var/log/rawgrowth-tick.log
+StandardError=append:/var/log/rawgrowth-tick.log
+UNIT
+
+cat > /etc/systemd/system/rawgrowth-tick.timer <<'UNIT'
+[Unit]
+Description=Rawgrowth minute tick timer
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=rawgrowth-tick.service
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+touch /var/log/rawgrowth-tick.log
+
 systemctl daemon-reload
 systemctl enable --now rawclaw-drain
+systemctl enable --now rawgrowth-tick.timer
 REMOTE
-green "✓ Drain server + MCP registered"
+green "✓ Drain server + MCP + minute tick timer registered"
 echo
 
 # ─── 8. Print the credentials block ──────────────────────────

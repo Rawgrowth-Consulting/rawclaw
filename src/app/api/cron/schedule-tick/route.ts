@@ -174,10 +174,19 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // Count any pending runs across the DB — the self-hosted tick uses this
+  // to decide whether to poke the drain daemon to wake Claude Code.
+  // (Hosted mode doesn't need it; dispatchRun() handles its own executor.)
+  const { count: pendingCount } = await db
+    .from("rgaios_routine_runs")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending");
+
   return NextResponse.json({
     ok: true,
     ts: now.toISOString(),
     fired,
     skipped,
+    pending_count: pendingCount ?? 0,
   });
 }
