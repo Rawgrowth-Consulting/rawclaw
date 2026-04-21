@@ -18,6 +18,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/nango/webhook",    // Nango posts here, no session
   "/api/webhooks",         // Telegram etc
   "/api/invites/accept",   // GET preview + POST accept use invite token, not session
+  "/api/cron",             // CRON_SECRET bearer, called by the self-hosted tick timer
 ];
 
 export default auth((req) => {
