@@ -87,8 +87,14 @@ export async function POST(
 
   const command = text.split(/\s+/)[0] ?? "";
   if (!command.startsWith("/")) {
-    // Free-text message — stored in inbox above, no auto-response here.
-    // Client's Claude Code will respond via the MCP telegram_reply tool.
+    // Free-text message — ping the rawclaw-drain server on the host so
+    // Claude Code spawns and responds. Fire-and-forget: never block the
+    // webhook response (Telegram retries aggressively on non-2xx).
+    const drainUrl = process.env.RAWCLAW_DRAIN_URL;
+    if (drainUrl) {
+      fetch(drainUrl, { method: "POST", signal: AbortSignal.timeout(500) })
+        .catch(() => { /* best-effort */ });
+    }
     return NextResponse.json({ ok: true, inboxed: true });
   }
 

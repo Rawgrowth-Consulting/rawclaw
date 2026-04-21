@@ -208,7 +208,7 @@ export type Database = {
             string,
             "direct" | "requires_approval" | "draft_only"
           >;
-          department: "marketing" | "sales" | "fulfilment" | "finance" | null;
+          department: "marketing" | "sales" | "fulfilment" | "finance" | "development" | null;
           created_at: string;
           updated_at: string;
         };
@@ -225,7 +225,7 @@ export type Database = {
             string,
             "direct" | "requires_approval" | "draft_only"
           >;
-          department?: "marketing" | "sales" | "fulfilment" | "finance" | null;
+          department?: "marketing" | "sales" | "fulfilment" | "finance" | "development" | null;
         };
         Update: Partial<Database["public"]["Tables"]["rgaios_agents"]["Row"]>;
         Relationships: [];

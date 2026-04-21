@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import useSWR from "swr";
 import { toast } from "sonner";
 import {
   Megaphone,
@@ -10,6 +9,7 @@ import {
   Wallet,
   UserRound,
   HelpCircle,
+  Code2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,19 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { jsonFetcher } from "@/lib/swr";
 import { useAgents } from "@/lib/agents/use-agents";
 import type { Agent, Department } from "@/lib/agents/dto";
 import { DEPARTMENTS } from "@/lib/agents/dto";
-
-type OrgRes = {
-  pillars: {
-    marketing: boolean;
-    sales: boolean;
-    fulfilment: boolean;
-    finance: boolean;
-  };
-};
 
 const META: Record<
   Department,
@@ -49,11 +39,11 @@ const META: Record<
   sales: { label: "Sales", icon: BadgeDollarSign, brand: "#0cbf6a" },
   fulfilment: { label: "Fulfilment", icon: PackageCheck, brand: "#fbbf24" },
   finance: { label: "Finance", icon: Wallet, brand: "#a78bfa" },
+  development: { label: "Development", icon: Code2, brand: "#f472b6" },
 };
 
 export function DepartmentsView() {
   const { agents, updateAgent } = useAgents();
-  const { data: orgData } = useSWR<OrgRes>("/api/org/me", jsonFetcher);
 
   const grouped = useMemo(() => {
     const buckets: Record<Department | "unassigned", Agent[]> = {
@@ -61,6 +51,7 @@ export function DepartmentsView() {
       sales: [],
       fulfilment: [],
       finance: [],
+      development: [],
       unassigned: [],
     };
     for (const a of agents) {
@@ -83,8 +74,6 @@ export function DepartmentsView() {
     }
   }
 
-  const pillars = orgData?.pillars;
-
   return (
     <div className="space-y-8">
       {grouped.unassigned.length > 0 && (
@@ -101,7 +90,6 @@ export function DepartmentsView() {
             department={d}
             agents={grouped[d]}
             onReassign={reassign}
-            pillarEnabled={pillars ? pillars[d] : true}
           />
         ))}
       </div>
@@ -113,12 +101,10 @@ function DepartmentCard({
   department,
   agents,
   onReassign,
-  pillarEnabled,
 }: {
   department: Department;
   agents: Agent[];
   onReassign: (agent: Agent, dept: Department | null) => void;
-  pillarEnabled: boolean;
 }) {
   const meta = META[department];
   const Icon = meta.icon;
@@ -140,11 +126,6 @@ function DepartmentCard({
               </h3>
               <div className="text-[11.5px] text-muted-foreground">
                 {agents.length} agent{agents.length === 1 ? "" : "s"}
-                {!pillarEnabled && (
-                  <span className="ml-2 text-amber-400">
-                    · pillar is off — chart hidden on Dashboard
-                  </span>
-                )}
               </div>
             </div>
           </div>
@@ -249,6 +230,7 @@ function AgentRow({
           <SelectItem value="sales">Sales</SelectItem>
           <SelectItem value="fulfilment">Fulfilment</SelectItem>
           <SelectItem value="finance">Finance</SelectItem>
+          <SelectItem value="development">Development</SelectItem>
         </SelectContent>
       </Select>
     </li>

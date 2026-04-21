@@ -50,11 +50,16 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Point Telegram at our webhook. Works for any public origin set in
-    // NEXT_PUBLIC_APP_URL; falls back to the incoming request's origin.
-    const origin =
-      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
-      new URL(req.url).origin;
+    // Point Telegram at our webhook. Prefer NEXTAUTH_URL (runtime env) since
+    // NEXT_PUBLIC_* vars get baked at build time and may be stale. Fall back
+    // to the incoming request's origin only as a last resort — behind Caddy
+    // that ends up as http://app:3000 which Telegram rejects (port must be
+    // 80/88/443/8443).
+    const origin = (
+      process.env.NEXT_PUBLIC_APP_URL ??
+      process.env.NEXTAUTH_URL ??
+      new URL(req.url).origin
+    ).replace(/\/$/, "");
     const webhookUrl = `${origin}/api/webhooks/telegram/${conn.id}`;
     await setWebhook(token, webhookUrl, webhookSecret);
 

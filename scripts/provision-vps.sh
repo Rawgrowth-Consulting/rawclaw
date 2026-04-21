@@ -189,6 +189,7 @@ JWT_SECRET=$(openssl rand -hex 32)
 SUPABASE_SERVICE_ROLE_KEY=
 
 NEXTAUTH_URL=https://${DOMAIN}
+NEXT_PUBLIC_APP_URL=https://${DOMAIN}
 NEXTAUTH_SECRET=$(openssl rand -hex 32)
 CADDY_SITE_ADDRESS=${DOMAIN}
 
@@ -225,7 +226,119 @@ for i in $(seq 1 90); do
   sleep 2
 done
 
-# ─── 6. Print the credentials block ──────────────────────────
+# ─── 6. Extract the MCP token from the bootstrap log ─────────
+MCP_TOKEN="$(echo "$LOG_OUTPUT" | grep -oE 'rgmcp_[a-f0-9]+' | head -1 || true)"
+if [ -z "$MCP_TOKEN" ]; then
+  red "✗ Could not extract MCP token from bootstrap log. Re-run after inspecting:"
+  red "    ssh ${SSH_USER}@${HOST} 'cd ${TARGET} && docker compose logs app'"
+  exit 1
+fi
+green "✓ MCP token captured: ${MCP_TOKEN:0:16}..."
+echo
+
+# ─── 7. Install Node + Claude Code + non-root runner + drain ─
+bold "▸ Installing Node.js, Claude Code CLI, rawclaw user, and drain server"
+$SSH "MCP_TOKEN='${MCP_TOKEN}' DOMAIN='${DOMAIN}' bash -s" <<'REMOTE'
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+# Node.js 24 LTS (for Claude Code CLI + drain server)
+if ! command -v node >/dev/null 2>&1; then
+  curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+  apt-get install -y nodejs
+fi
+
+# Non-root user — Claude Code refuses --dangerously-skip-permissions as root.
+if ! id rawclaw >/dev/null 2>&1; then
+  useradd -m -s /bin/bash rawclaw
+fi
+
+# Claude Code CLI installed as rawclaw (so its config lives in /home/rawclaw)
+sudo -iu rawclaw bash -c '
+  if ! command -v claude >/dev/null 2>&1; then
+    curl -fsSL https://claude.ai/install.sh | bash
+    echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.bashrc
+    echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> ~/.profile
+  fi
+'
+ln -sf /home/rawclaw/.local/bin/claude /usr/local/bin/claude
+
+# Register the rawgrowth MCP server at USER scope so it is visible no matter
+# what cwd Claude Code is spawned from (systemd, SSH, interactive).
+sudo -iu rawclaw claude mcp remove rawgrowth 2>/dev/null || true
+sudo -iu rawclaw claude mcp add --scope user --transport http rawgrowth \
+  "https://${DOMAIN}/api/mcp" \
+  --header "Authorization: Bearer ${MCP_TOKEN}"
+
+# Drain server — tiny HTTP server that spawns Claude Code on POST.
+# Webhook handler in the app pings this; Claude drains the Telegram inbox and
+# replies. Listens on 0.0.0.0:9876; only reachable from host + docker bridge.
+mkdir -p /opt/rawclaw-drain
+cat > /opt/rawclaw-drain/drain-server.mjs <<'JS'
+import http from "node:http";
+import { spawn } from "node:child_process";
+const PORT = 9876;
+const CLAUDE = "/usr/local/bin/claude";
+let running = false;
+let redrive = false;
+function trigger() {
+  if (running) { redrive = true; return; }
+  running = true;
+  redrive = false;
+  const started = Date.now();
+  const child = spawn(CLAUDE, [
+    "--print",
+    "--dangerously-skip-permissions",
+    "/rawgrowth-chat",
+  ], { stdio: ["ignore", "inherit", "inherit"], detached: true });
+  child.on("exit", (code) => {
+    console.log(`drain exit=${code} duration=${Date.now()-started}ms`);
+    running = false;
+    if (redrive) trigger();
+  });
+  child.unref();
+}
+http.createServer((req, res) => {
+  res.writeHead(200, { "content-type": "text/plain" });
+  res.end("ok");
+  trigger();
+}).listen(PORT, "0.0.0.0", () => {
+  console.log(`rawclaw-drain listening on 0.0.0.0:${PORT}`);
+});
+JS
+chown -R rawclaw:rawclaw /opt/rawclaw-drain
+
+# systemd unit
+cat > /etc/systemd/system/rawclaw-drain.service <<'UNIT'
+[Unit]
+Description=Rawclaw drain trigger — spawns Claude Code on HTTP POST
+After=network.target
+
+[Service]
+Type=simple
+User=rawclaw
+Group=rawclaw
+WorkingDirectory=/home/rawclaw
+ExecStart=/usr/bin/node /opt/rawclaw-drain/drain-server.mjs
+Restart=always
+RestartSec=3
+StandardOutput=append:/var/log/rawclaw-drain.log
+StandardError=append:/var/log/rawclaw-drain.log
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+touch /var/log/rawclaw-drain.log
+chown rawclaw:rawclaw /var/log/rawclaw-drain.log
+
+systemctl daemon-reload
+systemctl enable --now rawclaw-drain
+REMOTE
+green "✓ Drain server + MCP registered"
+echo
+
+# ─── 8. Print the credentials block ──────────────────────────
 echo
 bold "════════════════════════════════════════════════════════════"
 bold "  Provision complete: ${ORG}"
@@ -234,10 +347,14 @@ echo "$LOG_OUTPUT" | sed -n '/Bootstrap complete/,/─────────�
 echo
 bold "════════════════════════════════════════════════════════════"
 echo
-echo "  Email the client:"
-echo "    1. Their invite URL (they click → set password → signed in)"
-echo "    2. The one-liner below to connect their Claude Code:"
+echo "  Next (live on call with client — ~2 min):"
+echo "    ssh -t ${SSH_USER}@${HOST} 'sudo -iu rawclaw claude login'"
+echo "      → share the URL with the client"
+echo "      → they sign in with their Claude Max account"
+echo "      → they paste the auth code back"
 echo
-echo "  curl -fsSL ${REPO%.git}/raw/main/scripts/cc-install.sh | \\"
-echo "    bash -s -- --token <MCP_TOKEN_FROM_ABOVE> --url https://${DOMAIN}"
+echo "  Smoke test:"
+echo "    ssh ${SSH_USER}@${HOST} \"sudo -iu rawclaw claude --print '/rawgrowth-status'\""
+echo
+echo "  Send the client their invite URL (shown above)."
 echo

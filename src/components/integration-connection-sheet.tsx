@@ -171,7 +171,14 @@ export function IntegrationConnectionSheet({
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {connection ? (
-            <CurrentConnectionCard connection={connection} />
+            integration.connectStrategy === "telegram-bot" ? (
+              <TelegramConnectedCard
+                connection={connection}
+                onRotated={refresh}
+              />
+            ) : (
+              <CurrentConnectionCard connection={connection} />
+            )
           ) : integration.connectStrategy === "telegram-bot" ? (
             <TelegramBotForm integration={integration} onConnected={refresh} />
           ) : (
@@ -360,6 +367,240 @@ function StepNumber({ n }: { n: number }) {
 
 // Also re-export Webhook icon ref so lint doesn't flag an unused import
 void Webhook;
+
+// ────────────────────────── Telegram connected (masked + reveal + rotate) ──
+
+function TelegramConnectedCard({
+  connection,
+  onRotated,
+}: {
+  connection: ConnectionRow;
+  onRotated: () => void | Promise<void>;
+}) {
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reveal = async () => {
+    if (revealed) {
+      setRevealed(null);
+      return;
+    }
+    setError(null);
+    setRevealing(true);
+    try {
+      const res = await fetch("/api/connections/telegram/token");
+      if (!res.ok) throw new Error("Failed to reveal token");
+      const { token } = (await res.json()) as { token?: string };
+      if (!token) throw new Error("Token not found");
+      setRevealed(token);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setRevealing(false);
+    }
+  };
+
+  const maskedFromDisplay = (() => {
+    // Telegram tokens look like "1234567890:AAHxxxxxxxx". We stored display_name
+    // as the bot's @username, not the token. Best we can do without revealing
+    // is a fixed mask; once revealed we show real masked (last 4).
+    if (revealed) {
+      return `${"•".repeat(12)}${revealed.slice(-4)}`;
+    }
+    return "•".repeat(20);
+  })();
+
+  return (
+    <div className="space-y-4">
+      <div
+        className="rounded-xl border border-[rgba(10,148,82,.25)] p-4"
+        style={{
+          background:
+            "linear-gradient(160deg, rgba(12,191,106,.08) 0%, rgba(12,191,106,.02) 60%, rgba(255,255,255,.01) 100%)",
+        }}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="flex size-8 items-center justify-center rounded-md bg-primary/15 text-primary">
+              <ShieldCheck className="size-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-foreground">
+                Bot connected
+                <Check className="size-3.5 text-primary" />
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Since {new Date(connection.connected_at).toLocaleDateString()}
+              </div>
+            </div>
+          </div>
+          <Badge
+            variant="secondary"
+            className="gap-1 bg-primary/15 text-[10px] text-primary"
+          >
+            <span className="size-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(12,191,106,.6)]" />
+            Live
+          </Badge>
+        </div>
+
+        {connection.display_name && (
+          <div className="mt-3 text-[11.5px] text-muted-foreground">
+            Account:{" "}
+            <span className="text-foreground">{connection.display_name}</span>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <Label className="text-[12px] font-medium text-foreground">
+          Bot token
+        </Label>
+        <div className="mt-1.5 flex items-stretch gap-2">
+          <div className="flex-1 rounded-md border border-border bg-input/40 px-3 py-2 font-mono text-[12.5px] text-foreground/80">
+            {revealed ? (
+              <span className="break-all">{revealed}</span>
+            ) : (
+              <span>{maskedFromDisplay}</span>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={reveal}
+            disabled={revealing}
+            className="shrink-0"
+          >
+            {revealing ? "…" : revealed ? "Hide" : "Reveal"}
+          </Button>
+          {revealed && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigator.clipboard?.writeText(revealed)}
+              className="shrink-0"
+            >
+              Copy
+            </Button>
+          )}
+        </div>
+        <p className="mt-1.5 text-[10.5px] text-muted-foreground">
+          Each reveal is recorded in your audit log.
+        </p>
+      </div>
+
+      {rotating ? (
+        <div className="rounded-xl border border-border bg-card/40 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Bot className="size-4 text-primary" />
+            <div className="text-[12.5px] font-semibold text-foreground">
+              Replace with a new token
+            </div>
+          </div>
+          <RotateTokenForm
+            onDone={async () => {
+              setRotating(false);
+              setRevealed(null);
+              await onRotated();
+            }}
+            onCancel={() => setRotating(false)}
+          />
+        </div>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setRotating(true)}
+          className="w-full"
+        >
+          <KeyRound className="size-3.5" />
+          Replace token
+        </Button>
+      )}
+
+      {error && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RotateTokenForm({
+  onDone,
+  onCancel,
+}: {
+  onDone: () => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const [token, setToken] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setError(null);
+    if (!token.includes(":")) {
+      setError("That doesn't look like a bot token.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/connections/telegram", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: token.trim() }),
+      });
+      if (!res.ok) {
+        const { error: err } = (await res.json()) as { error?: string };
+        throw new Error(err ?? "Failed to rotate");
+      }
+      await onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <Input
+        type={show ? "text" : "password"}
+        value={token}
+        onChange={(e) => setToken(e.target.value)}
+        placeholder="1234567890:AA…"
+        className="bg-input/40 font-mono text-[12.5px]"
+        autoComplete="off"
+      />
+      <div className="flex items-center justify-between gap-2">
+        <Button variant="ghost" size="sm" onClick={() => setShow((s) => !s)}>
+          {show ? "Hide" : "Show"}
+        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={submit}
+            disabled={busy}
+            className="bg-primary text-white hover:bg-primary/90"
+          >
+            {busy ? "Rotating…" : "Rotate"}
+          </Button>
+        </div>
+      </div>
+      {error && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ────────────────────────── Telegram bot-token form ──────────────────────────
 

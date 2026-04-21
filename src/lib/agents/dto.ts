@@ -1,8 +1,8 @@
 import type { Database } from "@/lib/supabase/types";
 import type { AgentRole, AgentRuntime, AgentStatus } from "./constants";
 
-export type Department = "marketing" | "sales" | "fulfilment" | "finance";
-export const DEPARTMENTS: Department[] = ["marketing", "sales", "fulfilment", "finance"];
+export type Department = "marketing" | "sales" | "fulfilment" | "finance" | "development";
+export const DEPARTMENTS: Department[] = ["marketing", "sales", "fulfilment", "finance", "development"];
 
 type AgentRow = Database["public"]["Tables"]["rgaios_agents"]["Row"];
 

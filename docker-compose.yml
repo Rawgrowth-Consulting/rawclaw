@@ -50,6 +50,11 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # Allow the container to reach the host's rawclaw-drain server at
+    # http://host.docker.internal:9876 — that systemd service spawns
+    # Claude Code to drain the Telegram inbox on inbound webhook events.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +62,7 @@ services:
         condition: service_started
     environment:
       DEPLOY_MODE: self_hosted
+      RAWCLAW_DRAIN_URL: http://host.docker.internal:9876
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rawgrowth}
       # supabase-js expects /rest/v1/* paths — Caddy on :3100 strips that prefix and forwards to PostgREST.
       NEXT_PUBLIC_SUPABASE_URL: http://caddy:3100
