@@ -1,0 +1,13 @@
+# Local-dev Caddy: just the :3100 prefix-stripper for supabase-js.
+# The Next.js app runs natively (npm run dev) — Caddy doesn't proxy it
+# in dev mode.
+
+:3100 {
+  route /rest/v1/* {
+    uri strip_prefix /rest/v1
+    reverse_proxy postgrest:3000
+  }
+  route {
+    reverse_proxy postgrest:3000
+  }
+}

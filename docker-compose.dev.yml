@@ -1,0 +1,55 @@
+# ──────────────────────────────────────────────────────────
+# Rawgrowth — local DEVELOPMENT data layer.
+# Runs ONLY postgres + postgrest + a tiny caddy that strips the
+# /rest/v1 prefix supabase-js expects. The Next.js app runs natively
+# via `npm run dev` so you get hot-module-reload for UI changes.
+#
+# Usage:
+#   npm run dev:bootstrap   # one-time: brings infra up, mints JWT, runs migrations
+#   npm run dev             # then iterate (Next.js HMR)
+# ──────────────────────────────────────────────────────────
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rawgrowth
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: dev
+    volumes:
+      - rawgrowth_dev_pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rawgrowth"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:dev@postgres:5432/rawgrowth
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: postgres
+      # Same JWT_SECRET as the dev app — see .env.development.local
+      PGRST_JWT_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - postgrest
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./docker/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+
+volumes:
+  rawgrowth_dev_pgdata:

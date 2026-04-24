@@ -363,6 +363,9 @@ import fs from "node:fs";
 import { execSync } from "node:child_process";
 
 const ENV_FILE = "/opt/rawgrowth/.env";
+const CREDS_PATH = "/home/rawclaw/.claude/.credentials.json";
+const CREDS_DIR = "/home/rawclaw/.claude";
+
 const env = Object.fromEntries(
   fs.readFileSync(ENV_FILE, "utf8")
     .split("\n")
@@ -385,9 +388,71 @@ if (!url) {
   process.exit(0);
 }
 
-// Executor liveness: is rawclaw's claude CLI actually logged in right now?
-// If not, schedule-tick still runs (to sweep stale pendings) but doesn't
-// materialise new scheduled runs. This prevents pile-up during auth gaps.
+// ─── 1. Sync the Claude Max token from the dashboard DB to disk ─────
+// The dashboard stores the long-lived token (encrypted) in
+// rgaios_connections. We pull the decrypted value via /api/cron/claude-token
+// and overwrite ~rawclaw/.claude/.credentials.json if the value differs.
+//
+// To avoid trampling on credentials we didn't write (e.g. a manual
+// `claude auth login` performed by the operator), we only ever touch
+// credentials.json when the marker file is present. The marker is
+// created the first time we write; revocation removes both files.
+async function syncClaudeToken() {
+  const MARKER = `${CREDS_DIR}/.rawgrowth-managed`;
+  try {
+    const res = await fetch(`${url}/api/cron/claude-token`, {
+      headers: secret ? { Authorization: `Bearer ${secret}` } : {},
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    const newToken = body.connected && body.token ? String(body.token) : null;
+    const ownedByUs = fs.existsSync(MARKER);
+
+    let existingToken = null;
+    try {
+      const raw = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8"));
+      existingToken = raw?.claudeAiOauth?.accessToken ?? null;
+    } catch {
+      existingToken = null;
+    }
+
+    if (newToken && newToken !== existingToken) {
+      fs.mkdirSync(CREDS_DIR, { recursive: true });
+      const payload = {
+        claudeAiOauth: {
+          accessToken: newToken,
+          refreshToken: "",
+          expiresAt: 9_999_999_999_000,
+          scopes: ["user:inference", "user:profile"],
+          subscriptionType: "max",
+        },
+      };
+      const tmp = `${CREDS_PATH}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
+      fs.renameSync(tmp, CREDS_PATH);
+      fs.writeFileSync(MARKER, new Date().toISOString());
+      try {
+        execSync(`chown -R rawclaw:rawclaw ${CREDS_DIR}`);
+      } catch {}
+      console.log("tick sync: wrote new Claude Max token to credentials.json");
+    } else if (!newToken && ownedByUs && existingToken) {
+      // Token revoked in dashboard — only nuke files we wrote.
+      try { fs.unlinkSync(CREDS_PATH); } catch {}
+      try { fs.unlinkSync(MARKER); } catch {}
+      console.log("tick sync: removed credentials.json (revoked in dashboard)");
+    }
+  } catch (err) {
+    console.error(`tick sync err: ${err && err.message ? err.message : err}`);
+  }
+}
+
+await syncClaudeToken();
+
+// ─── 2. Executor liveness check ─────────────────────────────────────
+// Is rawclaw's claude CLI actually logged in right now? If not,
+// schedule-tick still runs (to sweep stale pendings) but doesn't
+// materialise new scheduled runs. Prevents pile-up during auth gaps.
 function isExecutorReady() {
   try {
     const out = execSync("sudo -iu rawclaw claude auth status 2>/dev/null", {
@@ -401,6 +466,7 @@ function isExecutorReady() {
 
 const executorReady = isExecutorReady();
 
+// ─── 3. Schedule tick ───────────────────────────────────────────────
 try {
   const res = await fetch(
     `${url}/api/cron/schedule-tick?executor_ready=${executorReady ? 1 : 0}`,
@@ -420,8 +486,6 @@ try {
   console.log(
     `tick ok executor=${executorReady ? "ready" : "offline"} fired=${fired} swept=${swept} pending=${pending}`,
   );
-  // Only poke the drain daemon if the executor is alive AND there's
-  // something for it to do.
   if (executorReady && (fired > 0 || pending > 0)) {
     await fetch("http://127.0.0.1:9876/triage", {
       method: "POST",

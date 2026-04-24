@@ -8,11 +8,10 @@ import {
   ShieldCheck,
   Repeat,
   Settings2,
-  Radio,
+  Plug,
   Building2,
   BookOpen,
   Activity,
-  KeyRound,
   Sparkles,
 } from "lucide-react";
 
@@ -67,9 +66,8 @@ const navSections: NavSection[] = [
   {
     label: "Settings",
     items: [
-      { label: "Channels", href: "/channels", icon: Radio },
+      { label: "Connections", href: "/connections", icon: Plug },
       { label: "Skills", href: "/skills", icon: Sparkles },
-      { label: "MCP", href: "/settings/mcp", icon: KeyRound },
       { label: "Company", href: "/company", icon: Settings2 },
     ],
   },
