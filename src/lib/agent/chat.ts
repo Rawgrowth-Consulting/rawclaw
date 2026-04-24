@@ -129,43 +129,49 @@ const CLAUDE_CODE_PREFIX =
 export const CHAT_HANDOFF_SENTINEL_PREFIX =
   "[handoff] Give me a moment while I work on that";
 
-function buildSystemPrompt(
+/**
+ * Build the persona + instructions block. CRITICAL: do NOT put any of
+ * this in the `system` field — Anthropic's OAuth gate strictly requires
+ * `system` to be exactly the Claude Code identity line. Any extra text
+ * in `system` returns 429 with a misleading "Error" body.
+ *
+ * Instead this preamble is wrapped in a tag and prepended to the FIRST
+ * user message of every chatReply call.
+ */
+function buildPersonaPreamble(
   orgName: string | null,
   persona: RawgrowthAgent | null,
 ): string {
-  const lines: string[] = [CLAUDE_CODE_PREFIX, ""];
+  const lines: string[] = [];
   if (persona) {
     lines.push(
-      `Right now you are acting as ${persona.name}${persona.title ? `, ${persona.title}` : ""}, an AI agent operating inside ${orgName ?? "this organization"}'s Rawgrowth workspace.`,
+      `You are ${persona.name}${persona.title ? `, ${persona.title}` : ""}, an AI agent operating inside ${orgName ?? "this organization"}'s Rawgrowth workspace.`,
     );
     if (persona.description) {
       lines.push("", persona.description);
     }
   } else {
     lines.push(
-      `Right now you are acting as an AI agent operating inside ${orgName ?? "this organization"}'s Rawgrowth workspace.`,
+      `You are an AI agent operating inside ${orgName ?? "this organization"}'s Rawgrowth workspace.`,
     );
   }
   lines.push(
     "",
-    "You are talking to the operator over Telegram. Reply concisely — Telegram has a small screen and people read these on phones. Three to five short sentences max for normal answers; one sentence is often best.",
+    "You are replying over a chat surface (Telegram or Slack). Reply concisely — small screen, phone reading. Three to five short sentences max; one sentence is often best.",
     "Use plain text or simple Markdown (bold, italics, code). No tables, no headings, no long bullet lists.",
     "",
-    "IMPORTANT — TOOL ACCESS:",
-    "You do NOT have access to any tools in this conversation. You cannot create, update, delete, or list anything in the workspace (agents, routines, skills, departments, runs, approvals, knowledge, telegram inbox, etc.). You also cannot send Gmail / Slack / Notion / Drive / etc.",
+    "Tool access: you have NONE in this conversation. You can't create/update/delete/list anything in the workspace, can't send Gmail/Slack/Notion/Drive, can't fetch live data.",
     "",
-    "If the operator asks you to DO something (create an agent, set up a department, schedule a routine, send an email, list things, look up data, etc.) — reply with exactly this single line and nothing else, optionally followed by a one-sentence personalised acknowledgement of what they asked for:",
+    `If the operator asks you to DO something that requires tools, reply with EXACTLY this single line and nothing else: "${CHAT_HANDOFF_SENTINEL_PREFIX} — <one sentence describing the action>". The system will pick up the handoff and another path will do the real work; the operator gets a follow-up message with the result.`,
     "",
-    `${CHAT_HANDOFF_SENTINEL_PREFIX} — <one short sentence describing what you'll do>.`,
-    "",
-    "Examples:",
+    `Examples of valid handoff replies:`,
     `  ${CHAT_HANDOFF_SENTINEL_PREFIX} — spinning up your marketing department now.`,
     `  ${CHAT_HANDOFF_SENTINEL_PREFIX} — hiring Linus as your CTO with code-review skills.`,
     `  ${CHAT_HANDOFF_SENTINEL_PREFIX} — pulling your latest pending approvals.`,
     "",
-    "Do NOT pretend you've already done the action. Do NOT make up agent names, IDs, or counts. The system will pick up the handoff and the actual work will be done by another path; the operator will get a follow-up message with the real result.",
+    "Do NOT pretend you've already done the action. Do NOT make up agent names, ids, or counts.",
     "",
-    "If the operator just wants to chat or ask a general question (greetings, advice, opinions, explanations, anything that doesn't require touching workspace state) — answer directly without the handoff line.",
+    "If the operator just wants to chat or ask a general question (greetings, opinions, explanations, advice that doesn't need workspace state) — answer directly without the handoff line.",
   );
   return lines.join("\n");
 }
@@ -201,18 +207,28 @@ export async function chatReply(input: {
     loadRecentHistory(organizationId, chatId),
   ]);
 
-  // Append the new inbound message as the final user turn.
-  const messages = [...history, { role: "user" as const, content: userMessage }];
-
   // mcpToken is unused on the OAuth path (MCP server tools aren't allowed
   // alongside oauth-2025-04-20). Reference it so the linter doesn't warn,
   // and keep it visible for when Anthropic enables both betas together.
   void mcpToken;
 
+  // Persona + instructions live in the FIRST user turn, NOT in `system`.
+  // The OAuth gate rejects any system content beyond CLAUDE_CODE_PREFIX.
+  // We tag the preamble so the model can ignore the framing tokens.
+  const preamble = buildPersonaPreamble(organizationName, persona);
+  const firstUserContent =
+    `<persona-and-instructions>\n${preamble}\n</persona-and-instructions>\n\n${userMessage}`;
+
+  // History stays as-is; preamble only goes on the freshest user turn.
+  const messages = [
+    ...history,
+    { role: "user" as const, content: firstUserContent },
+  ];
+
   const body: Record<string, unknown> = {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: buildSystemPrompt(organizationName, persona),
+    system: CLAUDE_CODE_PREFIX,
     messages,
   };
 
