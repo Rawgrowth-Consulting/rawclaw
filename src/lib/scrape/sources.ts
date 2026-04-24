@@ -25,7 +25,7 @@ function stringOrNull(v: unknown): string | null {
   return s.length > 0 ? s : null;
 }
 
-function socialPresenceToUrls(presence: Record<string, any> | null): ScrapeSource[] {
+function socialPresenceToUrls(presence: Record<string, unknown> | null): ScrapeSource[] {
   if (!presence) return [];
   const urls: ScrapeSource[] = [];
 
@@ -75,7 +75,7 @@ function socialPresenceToUrls(presence: Record<string, any> | null): ScrapeSourc
   return urls;
 }
 
-function competitorsToUrls(competitors: Record<string, any> | null): ScrapeSource[] {
+function competitorsToUrls(competitors: Record<string, unknown> | null): ScrapeSource[] {
   if (!competitors) return [];
   const list = Array.isArray(competitors.competitor_list)
     ? competitors.competitor_list
@@ -94,7 +94,7 @@ function competitorsToUrls(competitors: Record<string, any> | null): ScrapeSourc
 }
 
 export function buildScrapeSources(
-  intake: Record<string, any>,
+  intake: Record<string, unknown>,
 ): ScrapeSource[] {
   const social = intake[
     QUESTIONNAIRE_SECTIONS.find((s) => s.id === "socialPresence")!.column

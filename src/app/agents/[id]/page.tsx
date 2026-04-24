@@ -59,10 +59,12 @@ export default async function AgentDetailPage({
 
   return (
     <AgentPanelClient
-      agent={agent as any}
+      agent={agent as unknown as Parameters<typeof AgentPanelClient>[0]["agent"]}
       memory={memory ?? []}
       tasks={tasks ?? []}
-      telegram={(telegram as any) ?? null}
+      telegram={
+        (telegram as unknown as Parameters<typeof AgentPanelClient>[0]["telegram"]) ?? null
+      }
     />
   );
 }

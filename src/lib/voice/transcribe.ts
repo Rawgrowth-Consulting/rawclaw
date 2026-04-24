@@ -85,7 +85,7 @@ async function transcribeViaAnthropic(
               media_type: mimeType,
               data: bytes.toString("base64"),
             },
-          } as any,
+          } as unknown as never,
         ],
       },
     ],

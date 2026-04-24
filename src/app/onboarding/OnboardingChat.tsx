@@ -294,7 +294,7 @@ export default function OnboardingChat({
             </p>
             <div className="h-1.5 overflow-hidden rounded-full bg-[rgba(255,255,255,0.06)]">
               <div
-                className="h-full rounded-full bg-[#0CBF6A] transition-all duration-500"
+                className="h-full rounded-full bg-[#0CBF6A] transition-[width] duration-500"
                 style={{ width: `${pct}%` }}
               />
             </div>

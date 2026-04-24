@@ -239,7 +239,7 @@ export async function computeOnboardingProgress(
 
   if (intake) {
     for (const section of QUESTIONNAIRE_SECTIONS) {
-      const value = (intake as Record<string, any>)[section.column];
+      const value = (intake as Record<string, unknown>)[section.column];
       if (value && typeof value === "object" && Object.keys(value).length > 0) {
         completed.push(section.id);
       }

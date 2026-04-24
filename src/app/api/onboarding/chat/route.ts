@@ -18,7 +18,14 @@ import {
   computeOnboardingProgress,
 } from "@/lib/onboarding";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai: OpenAI | null = null;
+function openai(): OpenAI {
+  if (_openai) return _openai;
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+  _openai = new OpenAI({ apiKey });
+  return _openai;
+}
 
 const SYSTEM_PROMPT = `You are the Rawgrowth onboarding assistant. You run a long, multi-section conversation that ends with every answer persisted to the database. Tone: warm, brief, curious. One question per turn. Acknowledge each answer before moving on. No long bullet lists.
 
@@ -526,7 +533,7 @@ ${sections}`;
 
   let content = "";
   try {
-    const streamResp = await openai.chat.completions.create({
+    const streamResp = await openai().chat.completions.create({
       model: "gpt-4o",
       max_tokens: 4096,
       stream: true,
@@ -1014,7 +1021,7 @@ export async function POST(req: NextRequest) {
 
         try {
           for (let iter = 0; iter < 6; iter++) {
-            const completion = await openai.chat.completions.create({
+            const completion = await openai().chat.completions.create({
               model: "gpt-4o",
               stream: true,
               temperature: 0.3,

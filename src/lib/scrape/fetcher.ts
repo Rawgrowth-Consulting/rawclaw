@@ -114,7 +114,11 @@ export async function fetchSource(url: string): Promise<ScrapeResult> {
           blocked: res.status === 401 || res.status === 403,
         };
       }
-      const json: any = await res.json();
+      const json = (await res.json()) as {
+        author_name?: string;
+        title?: string;
+        html?: string;
+      };
       return {
         ok: true,
         url,
@@ -161,13 +165,14 @@ export async function fetchSource(url: string): Promise<ScrapeResult> {
       title: extractTitle(body),
       content: clip(stripTags(body)),
     };
-  } catch (err: any) {
-    const isAbort = err?.name === "AbortError";
+  } catch (err: unknown) {
+    const e = err as { name?: string; message?: string };
+    const isAbort = e?.name === "AbortError";
     return {
       ok: false,
       url,
       status: null,
-      error: isAbort ? "timeout" : err?.message ?? String(err),
+      error: isAbort ? "timeout" : (e?.message ?? String(err)),
       blocked: false,
     };
   }
