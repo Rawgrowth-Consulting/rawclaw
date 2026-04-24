@@ -8,6 +8,7 @@
 
 import "./knowledge";
 import "./agent-knowledge";
+import "./agent-invoke";
 import "./gmail";
 import "./runs";
 import "./agents";
