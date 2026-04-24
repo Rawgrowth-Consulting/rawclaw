@@ -13,79 +13,93 @@ import { tryDecryptSecret } from "@/lib/crypto";
 import { chatReply, CHAT_HANDOFF_SENTINEL_PREFIX } from "@/lib/agent/chat";
 
 /**
- * Periodically refresh a placeholder Telegram message with elapsed-time
- * progress while the drain daemon is grinding (could take 30-120s for
- * tool-heavy work). Stops when responded_at fills in OR maxMs elapses.
+ * Rotating animation frames for the thinking bubble. We cycle through
+ * these every ~2.5s so the user gets visible "I'm alive" feedback while
+ * the drain daemon works. Keep each phrase short — Telegram bubbles
+ * with changing lengths look jittery if they reflow the line a lot.
+ */
+const THINKING_FRAMES = [
+  "💭 Thinking",
+  "✨ Pondering",
+  "🧠 Analysing",
+  "⚙️ Working",
+  "🔍 Looking into it",
+  "📝 Planning",
+  "🎯 Focusing",
+  "🧩 Putting it together",
+];
+
+/**
+ * Cycle an animated "thinking…" status through the placeholder bubble
+ * while drain is grinding. Exits cleanly when:
+ *   • placeholder_message_id on the inbox row is cleared (drain
+ *     edited the bubble itself with the final reply), or
+ *   • responded_at fills in (backstop), or
+ *   • maxMs elapsed (runaway guard).
  */
 function startProgressUpdates(opts: {
   token: string;
   chatId: number;
   messageId: number;
+  inboxRowId: string;
   organizationId: string;
   acknowledgement: string;
   intervalMs?: number;
   maxMs?: number;
 }) {
-  const intervalMs = opts.intervalMs ?? 15_000;
+  const intervalMs = opts.intervalMs ?? 2_500;
   const maxMs = opts.maxMs ?? 5 * 60_000;
   const startedAt = Date.now();
+  let frame = 0;
 
   const tick = async () => {
-    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-
-    // Done if drain has posted its real reply (responded_at filled in).
+    // Check the DB row for ownership + responded state.
     const { data } = await supabaseAdmin()
       .from("rgaios_telegram_messages")
-      .select("responded_at")
-      .eq("organization_id", opts.organizationId)
-      .eq("chat_id", opts.chatId)
-      .order("received_at", { ascending: false })
-      .limit(1)
+      .select("responded_at, placeholder_message_id")
+      .eq("id", opts.inboxRowId)
       .maybeSingle();
-    const replied = (data as { responded_at?: string | null } | null)
-      ?.responded_at;
+    const row = data as
+      | { responded_at?: string | null; placeholder_message_id?: number | null }
+      | null;
 
-    if (replied) {
-      // Drain has replied as a new message. Replace the placeholder
-      // with a tidy "✓ done" so the chat scrollback doesn't have a
-      // dangling status bubble.
-      editMessageText(
-        opts.token,
-        opts.chatId,
-        opts.messageId,
-        `✓ ${opts.acknowledgement}`,
-      ).catch(() => {});
-      return;
-    }
+    // Drain has already edited the placeholder with the final reply —
+    // our job is done, don't touch the bubble.
+    if (row && !row.placeholder_message_id) return;
+    // Belt-and-braces: if responded_at is set we also stop (shouldn't
+    // happen unless something went wrong with placeholder_message_id).
+    if (row && row.responded_at) return;
 
     if (Date.now() - startedAt > maxMs) {
       editMessageText(
         opts.token,
         opts.chatId,
         opts.messageId,
-        `⌛ ${opts.acknowledgement}\nThis is taking longer than expected — I'll keep working in the background.`,
+        `⌛ ${opts.acknowledgement}\nStill working — I'll keep going in the background.`,
       ).catch(() => {});
       return;
     }
 
+    const phrase = THINKING_FRAMES[frame % THINKING_FRAMES.length];
+    frame += 1;
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
     const elapsedStr =
       elapsed < 60
         ? `${elapsed}s`
         : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+
     await editMessageText(
       opts.token,
       opts.chatId,
       opts.messageId,
-      `🔧 ${opts.acknowledgement}\n_${elapsedStr} elapsed…_`,
+      `${phrase}…\n_${opts.acknowledgement} · ${elapsedStr}_`,
     ).catch(() => {});
 
-    // Schedule the next tick.
     setTimeout(() => {
       void tick();
     }, intervalMs);
   };
 
-  // First tick fires after intervalMs (let the initial placeholder breathe).
   setTimeout(() => {
     void tick();
   }, intervalMs);
@@ -160,16 +174,21 @@ export async function POST(
   // Claude Code can read them via the telegram_inbox_read MCP tool.
   // Slash commands also get logged (marked responded_at when the routine
   // fires so they don't clutter the inbox).
-  await db.from("rgaios_telegram_messages").insert({
-    organization_id: organizationId,
-    connection_id: conn.id,
-    chat_id: msg.chat.id,
-    sender_user_id: msg.from?.id ?? null,
-    sender_username: msg.from?.username ?? null,
-    sender_first_name: msg.from?.first_name ?? null,
-    message_id: msg.message_id,
-    text,
-  });
+  const { data: inboxRow } = await db
+    .from("rgaios_telegram_messages")
+    .insert({
+      organization_id: organizationId,
+      connection_id: conn.id,
+      chat_id: msg.chat.id,
+      sender_user_id: msg.from?.id ?? null,
+      sender_username: msg.from?.username ?? null,
+      sender_first_name: msg.from?.first_name ?? null,
+      message_id: msg.message_id,
+      text,
+    })
+    .select("id")
+    .single();
+  const inboxRowId = (inboxRow as { id?: string } | null)?.id ?? null;
 
   const command = text.split(/\s+/)[0] ?? "";
   if (!command.startsWith("/")) {
@@ -189,10 +208,23 @@ export async function POST(
       // real reply is ready, so the "…" morphs into the final answer.
       let placeholderId: number | null = null;
       try {
-        const sent = await sendMessage(token, msg.chat.id, "…");
+        const sent = await sendMessage(token, msg.chat.id, "💭 Thinking…");
         placeholderId = sent.message_id;
       } catch {
         placeholderId = null;
+      }
+      // Record the placeholder id against the inbox row so telegram_reply
+      // (MCP tool) can edit this bubble in place rather than sending a
+      // fresh message underneath it.
+      if (placeholderId !== null && inboxRowId) {
+        try {
+          await supabaseAdmin()
+            .from("rgaios_telegram_messages")
+            .update({ placeholder_message_id: placeholderId })
+            .eq("id", inboxRowId);
+        } catch {
+          /* non-fatal — ticker will still run, just can't edit in place */
+        }
       }
 
       const publicAppUrl =
@@ -279,11 +311,12 @@ export async function POST(
             signal: AbortSignal.timeout(500),
           }).catch(() => {});
 
-          if (placeholderId !== null) {
+          if (placeholderId !== null && inboxRowId) {
             startProgressUpdates({
               token,
               chatId: msg.chat.id,
               messageId: placeholderId,
+              inboxRowId,
               organizationId,
               acknowledgement,
             });
@@ -309,6 +342,7 @@ export async function POST(
         .update({
           responded_at: new Date().toISOString(),
           response_text: result.reply,
+          placeholder_message_id: null,
         })
         .eq("organization_id", organizationId)
         .eq("chat_id", msg.chat.id)
@@ -359,10 +393,23 @@ export async function POST(
 
       let placeholderId: number | null = null;
       try {
-        const sent = await sendMessage(token, msg.chat.id, "…");
+        const sent = await sendMessage(token, msg.chat.id, "💭 Thinking…");
         placeholderId = sent.message_id;
       } catch {
         placeholderId = null;
+      }
+      // Record the placeholder id against the inbox row so telegram_reply
+      // (MCP tool) can edit this bubble in place rather than sending a
+      // fresh message underneath it.
+      if (placeholderId !== null && inboxRowId) {
+        try {
+          await supabaseAdmin()
+            .from("rgaios_telegram_messages")
+            .update({ placeholder_message_id: placeholderId })
+            .eq("id", inboxRowId);
+        } catch {
+          /* non-fatal — ticker will still run, just can't edit in place */
+        }
       }
 
       const publicAppUrl = (
@@ -444,11 +491,12 @@ export async function POST(
             signal: AbortSignal.timeout(500),
           }).catch(() => {});
 
-          if (placeholderId !== null) {
+          if (placeholderId !== null && inboxRowId) {
             startProgressUpdates({
               token,
               chatId: msg.chat.id,
               messageId: placeholderId,
+              inboxRowId,
               organizationId,
               acknowledgement,
             });
@@ -472,6 +520,7 @@ export async function POST(
         .update({
           responded_at: new Date().toISOString(),
           response_text: result.reply,
+          placeholder_message_id: null,
         })
         .eq("organization_id", organizationId)
         .eq("chat_id", msg.chat.id)

@@ -1,6 +1,6 @@
 import { registerTool, text, textError } from "../registry";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { sendMessage } from "@/lib/telegram/client";
+import { editMessageText, sendMessage } from "@/lib/telegram/client";
 import { tryDecryptSecret } from "@/lib/crypto";
 
 /**
@@ -146,17 +146,21 @@ registerTool({
     const db = supabaseAdmin();
     let chatId: number | null = null;
     let rawclawMessageId: string | null = null;
+    let placeholderMessageId: number | null = null;
 
     if (args.message_id) {
       rawclawMessageId = String(args.message_id);
       const { data: msg } = await db
         .from("rgaios_telegram_messages")
-        .select("chat_id")
+        .select("chat_id, placeholder_message_id")
         .eq("id", rawclawMessageId)
         .eq("organization_id", ctx.organizationId)
         .maybeSingle();
       if (!msg) return textError(`No inbox message ${rawclawMessageId} found.`);
       chatId = msg.chat_id;
+      placeholderMessageId =
+        (msg as { placeholder_message_id?: number | null })
+          .placeholder_message_id ?? null;
     } else if (args.chat_id !== undefined) {
       chatId = Number(args.chat_id);
     } else {
@@ -165,10 +169,27 @@ registerTool({
       );
     }
 
+    // If a thinking-placeholder bubble is active for this inbox row,
+    // edit IT in place instead of sending a fresh bubble underneath.
+    // The user sees the one bubble morph: "💭 Thinking…" → the real reply.
     try {
-      await sendMessage(botToken, chatId, body);
+      if (placeholderMessageId !== null && chatId !== null) {
+        await editMessageText(botToken, chatId, placeholderMessageId, body);
+      } else {
+        await sendMessage(botToken, chatId as number, body);
+      }
     } catch (err) {
-      return textError(`telegram_reply: ${(err as Error).message}`);
+      // Placeholder may have expired (>48h) or been deleted. Fall back
+      // to sending a new message rather than failing the whole tool call.
+      if (placeholderMessageId !== null && chatId !== null) {
+        try {
+          await sendMessage(botToken, chatId, body);
+        } catch (err2) {
+          return textError(`telegram_reply: ${(err2 as Error).message}`);
+        }
+      } else {
+        return textError(`telegram_reply: ${(err as Error).message}`);
+      }
     }
 
     if (rawclawMessageId) {
@@ -177,6 +198,8 @@ registerTool({
         .update({
           responded_at: new Date().toISOString(),
           response_text: body,
+          // Clear so the ticker in the webhook knows we've handled it.
+          placeholder_message_id: null,
         })
         .eq("id", rawclawMessageId)
         .eq("organization_id", ctx.organizationId);
@@ -184,7 +207,7 @@ registerTool({
 
     return text(
       rawclawMessageId
-        ? `Replied to message \`${rawclawMessageId}\`.`
+        ? `Replied to message \`${rawclawMessageId}\`${placeholderMessageId ? " (edited placeholder in place)" : ""}.`
         : `Sent message to chat ${chatId}.`,
     );
   },

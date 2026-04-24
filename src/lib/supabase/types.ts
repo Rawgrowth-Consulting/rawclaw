@@ -81,6 +81,7 @@ export type Database = {
           received_at: string;
           responded_at: string | null;
           response_text: string | null;
+          placeholder_message_id: number | null;
         };
         Insert: {
           id?: string;
@@ -94,6 +95,7 @@ export type Database = {
           text?: string | null;
           responded_at?: string | null;
           response_text?: string | null;
+          placeholder_message_id?: number | null;
         };
         Update: Partial<
           Database["public"]["Tables"]["rgaios_telegram_messages"]["Row"]
