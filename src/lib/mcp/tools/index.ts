@@ -7,6 +7,7 @@
  */
 
 import "./knowledge";
+import "./agent-knowledge";
 import "./gmail";
 import "./runs";
 import "./agents";
