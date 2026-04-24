@@ -93,6 +93,9 @@ const eslintConfig = defineConfig([
     "src/lib/brand/eslint-banned-words.mjs",
     "src/lib/brand/tokens.ts",
     "src/lib/brand/runtime-filter.ts",
+    // Unit tests for runtime-filter have to embed banned words verbatim
+    // to exercise the filter; exempt them from the source-scan rule.
+    "tests/unit/brand-filter.spec.ts",
   ]),
 ]);
 

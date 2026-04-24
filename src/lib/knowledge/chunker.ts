@@ -31,21 +31,6 @@ function splitAt(text: string, sep: string): string[] {
   return parts.map((p, i) => (i < parts.length - 1 ? p + sep : p));
 }
 
-function joinUpTo(parts: string[], max: number): { chunk: string; rest: string[] } {
-  let chunk = "";
-  let i = 0;
-  while (i < parts.length && chunk.length + parts[i].length <= max) {
-    chunk += parts[i];
-    i += 1;
-  }
-  if (!chunk && i < parts.length) {
-    // Single piece too big → hand it back unchanged to force deeper split.
-    chunk = parts[i];
-    i += 1;
-  }
-  return { chunk, rest: parts.slice(i) };
-}
-
 function splitRecursive(text: string, seps: readonly string[]): string[] {
   if (text.length <= CHUNK_SIZE) return [text];
   const [head, ...rest] = seps;

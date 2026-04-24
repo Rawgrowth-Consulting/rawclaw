@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test:smoke": "playwright test tests/smoke.spec.ts",
+    "test:unit": "tsx --test tests/unit/*.spec.ts",
     "dev": "next dev",
     "dev:bootstrap": "./scripts/dev-bootstrap.sh",
     "dev:db": "docker compose -f docker-compose.dev.yml up -d",
@@ -29,6 +30,8 @@
     "@base-ui/react": "^1.4.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nangohq/frontend": "^0.70.1",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-tabs": "^1.1.13",
     "@nangohq/node": "^0.70.1",
     "@number-flow/react": "^0.6.0",
     "@supabase/supabase-js": "^2.103.3",
