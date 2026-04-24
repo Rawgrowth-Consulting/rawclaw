@@ -11,6 +11,7 @@ import { dispatchRun } from "@/lib/runs/dispatch";
 import { isHosted } from "@/lib/deploy-mode";
 import { tryDecryptSecret } from "@/lib/crypto";
 import { chatReply, CHAT_HANDOFF_SENTINEL_PREFIX } from "@/lib/agent/chat";
+import { transcribeVoice } from "@/lib/voice/transcribe";
 
 /**
  * Rotating animation frames for the thinking bubble. We cycle through
@@ -164,11 +165,29 @@ export async function POST(
   }
 
   const msg = update.message;
-  if (!msg || !msg.text) {
+  if (!msg || (!msg.text && !msg.voice)) {
     return NextResponse.json({ ok: true, skipped: "non-message update" });
   }
 
-  const text = msg.text.trim();
+  // Voice notes: transcribe inline before the drain pipeline sees the
+  // message so downstream (inbox row, /rawgrowth-chat slash, MCP
+  // telegram_reply) stays a text-only code path.
+  let text = msg.text?.trim() ?? "";
+  if (!text && msg.voice) {
+    try {
+      const result = await transcribeVoice(token, msg.voice.file_id);
+      text = result.text;
+      console.log(
+        `[telegram] org=${organizationId} voice→text via ${result.source} in ${result.durationMs}ms`,
+      );
+    } catch (err) {
+      console.error("[telegram] voice transcribe failed:", (err as Error).message);
+      text = "[voice transcription failed — please resend as text]";
+    }
+  }
+  if (!text) {
+    return NextResponse.json({ ok: true, skipped: "empty message" });
+  }
 
   // Log EVERY inbound message into the Telegram inbox so the client's
   // Claude Code can read them via the telegram_inbox_read MCP tool.

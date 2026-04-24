@@ -132,6 +132,14 @@ export function sendChatAction(
 }
 
 // Shape of the inbound webhook payload (only fields we care about).
+export type TgVoice = {
+  file_id: string;
+  file_unique_id: string;
+  duration: number;
+  mime_type?: string;
+  file_size?: number;
+};
+
 export type TgUpdate = {
   update_id: number;
   message?: {
@@ -140,5 +148,24 @@ export type TgUpdate = {
     chat: { id: number; type: string };
     date: number;
     text?: string;
+    voice?: TgVoice;
   };
 };
+
+/**
+ * Resolve a voice/document file_id into a download URL. Two hops:
+ *   1. getFile returns { file_path }
+ *   2. GET https://api.telegram.org/file/bot<TOKEN>/<file_path>
+ */
+export async function getFile(token: string, fileId: string) {
+  return call<{
+    file_id: string;
+    file_unique_id: string;
+    file_size?: number;
+    file_path?: string;
+  }>(token, "getFile", { file_id: fileId });
+}
+
+export function fileDownloadUrl(token: string, filePath: string): string {
+  return `${API_ROOT}/file/bot${token}/${filePath}`;
+}

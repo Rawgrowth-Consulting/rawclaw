@@ -17,7 +17,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.v3
     restart: unless-stopped
     # Reach the host's rawclaw-drain server at http://host.docker.internal:9876
     # — systemd service spawns Claude Code on inbound webhook events.
