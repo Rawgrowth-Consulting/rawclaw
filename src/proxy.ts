@@ -19,6 +19,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/webhooks",         // Telegram etc
   "/api/invites/accept",   // GET preview + POST accept use invite token, not session
   "/api/cron",             // CRON_SECRET bearer, called by the self-hosted tick timer
+  "/api/connections/slack/oauth/callback", // Slack OAuth redirect — state is self-verifying
 ];
 
 export default auth((req) => {

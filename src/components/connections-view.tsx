@@ -26,6 +26,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ClaudeConnectionCard } from "@/components/connections/claude-card";
+import { SlackConnectionCard } from "@/components/connections/slack-card";
 import { IntegrationConnectionSheet } from "@/components/integration-connection-sheet";
 import { CreateClientSheet } from "@/components/admin/create-client-sheet";
 import { useConnections } from "@/lib/connections/use-connections";
@@ -59,14 +60,6 @@ const COMING_SOON_MESSAGING: MessagingChannel[] = [
     Icon: SiWhatsapp,
     brand: "#25D366",
     blurb: "Same inbox pattern as Telegram — message in, routine fires, reply goes out.",
-    tone: "coming-soon",
-  },
-  {
-    id: "slack-bot",
-    name: "Slack (as a bot)",
-    Icon: SiSlack,
-    brand: "#4A154B",
-    blurb: "A dedicated bot that lives in your workspace and hands messages to your agents.",
     tone: "coming-soon",
   },
 ];
@@ -139,6 +132,10 @@ export function ConnectionsView() {
           displayName={telegramDisplay}
           onOpen={() => setTelegramOpen(true)}
         />
+
+        <div className="mb-3">
+          <SlackConnectionCard />
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           {COMING_SOON_MESSAGING.map((m) => (
