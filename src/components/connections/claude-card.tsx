@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { ArrowUpRight, Check, Copy, Eye, EyeOff, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  Copy,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,13 +35,85 @@ export function ClaudeConnectionCard() {
     "/api/connections/claude",
     jsonFetcher,
   );
-  const [token, setToken] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+
+  // OAuth flow state
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [starting, setStarting] = useState(false);
+  const [completing, setCompleting] = useState(false);
+
+  // Connected state
   const [disconnecting, setDisconnecting] = useState(false);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [revealing, setRevealing] = useState(false);
 
   const connected = data?.connected ?? false;
+
+  const startOauth = async () => {
+    setStarting(true);
+    try {
+      const res = await fetch("/api/connections/claude/oauth/start", {
+        method: "POST",
+      });
+      const body = (await res.json()) as {
+        ok?: boolean;
+        url?: string;
+        state?: string;
+        error?: string;
+      };
+      if (!res.ok || !body.ok || !body.url || !body.state) {
+        throw new Error(body.error ?? "failed to start OAuth");
+      }
+      setAuthUrl(body.url);
+      setAuthState(body.state);
+      // Open Anthropic in a new tab
+      window.open(body.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const completeOauth = async () => {
+    if (!authState) {
+      toast.error("Click Open Anthropic first");
+      return;
+    }
+    const trimmed = code.trim();
+    if (!trimmed) {
+      toast.error("Paste the code from Anthropic first");
+      return;
+    }
+    setCompleting(true);
+    try {
+      const res = await fetch("/api/connections/claude/oauth/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: trimmed, state: authState }),
+      });
+      const body = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error ?? "exchange failed");
+      }
+      toast.success("Claude Max connected");
+      setAuthUrl(null);
+      setAuthState(null);
+      setCode("");
+      await mutate();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const cancelOauth = () => {
+    setAuthUrl(null);
+    setAuthState(null);
+    setCode("");
+  };
 
   const reveal = async () => {
     if (revealed) {
@@ -61,37 +141,6 @@ export function ClaudeConnectionCard() {
       toast.success("Token copied");
     } catch {
       /* ignore */
-    }
-  };
-
-  const submit = async () => {
-    const trimmed = token.trim();
-    if (!trimmed) {
-      toast.error("Paste your token first");
-      return;
-    }
-    if (!trimmed.startsWith(TOKEN_PREFIX)) {
-      toast.error(`Token must start with ${TOKEN_PREFIX}`);
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/connections/claude", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token: trimmed }),
-      });
-      const body = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || !body.ok) {
-        throw new Error(body.error ?? "Failed to save token");
-      }
-      setToken("");
-      toast.success("Claude Max connected");
-      await mutate();
-    } catch (err) {
-      toast.error((err as Error).message);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -130,10 +179,7 @@ export function ClaudeConnectionCard() {
               className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border"
               style={{ backgroundColor: "rgba(217, 119, 87, 0.1)" }}
             >
-              <ClaudeLogo
-                className="size-6"
-                style={{ color: "#D97757" } as React.CSSProperties}
-              />
+              <ClaudeLogo className="size-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -159,7 +205,7 @@ export function ClaudeConnectionCard() {
               <p className="mt-0.5 text-[12px] text-muted-foreground">
                 {connected
                   ? `Connected${data?.installed_at ? ` · ${new Date(data.installed_at).toLocaleDateString()}` : ""}`
-                  : "Powers your VPS-side agents (24/7 Telegram replies + scheduled routines)"}
+                  : "Powers your VPS-side agents (24/7 Telegram + scheduled routines)"}
               </p>
             </div>
           </div>
@@ -220,79 +266,94 @@ export function ClaudeConnectionCard() {
               60 seconds of any change.
             </p>
           </div>
-        ) : (
+        ) : authUrl ? (
+          // Step 2: user has opened the auth URL, now needs to paste the code
           <div className="space-y-4">
-            <ol className="space-y-2 text-[12.5px] leading-relaxed text-muted-foreground">
-              <li>
-                <span className="font-medium text-foreground">1.</span> Open
-                Claude on your laptop (or sign in to your Claude account):
-                <a
-                  href="https://claude.ai/login"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="ml-2 inline-flex items-center gap-1 text-primary hover:underline"
-                >
-                  Open claude.ai
-                  <ArrowUpRight className="size-3" />
-                </a>
-              </li>
-              <li>
-                <span className="font-medium text-foreground">2.</span> In a
-                terminal, run{" "}
-                <code className="rounded bg-background/60 px-1.5 py-0.5 font-mono text-[11.5px] text-foreground">
-                  claude setup-token
-                </code>{" "}
-                — sign in when the browser opens, then copy the{" "}
-                <code className="rounded bg-background/60 px-1.5 py-0.5 font-mono text-[11.5px] text-foreground">
-                  {TOKEN_PREFIX}…
-                </code>{" "}
-                token it prints.
-              </li>
-              <li>
-                <span className="font-medium text-foreground">3.</span> Paste
-                it below and hit Connect.
-              </li>
-            </ol>
-
+            <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+              <p className="text-[12.5px] text-foreground">
+                Anthropic should be open in a new tab. Sign in with your
+                Claude Max, then copy the code Anthropic shows you on the
+                callback page.
+              </p>
+              <button
+                type="button"
+                onClick={() => window.open(authUrl, "_blank", "noopener,noreferrer")}
+                className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-medium text-primary hover:underline"
+              >
+                Re-open Anthropic
+                <ExternalLink className="size-3" />
+              </button>
+            </div>
             <div>
               <Label
-                htmlFor="claude-token"
+                htmlFor="claude-oauth-code"
                 className="text-[11px] font-medium text-muted-foreground"
               >
-                Long-lived token
+                Code from Anthropic
               </Label>
               <div className="mt-1.5 flex gap-2">
                 <Input
-                  id="claude-token"
-                  type="password"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder={`${TOKEN_PREFIX}…`}
+                  id="claude-oauth-code"
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  placeholder="paste the code Anthropic shows you"
                   className="font-mono text-[12px]"
                   autoComplete="off"
                   spellCheck={false}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !submitting) submit();
+                    if (e.key === "Enter" && !completing) completeOauth();
                   }}
                 />
                 <Button
-                  onClick={submit}
-                  disabled={submitting || !token.trim()}
+                  onClick={completeOauth}
+                  disabled={completing || !code.trim()}
                   className="btn-shine bg-primary text-white hover:bg-primary/90"
                 >
-                  {submitting ? "Connecting…" : (
+                  {completing ? "Connecting…" : (
                     <>
                       <Check className="size-3.5" />
                       Connect
                     </>
                   )}
                 </Button>
+                <Button
+                  variant="secondary"
+                  onClick={cancelOauth}
+                  disabled={completing}
+                  className="bg-white/5 text-foreground hover:bg-white/10"
+                >
+                  Cancel
+                </Button>
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
-                Treat this like a password — it has full inference access
-                against your Max subscription.
+                The code looks like a long string with a <code>#</code> in
+                the middle. Paste the whole thing — we&apos;ll handle the
+                formatting.
               </p>
             </div>
+          </div>
+        ) : (
+          // Step 1: not started — show the Connect button + intro
+          <div className="space-y-4">
+            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+              Click below to sign in with your Claude Max. Anthropic will
+              show you a code on a callback page — paste it back here and
+              you&apos;re done.
+            </p>
+            <Button
+              onClick={startOauth}
+              disabled={starting}
+              className="btn-shine bg-primary text-white hover:bg-primary/90"
+            >
+              <ClaudeLogo className="size-4" />
+              {starting ? "Starting…" : "Connect Claude Max"}
+            </Button>
+            <p className="text-[11px] text-muted-foreground">
+              No CLI, no terminal. Anthropic verifies you, the dashboard
+              exchanges the code from the VPS so the resulting token works
+              there.
+            </p>
           </div>
         )}
 
