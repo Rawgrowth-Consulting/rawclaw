@@ -26,7 +26,12 @@ export const NANGO_PROVIDER_CONFIG_KEYS: Record<string, string> = {
   mailchimp: "mailchimp",
   fathom: "fathom",
   meta: "facebook",
-  // canva, outlook, telegram — add as you register them in Nango
+  // Telegram isn't a Nango-managed provider (we wire bot tokens ourselves
+  // via /api/connections/telegram), but the Connections page uses this
+  // map to look up the DB row. Without this entry the UI can't tell an
+  // existing bot is connected.
+  telegram: "telegram",
+  // canva, outlook — add as you register them in Nango
 };
 
 export function providerConfigKeyFor(integrationId: string): string | null {
