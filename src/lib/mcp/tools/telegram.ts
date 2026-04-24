@@ -127,8 +127,20 @@ registerTool({
     required: ["text"],
   },
   handler: async (args, ctx) => {
-    const body = String(args.text ?? "").trim();
-    if (!body) return textError("text is required");
+    const raw = String(args.text ?? "").trim();
+    if (!raw) return textError("text is required");
+
+    // Brand-voice guard (brief §12). Rewrite banned words to neutral
+    // substitutes before anything leaves the server. Logs the hit list
+    // so operators can audit the activity feed and spot prompt-drift.
+    const { checkBrandVoice } = await import("@/lib/brand/runtime-filter");
+    const verdict = checkBrandVoice(raw);
+    const body = verdict.ok ? raw : verdict.rewritten;
+    if (!verdict.ok) {
+      console.warn(
+        `[telegram_reply] brand-voice rewrite, hits=${verdict.hits.join(",")}`,
+      );
+    }
 
     const conn = await getTelegramConnection(ctx.organizationId);
     if (!conn) {
