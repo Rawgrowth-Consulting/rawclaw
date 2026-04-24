@@ -181,25 +181,17 @@ export async function chatReply(input: {
   // Append the new inbound message as the final user turn.
   const messages = [...history, { role: "user" as const, content: userMessage }];
 
+  // mcpToken is unused on the OAuth path (MCP server tools aren't allowed
+  // alongside oauth-2025-04-20). Reference it so the linter doesn't warn,
+  // and keep it visible for when Anthropic enables both betas together.
+  void mcpToken;
+
   const body: Record<string, unknown> = {
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: buildSystemPrompt(organizationName, persona),
     messages,
   };
-
-  // Wire the org's MCP server in if we have a token. The model gets all
-  // the same tools the `claude` CLI sees but in-call, no spawn.
-  if (mcpToken) {
-    body.mcp_servers = [
-      {
-        type: "url",
-        url: `${publicAppUrl}/api/mcp`,
-        name: "rawgrowth",
-        authorization_token: mcpToken,
-      },
-    ];
-  }
 
   let res: Response;
   try {
@@ -209,9 +201,12 @@ export async function chatReply(input: {
         authorization: `Bearer ${claudeToken}`,
         "anthropic-version": "2023-06-01",
         // `oauth-2025-04-20` is the gate that lets /v1/messages accept
-        // sk-ant-oat01-* tokens. The MCP-client beta still works — we
-        // can stack betas via comma.
-        "anthropic-beta": "oauth-2025-04-20,mcp-client-2025-04-04",
+        // sk-ant-oat01-* tokens. NOTE: stacking `mcp-client-2025-04-04`
+        // alongside makes Anthropic return a misleading rate_limit_error
+        // — the two betas can't be combined for OAuth-billed inference
+        // today. So the chat path can't call MCP tools mid-reply; that
+        // capability stays on the slash-command + drain path.
+        "anthropic-beta": "oauth-2025-04-20",
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
