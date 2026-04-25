@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ClaudeConnectionCard } from "@/components/connections/claude-card";
 import { SlackConnectionCard } from "@/components/connections/slack-card";
+import { WorkspaceToolsSection } from "@/components/connections/workspace-tools-section";
 import { IntegrationConnectionSheet } from "@/components/integration-connection-sheet";
 import { CreateClientSheet } from "@/components/admin/create-client-sheet";
 import { useConnections } from "@/lib/connections/use-connections";
@@ -120,7 +121,16 @@ export function ConnectionsView() {
         <McpCard />
       </section>
 
-      {/* 3. Messaging channels */}
+      {/* 3. Workspace tools (Nango-backed) */}
+      <section>
+        <SectionHeading
+          title="Workspace tools"
+          subtitle="OAuth into the SaaS your agents need to act on. Once connected, agents can call these tools from Telegram, Slack, or routines."
+        />
+        <WorkspaceToolsSection />
+      </section>
+
+      {/* 4. Messaging channels */}
       <section>
         <SectionHeading
           title="Messaging channels"

@@ -12,6 +12,7 @@ import {
   SiGoogledrive,
   SiGmail,
   SiTelegram,
+  SiGithub,
 } from "react-icons/si";
 
 export type AuthMethod = "api_key" | "oauth" | "webhook";
@@ -237,6 +238,19 @@ export const INTEGRATIONS: IntegrationEntry[] = [
       exampleAccount: "james.oldham0604@gmail.com",
     },
     events: [{ id: "gmail.email.received", label: "Email received" }],
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    description: "Repos, PRs, issues, code search — for engineering agents.",
+    category: "Engineering",
+    Icon: SiGithub,
+    brand: "#181717",
+    methods: ["oauth"],
+    oauth: {
+      scopes: ["repo", "read:user"],
+      exampleAccount: "your-handle",
+    },
   },
   {
     id: "telegram",
