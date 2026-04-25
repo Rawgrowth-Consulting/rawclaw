@@ -12,7 +12,7 @@ import {
   markFired,
   type SlackBinding,
 } from "@/lib/slack/bindings";
-import { chatReply } from "@/lib/agent/chat";
+import { chatReply, CHAT_HANDOFF_SENTINEL_PREFIX } from "@/lib/agent/chat";
 
 /**
  * Shape of the relevant inner-events Slack delivers to our webhook.
@@ -174,7 +174,69 @@ async function fireBinding(input: {
     return;
   }
 
-  // ─── 3. Route the output ───────────────────────────────────────
+  // ─── 3a. Tool-handoff path ─────────────────────────────────────
+  // chatReply returned the [handoff] sentinel — agent wants tools.
+  // Hand off to the drain daemon with a one-shot prompt that includes
+  // the Slack context + an instruction to post the final reply via
+  // the slack_post_message MCP tool.
+  if (result.reply.startsWith(CHAT_HANDOFF_SENTINEL_PREFIX)) {
+    const ack = result.reply
+      .slice(CHAT_HANDOFF_SENTINEL_PREFIX.length)
+      .replace(/^\s*[—-]\s*/, "")
+      .trim() || "Working on it";
+
+    // Post the immediate "🔧 working on it" so the user sees life
+    // while drain grinds (~30-60s for tool-heavy work).
+    try {
+      await postMessage(botToken, {
+        channel: event.channel!,
+        text: `🔧 ${ack}`,
+        thread_ts: event.thread_ts ?? event.ts,
+      });
+    } catch {
+      /* non-fatal */
+    }
+
+    const channelId = event.channel!;
+    const threadTs = event.thread_ts ?? event.ts ?? "";
+    const personaLine = `${binding.slack_channel_name ? `In Slack channel #${binding.slack_channel_name} ` : ""}the operator just sent: "${userMessage.replace(/"/g, '\\"')}"`;
+    const promptTemplateLine = binding.prompt_template
+      ? `\n\nFollow this template for what to do with the message: ${binding.prompt_template}`
+      : "";
+
+    const prompt =
+      `You are an agent in the user's Rawgrowth workspace. ${personaLine}.${promptTemplateLine}\n\n` +
+      `You have access to MCP tools (gmail_search, gmail_get_message, gmail_draft, agents_list, etc.). Use whatever tools you need to complete the request.\n\n` +
+      `When done, deliver your final answer by calling the slack_post_message MCP tool with:\n` +
+      `  channel_id: "${channelId}"\n` +
+      (threadTs ? `  thread_ts: "${threadTs}"\n` : "") +
+      `  text: <your answer>\n\n` +
+      `Do NOT print the answer as your final reply — ONLY post it via slack_post_message. Keep the answer concise (3-5 short sentences max, plain text or simple markdown — no tables, no long lists). After posting, you can stop.`;
+
+    const drainUrl = process.env.RAWCLAW_DRAIN_URL;
+    if (drainUrl) {
+      try {
+        await fetch(`${drainUrl.replace(/\/$/, "")}/run`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ prompt }),
+          signal: AbortSignal.timeout(2_000),
+        });
+      } catch (err) {
+        console.error(
+          `[slack] drain /run dispatch failed for binding ${binding.id}: ${(err as Error).message}`,
+        );
+      }
+    } else {
+      console.error(
+        `[slack] no RAWCLAW_DRAIN_URL set — handoff cannot dispatch`,
+      );
+    }
+    await markFired(binding.id);
+    return;
+  }
+
+  // ─── 3b. Direct chat reply path (no tools needed) ──────────────
   try {
     await routeOutput({
       binding,

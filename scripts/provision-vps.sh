@@ -276,10 +276,14 @@ sudo -iu rawclaw claude mcp add --scope user --transport http rawgrowth \
 # Drain server — tiny HTTP router that spawns Claude Code on POST.
 #   POST /chat    → /rawgrowth-chat (Telegram free-text replies)
 #   POST /triage  → /rawgrowth-triage (drain one pending routine run)
+#   POST /run     → spawns claude with a one-shot prompt from JSON body
+#                  ({ prompt: "..." }). Used by the Slack webhook to
+#                  hand off action requests with full context.
 #   POST /        → backward-compat alias for /chat
-# Per-command single-flight with redrive, so chat + triage can run
-# concurrently but two of the same won't stack. Listens on 0.0.0.0:9876
-# — only reachable from host + docker bridge.
+# Per-command single-flight with redrive applies to /chat + /triage;
+# /run is fire-and-forget per request (no dedup), since each Slack
+# message is a distinct one-shot conversation.
+# Listens on 0.0.0.0:9876 — only reachable from host + docker bridge.
 mkdir -p /opt/rawclaw-drain
 cat > /opt/rawclaw-drain/drain-server.mjs <<'JS'
 import http from "node:http";
@@ -310,8 +314,53 @@ function trigger(command) {
   child.unref();
 }
 
-http.createServer((req, res) => {
+function spawnWithPrompt(prompt) {
+  const started = Date.now();
+  const child = spawn(CLAUDE, [
+    "--print",
+    "--dangerously-skip-permissions",
+    prompt,
+  ], { stdio: ["ignore", "inherit", "inherit"], detached: true });
+  child.on("exit", (code) => {
+    console.log(`drain[run] exit=${code} duration=${Date.now()-started}ms prompt_len=${prompt.length}`);
+  });
+  child.unref();
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+http.createServer(async (req, res) => {
   const path = (req.url ?? "/").split("?")[0];
+
+  if (path === "/run" && req.method === "POST") {
+    let body;
+    try {
+      const raw = await readBody(req);
+      body = JSON.parse(raw);
+    } catch {
+      res.writeHead(400, { "content-type": "text/plain" });
+      res.end("bad json");
+      return;
+    }
+    const prompt = String(body?.prompt ?? "").trim();
+    if (!prompt) {
+      res.writeHead(400, { "content-type": "text/plain" });
+      res.end("prompt required");
+      return;
+    }
+    res.writeHead(202, { "content-type": "text/plain" });
+    res.end("ok");
+    spawnWithPrompt(prompt);
+    return;
+  }
+
   let command;
   if (path === "/triage") command = "rawgrowth-triage";
   else if (path === "/chat" || path === "/") command = "rawgrowth-chat";
