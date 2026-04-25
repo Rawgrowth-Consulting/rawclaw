@@ -13,6 +13,8 @@ import {
   SiGmail,
   SiTelegram,
   SiGithub,
+  SiSupabase,
+  SiVercel,
 } from "react-icons/si";
 
 export type AuthMethod = "api_key" | "oauth" | "webhook";
@@ -27,7 +29,7 @@ export type IntegrationEventDef = {
  * Telegram uses a dedicated bot-token flow because Nango doesn't handle
  * Bot API auth natively.
  */
-export type ConnectStrategy = "nango" | "telegram-bot";
+export type ConnectStrategy = "nango" | "telegram-bot" | "supabase-pat";
 
 export type IntegrationEntry = {
   id: string;
@@ -250,6 +252,36 @@ export const INTEGRATIONS: IntegrationEntry[] = [
     oauth: {
       scopes: ["repo", "read:user"],
       exampleAccount: "your-handle",
+    },
+  },
+  {
+    id: "supabase",
+    name: "Supabase",
+    description:
+      "Provision projects, run migrations, query Postgres — across every project the PAT can see.",
+    category: "Data",
+    Icon: SiSupabase,
+    brand: "#3ECF8E",
+    methods: ["api_key"],
+    connectStrategy: "supabase-pat",
+    apiKey: {
+      placeholder: "sbp_••••••••••••••••••••••••••••••••••••",
+      docsUrl: "https://supabase.com/dashboard/account/tokens",
+      where:
+        "Supabase Dashboard → Account → Access Tokens → Generate new token",
+    },
+  },
+  {
+    id: "vercel",
+    name: "Vercel",
+    description: "Deployments, projects, env vars, and logs.",
+    category: "Engineering",
+    Icon: SiVercel,
+    brand: "#FFFFFF",
+    methods: ["oauth"],
+    oauth: {
+      scopes: ["read", "write"],
+      exampleAccount: "rawgrowth team",
     },
   },
   {

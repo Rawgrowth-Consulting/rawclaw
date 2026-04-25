@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { SiGmail, SiGoogledrive, SiGithub } from "react-icons/si";
+import {
+  SiGmail,
+  SiGoogledrive,
+  SiGithub,
+  SiSupabase,
+  SiVercel,
+} from "react-icons/si";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +53,20 @@ const TOOLS: Array<{
     description: "Repos, PRs, issues, code search.",
     Icon: SiGithub,
     brand: "#181717",
+  },
+  {
+    id: "supabase",
+    name: "Supabase",
+    description: "Postgres, auth, storage.",
+    Icon: SiSupabase,
+    brand: "#3ECF8E",
+  },
+  {
+    id: "vercel",
+    name: "Vercel",
+    description: "Deployments, projects, env vars, and logs.",
+    Icon: SiVercel,
+    brand: "#FFFFFF",
   },
 ];
 
