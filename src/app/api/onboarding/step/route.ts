@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     // Portal notified a central Slack channel here; v3 uses per-org Slack
     // via rgaios_slack_bindings (Phase 1+2+3) so cross-org central notify is
     // out of scope for the trial. Log to stdout and move on.
-    console.log(
+    console.info(
       `[onboarding] org=${ctx.activeOrgId} completed step ${step}: ${STEP_NAMES[step] ?? `Step ${step}`}`,
     );
 

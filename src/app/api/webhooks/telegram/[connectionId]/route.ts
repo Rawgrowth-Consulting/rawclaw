@@ -177,7 +177,7 @@ export async function POST(
     try {
       const result = await transcribeVoice(token, msg.voice.file_id);
       text = result.text;
-      console.log(
+      console.debug(
         `[telegram] org=${organizationId} voice→text via ${result.source} in ${result.durationMs}ms`,
       );
     } catch (err) {
