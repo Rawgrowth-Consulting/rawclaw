@@ -7,6 +7,7 @@ import type {
 
 import { getOrgContext } from "@/lib/auth/admin";
 import { seedTelegramConnectionsForDefaults } from "@/lib/connections/telegram-seed";
+import { drainScrapeQueue } from "@/lib/scrape/worker";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import {
   QUESTIONNAIRE_SECTIONS,
@@ -451,7 +452,7 @@ async function saveQuestionnaireSection(
     return { ok: false, error: `Unknown section_id: ${args.section_id}` };
   }
 
-  console.log(
+  console.debug(
     `[onboarding] save_questionnaire_section → ${section.column} for ${userId}:`,
     args.data
   );
@@ -482,10 +483,6 @@ async function saveQuestionnaireSection(
     return { ok: false, error: error.message };
   }
 
-  console.log(
-    `[onboarding] save_questionnaire_section OK → ${section.column} now:`,
-    merged
-  );
   return { ok: true, merged };
 }
 
@@ -610,6 +607,15 @@ async function approveBrandProfile(userId: string) {
     console.error("[approve_brand_profile] telegram seed failed:", err);
   }
 
+  // Kick the onboarding scrape (socials + competitors + site) in the
+  // background. drainScrapeQueue is self-seeding from rgaios_brand_intakes
+  // and writes terminal rows to rgaios_scrape_snapshots, which is what
+  // /api/dashboard/gate's isScrapeComplete waits on. Fire-and-forget:
+  // Playwright + N URLs is slow, and the dashboard gate polls until done.
+  drainScrapeQueue(userId).catch((err) =>
+    console.error("[approve_brand_profile] scrape kick failed:", err),
+  );
+
   return { ok: true };
 }
 
@@ -629,7 +635,7 @@ async function saveSoftwareAccess(
   const platform = SOFTWARE_ACCESS_PLATFORMS.find((p) => p.id === args.platform);
   if (!platform) return { ok: false, error: `Unknown platform: ${args.platform}` };
 
-  console.log(
+  console.debug(
     `[onboarding] save_software_access → ${args.platform} confirmed=${args.confirmed}`
   );
 
@@ -675,7 +681,7 @@ async function confirmCallBooking(
   const call = SCHEDULE_CALLS.find((c) => c.id === args.call_id);
   if (!call) return { ok: false, error: `Unknown call_id: ${args.call_id}` };
 
-  console.log(
+  console.debug(
     `[onboarding] confirm_call_booking → ${args.call_id} booked=${args.booked}`
   );
 
@@ -1084,7 +1090,7 @@ export async function POST(req: NextRequest) {
             for (const tc of toolCalls) {
               let result: any;
               let label: string | null = null;
-              console.log(
+              console.debug(
                 `[onboarding] tool call → ${tc.name}`,
                 tc.arguments || "{}"
               );
