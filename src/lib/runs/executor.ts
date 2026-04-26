@@ -69,8 +69,21 @@ export async function executeRun(runId: string): Promise<void> {
       writePolicy,
     );
 
-    const brandVoice = await loadBrandVoice(run.organization_id);
-    const systemPrompt = buildSystemPrompt(routine.title, routine.description, agent, brandVoice);
+    // Load context in parallel to avoid N+1 latency. Per CTO day1-reply §1:
+    // each manager run loads brand profile + last 20 memories + pending inbox.
+    const [brandVoice, recentMemory, pendingInbox] = await Promise.all([
+      loadBrandVoice(run.organization_id),
+      loadAgentMemory(run.organization_id, agent?.id ?? null),
+      loadPendingInbox(run.organization_id, agent?.id ?? null),
+    ]);
+    const systemPrompt = buildSystemPrompt(
+      routine.title,
+      routine.description,
+      agent,
+      brandVoice,
+      recentMemory,
+      pendingInbox,
+    );
     const userMessage = buildUserMessage(run, trigger);
 
     const result = await generateText({
@@ -130,11 +143,129 @@ async function loadBrandVoice(organizationId: string): Promise<string | null> {
   return content && content.trim().length > 0 ? content.trim() : null;
 }
 
+export type MemoryEntry = {
+  ts: string;
+  kind: string;
+  detail: Record<string, unknown> | null;
+};
+
+export type InboxEntry = {
+  received_at: string;
+  chat_id: number;
+  sender: string | null;
+  text: string | null;
+};
+
+/**
+ * Last N audit_log entries scoped to this agent (filtered by
+ * detail->>'agent_id'). Mirrors the agent panel "memory" tab in
+ * src/app/agents/[id]/page.tsx so what the model sees matches the UI.
+ */
+async function loadAgentMemory(
+  organizationId: string,
+  agentId: string | null,
+  limit = 20,
+): Promise<MemoryEntry[]> {
+  if (!agentId) return [];
+  const { data } = await supabaseAdmin()
+    .from("rgaios_audit_log")
+    .select("ts, kind, detail")
+    .eq("organization_id", organizationId)
+    .filter("detail->>agent_id", "eq", agentId)
+    .order("ts", { ascending: false })
+    .limit(limit);
+  const rows = (data ?? []) as Array<{
+    ts: string;
+    kind: string;
+    detail: Record<string, unknown> | null;
+  }>;
+  return rows.map((r) => ({ ts: r.ts, kind: r.kind, detail: r.detail }));
+}
+
+/**
+ * Unanswered Telegram messages for this agent's connection. Bound via
+ * rgaios_connections.agent_id (added in 0024_connection_agent_link).
+ * Returns empty when the agent has no telegram connection wired up.
+ */
+async function loadPendingInbox(
+  organizationId: string,
+  agentId: string | null,
+  limit = 20,
+): Promise<InboxEntry[]> {
+  if (!agentId) return [];
+  const db = supabaseAdmin();
+  const { data: conn } = await db
+    .from("rgaios_connections")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("agent_id", agentId)
+    .eq("provider_config_key", "telegram")
+    .eq("status", "connected")
+    .maybeSingle();
+  const connId = (conn as { id: string } | null)?.id;
+  if (!connId) return [];
+  const { data } = await db
+    .from("rgaios_telegram_messages")
+    .select("received_at, chat_id, sender_username, sender_first_name, text")
+    .eq("organization_id", organizationId)
+    .eq("connection_id", connId)
+    .is("responded_at", null)
+    .order("received_at", { ascending: false })
+    .limit(limit);
+  const rows = (data ?? []) as Array<{
+    received_at: string;
+    chat_id: number;
+    sender_username: string | null;
+    sender_first_name: string | null;
+    text: string | null;
+  }>;
+  return rows.map((m) => ({
+    received_at: m.received_at,
+    chat_id: m.chat_id,
+    sender:
+      m.sender_username != null
+        ? `@${m.sender_username}`
+        : m.sender_first_name,
+    text: m.text,
+  }));
+}
+
+const SECTION_CHAR_CAP = 2000;
+
+function capSection(body: string): string {
+  if (body.length <= SECTION_CHAR_CAP) return body;
+  return `${body.slice(0, SECTION_CHAR_CAP)}... [truncated]`;
+}
+
+function renderMemorySection(entries: MemoryEntry[]): string | null {
+  if (entries.length === 0) return null;
+  const lines = entries.map((e) => {
+    // Compact detail to a one-line excerpt; full detail lives in DB.
+    const detailStr = e.detail
+      ? JSON.stringify(e.detail).replace(/\s+/g, " ").slice(0, 200)
+      : "";
+    return `- [${e.ts}] ${e.kind}: ${detailStr}`;
+  });
+  return capSection(lines.join("\n"));
+}
+
+function renderInboxSection(entries: InboxEntry[]): string | null {
+  if (entries.length === 0) return null;
+  const lines = entries.map((m) => {
+    const who = m.sender ?? `chat ${m.chat_id}`;
+    const excerpt = (m.text ?? "").replace(/\s+/g, " ").slice(0, 240);
+    return `- [${m.received_at}] from ${who} (chat_id ${m.chat_id}): ${excerpt}`;
+  });
+  return capSection(lines.join("\n"));
+}
+
 function buildSystemPrompt(
   routineTitle: string,
   routineInstructions: string | null,
   agent: RunContext["agent"],
   brandVoice: string | null,
+  recentMemory: MemoryEntry[],
+  pendingInbox: InboxEntry[],
 ): string {
   const agentIntro = agent
     ? `You are ${agent.name}${agent.title ? `, ${agent.title}` : ""}, an AI employee at this organization. Role: ${agent.role}.${agent.description ? `\n\nYour responsibilities: ${agent.description}` : ""}`
@@ -157,6 +288,24 @@ function buildSystemPrompt(
       "",
       "**Brand profile (use this voice in all user-facing copy):**",
       brandVoice,
+    );
+  }
+
+  const memorySection = renderMemorySection(recentMemory);
+  if (memorySection) {
+    lines.push(
+      "",
+      `**Recent memory (last ${recentMemory.length} entries):**`,
+      memorySection,
+    );
+  }
+
+  const inboxSection = renderInboxSection(pendingInbox);
+  if (inboxSection) {
+    lines.push(
+      "",
+      "**Pending inbox (unanswered messages):**",
+      inboxSection,
     );
   }
 
