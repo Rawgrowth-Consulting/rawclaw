@@ -75,10 +75,18 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // NOTE: We intentionally do NOT nest `assignee:rgaios_agents!...(reports_to)`
+  // inside this select. PostgREST hint resolution can fail silently if the FK
+  // constraint isn't introspected as expected (stale schema cache, ambiguous
+  // hint, etc.) — the embed comes back as `null` instead of erroring, and
+  // the sub-agent filter below would treat every sub-agent routine as a
+  // manager, firing them all on heartbeat and silently breaking brief §9.6.
+  // Two explicit queries are slower by one round-trip but cannot silently
+  // misbehave.
   const { data: triggers, error } = await db
     .from("rgaios_routine_triggers")
     .select(
-      "*, rgaios_routines!inner(id, organization_id, status, title, assignee_agent_id, assignee:rgaios_agents!assignee_agent_id(reports_to))",
+      "*, rgaios_routines!inner(id, organization_id, status, title, assignee_agent_id)",
     )
     .eq("kind", "schedule")
     .eq("enabled", true);
@@ -99,11 +107,34 @@ export async function GET(req: NextRequest) {
       status: string;
       title: string;
       assignee_agent_id: string | null;
-      assignee: { reports_to: string | null } | null;
     } | null;
   };
 
   const rows = (triggers ?? []) as unknown as Row[];
+
+  // Resolve reports_to for every assignee in a single follow-up query.
+  // Map<agent_id, reports_to>. Missing key => agent not found (treat as
+  // manager-equivalent: don't block, surface via normal routine lookup).
+  const assigneeIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.rgaios_routines?.assignee_agent_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const reportsToById = new Map<string, string | null>();
+  if (assigneeIds.length > 0) {
+    const { data: agents, error: agentsErr } = await db
+      .from("rgaios_agents")
+      .select("id, reports_to")
+      .in("id", assigneeIds);
+    if (agentsErr) {
+      return NextResponse.json({ error: agentsErr.message }, { status: 500 });
+    }
+    for (const a of agents ?? []) {
+      reportsToById.set(a.id as string, (a.reports_to as string | null) ?? null);
+    }
+  }
 
   const fired: Array<{ trigger_id: string; run_id: string; title: string }> = [];
   const skipped: Array<{ trigger_id: string; reason: string }> = [];
@@ -121,10 +152,10 @@ export async function GET(req: NextRequest) {
       // Brief §9.6: sub-agents do NOT run on heartbeat; only when pinged.
       // A routine assigned to an agent fires only if that agent is a manager
       // (reports_to IS NULL). Routines with no assignee fire as before.
-      if (
-        row.rgaios_routines.assignee_agent_id &&
-        row.rgaios_routines.assignee?.reports_to
-      ) {
+      // We look reports_to up via a separate query above, not via PostgREST
+      // embed, to avoid silent hint resolution failures.
+      const assigneeId = row.rgaios_routines.assignee_agent_id;
+      if (assigneeId && reportsToById.get(assigneeId)) {
         skipped.push({ trigger_id: row.id, reason: "sub-agent (heartbeat blocked)" });
         continue;
       }
