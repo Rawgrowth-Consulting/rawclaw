@@ -177,7 +177,7 @@ export function SlackConnectionCard() {
                 ) : data.configured ? (
                   <Badge
                     variant="secondary"
-                    className="bg-blue-500/10 text-[10px] text-blue-400"
+                    className="bg-cyan-500/10 text-[10px] text-cyan-400"
                   >
                     App configured · not installed
                   </Badge>

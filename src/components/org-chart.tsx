@@ -148,7 +148,8 @@ function AgentCard({
     <button
       type="button"
       onClick={() => onEdit(agent)}
-      className="group relative w-60 rounded-xl border border-border bg-card/70 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-[0_12px_40px_rgba(12,191,106,.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- arbitrary shadow value is brand-compliant; box-shadow in transition list
+      className="group relative w-60 rounded-xl border border-border bg-card/70 p-4 text-left transition-[transform,border-color,background-color,box-shadow] hover:-translate-y-0.5 hover:border-primary/40 hover:bg-card hover:shadow-[0_12px_40px_rgba(12,191,106,.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="flex size-6 items-center justify-center rounded-md bg-primary/15 text-primary">
