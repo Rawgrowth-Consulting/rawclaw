@@ -27,7 +27,12 @@ export async function POST(req: NextRequest) {
       description: String(body.description ?? "").trim(),
       runtime: body.runtime,
       budgetMonthlyUsd: Number(body.budgetMonthlyUsd ?? 500),
-      writePolicy: body.writePolicy,
+      writePolicy:
+        body.writePolicy &&
+        typeof body.writePolicy === "object" &&
+        !Array.isArray(body.writePolicy)
+          ? body.writePolicy
+          : undefined,
       department: body.department ?? null,
     });
     return NextResponse.json({ agent }, { status: 201 });

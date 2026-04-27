@@ -184,7 +184,15 @@ function AgentCard({
         </Badge>
       </div>
 
-      <ConnectorsRow ids={Object.keys(agent.writePolicy ?? {})} />
+      <ConnectorsRow
+        ids={
+          agent.writePolicy &&
+          typeof agent.writePolicy === "object" &&
+          !Array.isArray(agent.writePolicy)
+            ? Object.keys(agent.writePolicy)
+            : []
+        }
+      />
 
       <div className="mt-3 flex items-center justify-end">
         <span className="font-mono text-[10px] text-muted-foreground">
