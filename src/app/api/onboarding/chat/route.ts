@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-import type {
-  ChatCompletionMessageParam,
-  ChatCompletionTool,
-} from "openai/resources/chat/completions";
+import type { ChatCompletionTool } from "openai/resources/chat/completions";
 
 import { getOrgContext } from "@/lib/auth/admin";
 import { seedTelegramConnectionsForDefaults } from "@/lib/connections/telegram-seed";
+import {
+  chatComplete,
+  resolveProvider,
+  type ChatMessage,
+} from "@/lib/llm/provider";
 import { drainScrapeQueue } from "@/lib/scrape/worker";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -19,15 +20,6 @@ import {
   BRAND_DOC_ZONES,
   computeOnboardingProgress,
 } from "@/lib/onboarding";
-
-let _openai: OpenAI | null = null;
-function openai(): OpenAI {
-  if (_openai) return _openai;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-  _openai = new OpenAI({ apiKey });
-  return _openai;
-}
 
 const SYSTEM_PROMPT = `You are the Rawgrowth onboarding assistant. You run a long, multi-section conversation that ends with every answer persisted to the database. Tone: warm, brief, curious. One question per turn. Acknowledge each answer before moving on. No long bullet lists.
 
@@ -531,19 +523,24 @@ ${sections}`;
 
   let content = "";
   try {
-    const streamResp = await openai().chat.completions.create({
-      model: "gpt-4o",
-      max_tokens: 4096,
-      stream: true,
+    const provider = resolveProvider("ONBOARDING_LLM_PROVIDER");
+    const result = await chatComplete({
+      provider,
+      system:
+        "You are a brand strategist building a comprehensive brand profile.",
       messages: [{ role: "user", content: prompt }],
-    });
-
-    for await (const chunk of streamResp) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (delta) {
+      maxSteps: 1,
+      onTextDelta: (delta) => {
         content += delta;
         onChunk?.(delta);
-      }
+      },
+    });
+    // For non-streaming providers (anthropic-api, anthropic-cli) onTextDelta
+    // never fires; emit the final text as one delta so the chat surface
+    // still receives it for rendering.
+    if (!content && result.text) {
+      content = result.text;
+      onChunk?.(result.text);
     }
   } catch (err: any) {
     return { ok: false, error: err.message || "Profile generation failed" };
@@ -1011,8 +1008,8 @@ export async function POST(req: NextRequest) {
       knownLines.length ? knownLines.join("\n") : "(nothing yet)"
     }\n\nWhen you call \`save_questionnaire_section\` for \`basicInfo\`, automatically include \`full_name\`, \`business_name\`, and \`email\` from the known list alongside any NEW fields the client gives you (\`phone\`, \`timezone\`, \`preferred_comms\`). Messaging preferences are NOT already known — you still ask about them in Section 1.\n\n------------------------------------------------------------\nNEXT ACTION — follow this exactly\n------------------------------------------------------------\n${nextActionBlock}\n`;
 
-    // Only user/assistant roles go to OpenAI. Defensive: drop anything else
-    // (reasoning bubbles, uploader placeholders) and any empty-content rows.
+    // Only user/assistant roles go to the model. Defensive: drop anything
+    // else (reasoning bubbles, uploader placeholders) and empty-content rows.
     const safeIncoming = incoming.filter(
       (m): m is IncomingMessage =>
         !!m &&
@@ -1021,12 +1018,16 @@ export async function POST(req: NextRequest) {
         (m as any).content.trim().length > 0
     );
 
-    const messages: ChatCompletionMessageParam[] = [
-      { role: "system", content: SYSTEM_PROMPT + contextPrompt },
-      ...safeIncoming.map(
-        (m) => ({ role: m.role, content: m.content }) as ChatCompletionMessageParam
-      ),
-    ];
+    // Provider-agnostic conversation buffer. After each tool-using step we
+    // fold the assistant's tool calls + the local tool results into a pair
+    // of synthetic messages so any backend (openai / anthropic-api /
+    // anthropic-cli) sees the same turn shape on the next step.
+    const messages: ChatMessage[] = safeIncoming.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+    const systemBlock = SYSTEM_PROMPT + contextPrompt;
+    const provider = resolveProvider("ONBOARDING_LLM_PROVIDER");
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -1037,69 +1038,49 @@ export async function POST(req: NextRequest) {
 
         try {
           for (let iter = 0; iter < 6; iter++) {
-            const completion = await openai().chat.completions.create({
+            const step = await chatComplete({
+              provider,
               model: "gpt-4o",
-              stream: true,
-              temperature: 0.3,
+              system: systemBlock,
               messages,
               tools: TOOLS,
-              tool_choice: "auto",
+              temperature: 0.3,
+              maxSteps: 1,
+              onTextDelta: (delta) => emit({ type: "text", delta }),
             });
 
-            let textContent = "";
-            const toolCalls: Array<{ id: string; name: string; arguments: string }> =
-              [];
-            let finishReason: string | null = null;
+            const textContent = step.text;
+            const toolCalls = step.toolCalls;
 
-            for await (const chunk of completion) {
-              const choice = chunk.choices[0];
-              const delta = choice?.delta;
+            if (toolCalls.length === 0) break;
 
-              if (delta?.content) {
-                textContent += delta.content;
-                emit({ type: "text", delta: delta.content });
-              }
+            // Fold the assistant turn (text + tool-call summary) so the next
+            // step's model sees what we just did. We use a single combined
+            // assistant message because the user/assistant-only contract
+            // can't carry the OpenAI-native `tool_calls` field.
+            const assistantSummary = [
+              textContent.trim(),
+              ...toolCalls.map(
+                (tc) =>
+                  `[tool_call] ${tc.name}(${JSON.stringify(tc.input)})`,
+              ),
+            ]
+              .filter(Boolean)
+              .join("\n");
+            messages.push({ role: "assistant", content: assistantSummary });
 
-              if (delta?.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                  const idx = tc.index ?? 0;
-                  if (!toolCalls[idx])
-                    toolCalls[idx] = { id: "", name: "", arguments: "" };
-                  if (tc.id) toolCalls[idx].id = tc.id;
-                  if (tc.function?.name) toolCalls[idx].name = tc.function.name;
-                  if (tc.function?.arguments)
-                    toolCalls[idx].arguments += tc.function.arguments;
-                }
-              }
-
-              if (choice?.finish_reason) finishReason = choice.finish_reason;
-            }
-
-            if (finishReason !== "tool_calls" || toolCalls.length === 0) break;
-
-            messages.push({
-              role: "assistant",
-              content: textContent || null,
-              tool_calls: toolCalls.map((tc) => ({
-                id: tc.id,
-                type: "function",
-                function: { name: tc.name, arguments: tc.arguments },
-              })),
-            });
+            const toolResultsForBuffer: string[] = [];
 
             for (const tc of toolCalls) {
               let result: any;
               let label: string | null = null;
               console.debug(
                 `[onboarding] tool call → ${tc.name}`,
-                tc.arguments || "{}"
+                JSON.stringify(tc.input),
               );
 
               // Derive a human-readable label for the reasoning bubble.
-              let parsedForReasoning: any = {};
-              try {
-                parsedForReasoning = JSON.parse(tc.arguments || "{}");
-              } catch {}
+              const parsedForReasoning: any = tc.input;
               let reasoningLabel = "Processing";
               if (tc.name === "complete_section_1") {
                 reasoningLabel = "Extracting your communication preferences";
