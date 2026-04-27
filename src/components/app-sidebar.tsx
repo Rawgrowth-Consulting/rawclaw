@@ -145,11 +145,11 @@ export function AppSidebar({
                         render={<Link href={item.href} />}
                         className={
                           item.comingSoon
-                            ? "border border-dashed border-sidebar-border/70 bg-transparent text-muted-foreground/70 hover:text-foreground"
-                            : undefined
+                            ? "border border-dashed border-sidebar-border/70 bg-transparent text-[13px] text-muted-foreground/70 hover:text-foreground"
+                            : "text-[13px]"
                         }
                       >
-                        <item.icon className="size-4" />
+                        <item.icon className="size-4" strokeWidth={1.5} />
                         <span className={item.comingSoon ? "italic" : undefined}>
                           {item.label}
                         </span>

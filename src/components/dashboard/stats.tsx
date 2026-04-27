@@ -52,7 +52,7 @@ export function DashboardStats() {
             <div className="text-[10px] font-medium uppercase tracking-[1.5px] text-muted-foreground">
               {s.label}
             </div>
-            <div className="mt-2 font-serif text-2xl text-foreground">
+            <div className="mt-2 text-3xl font-semibold tracking-tight tabular-nums text-foreground sm:text-4xl">
               {s.value}
             </div>
             <div className="mt-1 text-[11px] text-muted-foreground">
