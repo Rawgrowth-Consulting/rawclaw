@@ -24,17 +24,16 @@ import { useAgents } from "@/lib/agents/use-agents";
 import type { Agent, Department } from "@/lib/agents/dto";
 import { DEPARTMENTS } from "@/lib/agents/dto";
 
-const META: Record<
-  Department,
-  {
-    label: string;
-    icon: React.ComponentType<{
-      className?: string;
-      style?: React.CSSProperties;
-    }>;
-    brand: string;
-  }
-> = {
+type DeptMeta = {
+  label: string;
+  icon: React.ComponentType<{
+    className?: string;
+    style?: React.CSSProperties;
+  }>;
+  brand: string;
+};
+
+const SEEDED_META: Record<string, DeptMeta> = {
   marketing: { label: "Marketing", icon: Megaphone, brand: "#60a5fa" },
   sales: { label: "Sales", icon: BadgeDollarSign, brand: "#0cbf6a" },
   fulfilment: { label: "Fulfilment", icon: PackageCheck, brand: "#fbbf24" },
@@ -42,23 +41,44 @@ const META: Record<
   development: { label: "Development", icon: Code2, brand: "#f472b6" },
 };
 
+const CUSTOM_BRANDS = ["#f472b6", "#94a3b8", "#22d3ee", "#facc15", "#fb7185"];
+
+function metaFor(dept: string): DeptMeta {
+  if (dept in SEEDED_META) return SEEDED_META[dept];
+  // Stable per-slug hue + capitalised label fallback.
+  const brand =
+    CUSTOM_BRANDS[
+      [...dept].reduce((h, c) => (h + c.charCodeAt(0)) % CUSTOM_BRANDS.length, 0)
+    ];
+  return {
+    label: dept.charAt(0).toUpperCase() + dept.slice(1).replace(/_/g, " "),
+    icon: UserRound,
+    brand,
+  };
+}
+
+const META = new Proxy(SEEDED_META, {
+  get(_target, key: string) {
+    return metaFor(key);
+  },
+}) as Record<string, DeptMeta>;
+
 export function DepartmentsView() {
   const { agents, updateAgent } = useAgents();
 
-  const grouped = useMemo(() => {
-    const buckets: Record<Department | "unassigned", Agent[]> = {
-      marketing: [],
-      sales: [],
-      fulfilment: [],
-      finance: [],
-      development: [],
-      unassigned: [],
-    };
+  const { grouped, customDepts } = useMemo(() => {
+    const buckets: Record<string, Agent[]> = { unassigned: [] };
+    for (const d of DEPARTMENTS) buckets[d] = [];
+    const custom = new Set<string>();
     for (const a of agents) {
-      const key = (a.department ?? "unassigned") as Department | "unassigned";
+      const key = a.department ?? "unassigned";
+      if (!buckets[key]) {
+        buckets[key] = [];
+        if (key !== "unassigned") custom.add(key);
+      }
       buckets[key].push(a);
     }
-    return buckets;
+    return { grouped: buckets, customDepts: Array.from(custom).sort() };
   }, [agents]);
 
   async function reassign(agent: Agent, dept: Department | null) {
@@ -84,11 +104,11 @@ export function DepartmentsView() {
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
-        {DEPARTMENTS.map((d) => (
+        {[...DEPARTMENTS, ...customDepts].map((d) => (
           <DepartmentCard
             key={d}
             department={d}
-            agents={grouped[d]}
+            agents={grouped[d] ?? []}
             onReassign={reassign}
           />
         ))}

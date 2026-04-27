@@ -78,25 +78,36 @@ sed -i \
 
 green "✓ Supabase wired into $TARGET"
 
-# ── Create the agent-files storage bucket if it doesn't exist ──
-# Per-agent RAG (D10) needs this bucket. Without it, upload silently
-# returns 500. Free-tier project file_size_limit caps at 50MB; a paid
-# project can be raised by editing the bucket later.
-bold "▸ Provisioning storage bucket 'agent-files' (50MB cap)"
-BUCKET_RES=$(curl -fsS -o /tmp/bucket-res.json -w "%{http_code}" \
-  -X POST "$PUBLIC_URL/storage/v1/bucket" \
-  -H "apikey: $SERVICE_ROLE_KEY" \
-  -H "authorization: Bearer $SERVICE_ROLE_KEY" \
-  -H "content-type: application/json" \
-  -d '{"id":"agent-files","name":"agent-files","public":false,"file_size_limit":52428800}' \
-  || true)
-if [ "$BUCKET_RES" = "200" ] || [ "$BUCKET_RES" = "201" ]; then
-  green "✓ Bucket 'agent-files' created"
-elif grep -q "already exists" /tmp/bucket-res.json 2>/dev/null; then
-  green "✓ Bucket 'agent-files' already present"
-else
-  red "⚠  Bucket create returned $BUCKET_RES — check /tmp/bucket-res.json. Per-agent file uploads will 500 until this exists."
-fi
+# ── Create the storage buckets if they don't exist ──
+# Two private buckets land here. Without them the upload routes 500
+# silently. Free-tier cap is 50 MB per bucket; paid projects can edit
+# limits later.
+#   - agent-files: per-agent RAG corpus (PDF/DOCX/MD/TXT/CSV/img),
+#     drives D10 cite path. 50 MB.
+#   - knowledge:   org-wide markdown playbooks/SOPs, drives /knowledge.
+#     10 MB (markdown only).
+provision_bucket() {
+  local id="$1" limit="$2" purpose="$3"
+  bold "▸ Provisioning storage bucket '$id' (${purpose})"
+  local res
+  res=$(curl -fsS -o /tmp/bucket-res.json -w "%{http_code}" \
+    -X POST "$PUBLIC_URL/storage/v1/bucket" \
+    -H "apikey: $SERVICE_ROLE_KEY" \
+    -H "authorization: Bearer $SERVICE_ROLE_KEY" \
+    -H "content-type: application/json" \
+    -d "{\"id\":\"$id\",\"name\":\"$id\",\"public\":false,\"file_size_limit\":$limit}" \
+    || true)
+  if [ "$res" = "200" ] || [ "$res" = "201" ]; then
+    green "✓ Bucket '$id' created"
+  elif grep -q "already exists" /tmp/bucket-res.json 2>/dev/null; then
+    green "✓ Bucket '$id' already present"
+  else
+    red "⚠  Bucket '$id' create returned $res — check /tmp/bucket-res.json. Uploads will 500 until this exists."
+  fi
+}
+
+provision_bucket "agent-files" 52428800 "50MB cap, per-agent RAG"
+provision_bucket "knowledge"   10485760 "10MB cap, org-wide markdown"
 
 echo
 bold "Next steps:"
