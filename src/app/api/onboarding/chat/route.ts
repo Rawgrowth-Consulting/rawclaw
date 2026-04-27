@@ -805,11 +805,9 @@ export async function POST(req: NextRequest) {
     const ctx = await getOrgContext();
     if (!ctx?.activeOrgId || !ctx.userId)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    if (!process.env.OPENAI_API_KEY)
-      return NextResponse.json(
-        { error: "OPENAI_API_KEY is not configured" },
-        { status: 500 }
-      );
+    // Provider key check happens inside the provider abstraction at call
+    // time. Onboarding works with openai (OPENAI_API_KEY), anthropic-api
+    // (ANTHROPIC_API_KEY), or anthropic-cli (host's Claude Max OAuth).
 
     // v3: onboarding chat is scoped to the active organization. orgId is
     // the primary key into the rgaios_* tables; userId is who's filling it out.
@@ -1038,6 +1036,12 @@ export async function POST(req: NextRequest) {
 
         try {
           for (let iter = 0; iter < 6; iter++) {
+            // Track whether the provider streamed any token via onTextDelta.
+            // anthropic-cli returns the whole text after the subprocess
+            // finishes (no incremental stream); without this flag the loop
+            // would break with the model's reply visible only in step.text
+            // and never reaching the client.
+            let streamedAny = false;
             const step = await chatComplete({
               provider,
               model: "gpt-4o",
@@ -1046,11 +1050,20 @@ export async function POST(req: NextRequest) {
               tools: TOOLS,
               temperature: 0.3,
               maxSteps: 1,
-              onTextDelta: (delta) => emit({ type: "text", delta }),
+              onTextDelta: (delta) => {
+                streamedAny = true;
+                emit({ type: "text", delta });
+              },
             });
 
             const textContent = step.text;
             const toolCalls = step.toolCalls;
+
+            // Flush text from non-streaming providers (anthropic-cli) as a
+            // single delta so the chat UI renders it like the streamed path.
+            if (!streamedAny && textContent.trim()) {
+              emit({ type: "text", delta: textContent });
+            }
 
             if (toolCalls.length === 0) break;
 
