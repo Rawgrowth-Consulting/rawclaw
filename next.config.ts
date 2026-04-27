@@ -7,6 +7,15 @@ const nextConfig: NextConfig = {
   // Typecheck runs locally and in CI. Skip inside the Docker build so
   // low-RAM VPSes don't OOM/hang during `next build`.
   typescript: { ignoreBuildErrors: true },
+  // fastembed loads platform-native ONNX/tokenizer binaries at runtime
+  // via dynamic require(), which Turbopack can't statically resolve and
+  // would warn on every per-agent file upload. Mark it as an external
+  // server package so it stays a plain Node module loaded at runtime.
+  serverExternalPackages: [
+    "fastembed",
+    "onnxruntime-node",
+    "@anush008/tokenizers",
+  ],
 };
 
 export default nextConfig;

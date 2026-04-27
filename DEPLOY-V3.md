@@ -25,12 +25,24 @@ Run once for the whole fleet (not per-VPS).
 1. Create a Supabase project under the Rawgrowth org.
 2. Export the project URL, anon key, service-role key, and the
    Postgres connection string.
-3. Apply migrations `0001` through `0027` via the Supabase SQL editor,
+3. Run `scripts/wire-supabase.sh` from a workstation. This:
+   - writes a templated `.env.production` with the four Supabase
+     values + auto-minted `NEXTAUTH_SECRET`/`JWT_SECRET`/`CRON_SECRET`
+   - provisions the two private storage buckets used by RAG +
+     Knowledge (`agent-files` 50 MB cap, `knowledge` 10 MB cap)
+   ```bash
+   ./scripts/wire-supabase.sh \
+     "postgres://postgres:PWD@db.<project>.supabase.co:5432/postgres" \
+     "https://<project>.supabase.co" \
+     "sb_publishable_..." \
+     "sb_secret_..."
+   ```
+4. Apply migrations `0001` through `0030` via the Supabase SQL editor,
    or point `scripts/migrate.ts` at the connection string:
    ```bash
    DATABASE_URL=postgres://... npm run self-hosted:migrate
    ```
-4. Confirm RLS is ON for every `rgaios_*` table (the `0016_v3_rls_by_org`
+5. Confirm RLS is ON for every `rgaios_*` table (the `0016_v3_rls_by_org`
    and per-new-table policies handle this).
 
 ## 2. Per-client VPS provisioning
@@ -39,15 +51,23 @@ Run once for the whole fleet (not per-VPS).
    Hetzner CPX22.
 2. SSH into the box, clone the repo (deploy key flow lives in
    `scripts/provision-vps.sh`).
-3. Copy `.env.v3.example` to `.env` and fill in:
-   - **shared** (same every VPS): `DATABASE_URL`,
-     `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-     `SUPABASE_SERVICE_ROLE_KEY`
-   - **per-VPS**: `CADDY_SITE_ADDRESS`, `NEXTAUTH_URL`,
-     `NEXTAUTH_SECRET`, `JWT_SECRET`, `CRON_SECRET`, `SEED_ORG_*`
-   - **Anthropic fallback**: `ANTHROPIC_API_KEY` (used by voice + the
-     Path B runtime switch)
-   - **OpenAI**: `OPENAI_API_KEY` (onboarding chat + embeddings)
+3. Copy the `.env.production` produced by `wire-supabase.sh` (step 1.3)
+   to the VPS as `.env`. wire-supabase.sh has already filled the four
+   shared Supabase values, the three rotated secrets, and selected
+   Path A (`RUNTIME_PATH=cli` + `CLAUDE_CLI_PATH`). Add the per-VPS
+   values:
+   - **per-VPS**: `CADDY_SITE_ADDRESS` (= `<slug>.rawgrowth.ai`),
+     `NEXTAUTH_URL` (= `https://<slug>.rawgrowth.ai`),
+     `SEED_ORG_NAME`, `SEED_ORG_SLUG`, `SEED_ADMIN_EMAIL`
+   - **Anthropic fallback (optional)**: `ANTHROPIC_API_KEY` if you
+     want Path B available; voice transcription also uses it before
+     falling back to whisper-cli
+   - **OpenAI (optional)**: `OPENAI_API_KEY` for onboarding chat
+     fallback + embedding (see §1 — the multi-provider abstraction
+     defaults to Path A CLI, so this is only needed if `LLM_PROVIDER`
+     is flipped to `openai` per call site)
+   - **Heartbeat**: `HEARTBEAT_INTERVAL_SEC=600` (defaults to 10 min;
+     drop to 60-120 for the demo)
 4. Boot:
    ```bash
    docker compose -f docker-compose.v3.yml up -d --build

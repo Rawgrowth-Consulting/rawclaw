@@ -1,30 +1,39 @@
 import OpenAI from "openai";
 
 /**
- * Embeddings provider abstraction. Two backends, selected at runtime via
- * EMBEDDING_PROVIDER:
+ * Embeddings provider abstraction. Three backends, selected at runtime
+ * via EMBEDDING_PROVIDER:
  *
- *   openai (default) — text-embedding-3-large at dims=1536. Matches the
+ *   fastembed (default) — BAAI/bge-small-en-v1.5 via fastembed-js (ONNX,
+ *   ~250MB RSS, ~33MB model on disk). Native 384d, zero-padded to 1536d.
+ *   Zero API key — runs entirely inside the Next.js process. Picked as
+ *   default per CTO brief §1: "no kill-switch, no third-party billed
+ *   key required". Cold-start ~3-5s on first call; subsequent calls
+ *   reuse the cached singleton.
+ *
+ *   openai           — text-embedding-3-large at dims=1536. Matches the
  *   rgaios_agent_file_chunks.embedding vector(1536) column natively.
  *
  *   voyage           — Anthropic-ecosystem alternative for VPS installs
- *   that want to avoid an OpenAI key entirely (Path A Claude Code CLI for
- *   chat + Voyage for RAG). Uses voyage-3-large via plain fetch against
- *   https://api.voyageai.com/v1/embeddings. voyage-3-large only emits
- *   256 / 512 / 1024 (default) / 2048 dims, NOT 1536, so we take the
- *   native 1024d output and zero-pad to 1536. Within a single-provider
- *   corpus this preserves cosine similarity exactly (extra zero dims
- *   contribute 0 to both dot product and L2 norm), so the existing
- *   pgvector(1536) column and ivfflat index keep working without a
- *   schema migration. Do NOT mix providers inside one organization's
- *   corpus — flip per-VPS, then backfill if you switch later.
+ *   that want a managed embedding endpoint without OpenAI. Uses
+ *   voyage-3-large via plain fetch against
+ *   https://api.voyageai.com/v1/embeddings. Native 1024d, zero-padded
+ *   to 1536d.
+ *
+ * Both fastembed and voyage zero-pad to the existing pgvector(1536)
+ * column. Within a single-provider corpus this preserves cosine
+ * similarity exactly (extra zero dims contribute 0 to both dot product
+ * and L2 norm), so the column + ivfflat index keep working without a
+ * schema migration. Do NOT mix providers inside one organization's
+ * corpus — flip per-VPS, then backfill if you switch later.
  *
  * Public contract is unchanged: embedBatch / embedOne / toPgVector with
  * the same shapes the upload route and knowledge_query MCP tool expect.
  *
- * Fails loud if the selected provider's API key is missing. The upload
- * route catches and turns that into a per-file warning so the file blob
- * still lands in storage and can be backfilled later.
+ * Fails loud if the selected provider's API key is missing (openai /
+ * voyage). The upload route catches and turns that into a per-file
+ * warning so the file blob still lands in storage and can be
+ * backfilled later. fastembed never throws for a missing key.
  */
 
 const OPENAI_MODEL = "text-embedding-3-large";
@@ -34,17 +43,22 @@ const VOYAGE_MODEL = "voyage-3-large";
 const VOYAGE_NATIVE_DIMENSIONS = 1024;
 const VOYAGE_ENDPOINT = "https://api.voyageai.com/v1/embeddings";
 
+const FASTEMBED_NATIVE_DIMENSIONS = 384;
+
 const TARGET_DIMENSIONS = 1536;
 const BATCH = 96;
 
-export type EmbeddingProvider = "openai" | "voyage";
+export type EmbeddingProvider = "fastembed" | "openai" | "voyage";
 
 function selectedProvider(): EmbeddingProvider {
-  const raw = (process.env.EMBEDDING_PROVIDER ?? "openai").toLowerCase().trim();
+  const raw = (process.env.EMBEDDING_PROVIDER ?? "fastembed")
+    .toLowerCase()
+    .trim();
   if (raw === "voyage") return "voyage";
-  if (raw === "" || raw === "openai") return "openai";
+  if (raw === "openai") return "openai";
+  if (raw === "" || raw === "fastembed") return "fastembed";
   throw new Error(
-    `Unknown EMBEDDING_PROVIDER='${raw}'. Use 'openai' (default) or 'voyage'.`,
+    `Unknown EMBEDDING_PROVIDER='${raw}'. Use 'fastembed' (default), 'openai', or 'voyage'.`,
   );
 }
 
@@ -72,7 +86,7 @@ async function embedBatchOpenAI(inputs: string[]): Promise<number[][]> {
 }
 
 /**
- * Pad a 1024d Voyage vector out to 1536d so it slots into the existing
+ * Pad a sub-1536d vector out to 1536d so it slots into the existing
  * pgvector column. Cosine similarity is preserved as long as both query
  * and corpus vectors are padded identically (which they are: every call
  * funnels through this helper).
@@ -81,12 +95,68 @@ function padToTarget(v: number[]): number[] {
   if (v.length === TARGET_DIMENSIONS) return v;
   if (v.length > TARGET_DIMENSIONS) {
     throw new Error(
-      `Voyage vector ${v.length}d exceeds target ${TARGET_DIMENSIONS}d; refusing to truncate.`,
+      `Embedding ${v.length}d exceeds target ${TARGET_DIMENSIONS}d; refusing to truncate.`,
     );
   }
   const out = new Array<number>(TARGET_DIMENSIONS);
   for (let i = 0; i < v.length; i++) out[i] = v[i];
   for (let i = v.length; i < TARGET_DIMENSIONS; i++) out[i] = 0;
+  return out;
+}
+
+// Lazy-loaded singleton for the local fastembed model. Cold-init is
+// ~3-5s on first request (downloads ONNX file to FASTEMBED_CACHE_DIR
+// and warms the runtime); subsequent calls reuse the same instance and
+// cost only the inference time.
+type FastembedModel = {
+  embed: (
+    inputs: string[],
+    batchSize?: number,
+  ) => AsyncIterable<number[][]>;
+};
+let _fastembedModel: Promise<FastembedModel> | null = null;
+
+async function fastembedModel(): Promise<FastembedModel> {
+  if (_fastembedModel) return _fastembedModel;
+  _fastembedModel = (async () => {
+    const mod = (await import("fastembed")) as {
+      FlagEmbedding: {
+        init: (opts: {
+          model: string;
+          cacheDir?: string;
+        }) => Promise<FastembedModel>;
+      };
+      EmbeddingModel?: { BGESmallENV15: string };
+    };
+    const modelId = mod.EmbeddingModel?.BGESmallENV15 ?? "BAAI/bge-small-en-v1.5";
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    return mod.FlagEmbedding.init({
+      model: modelId,
+      // Production VPS writes to /var/lib/rawclaw via the docker volume
+      // mount; in dev we fall back to OS tmp so contributors don't need
+      // to mkdir as root. Override with FASTEMBED_CACHE_DIR.
+      cacheDir:
+        process.env.FASTEMBED_CACHE_DIR ??
+        path.join(tmpdir(), "rawclaw-fastembed"),
+    });
+  })();
+  return _fastembedModel;
+}
+
+async function embedBatchFastembed(inputs: string[]): Promise<number[][]> {
+  const model = await fastembedModel();
+  const out: number[][] = [];
+  for await (const group of model.embed(inputs, Math.min(inputs.length, BATCH))) {
+    for (const v of group) {
+      if (v.length !== FASTEMBED_NATIVE_DIMENSIONS) {
+        throw new Error(
+          `fastembed returned vector of unexpected dim ${v.length} (expected ${FASTEMBED_NATIVE_DIMENSIONS})`,
+        );
+      }
+      out.push(padToTarget(v));
+    }
+  }
   return out;
 }
 
@@ -152,7 +222,8 @@ export async function embedBatch(inputs: string[]): Promise<number[][]> {
   if (inputs.length === 0) return [];
   const provider = selectedProvider();
   if (provider === "voyage") return embedBatchVoyage(inputs);
-  return embedBatchOpenAI(inputs);
+  if (provider === "openai") return embedBatchOpenAI(inputs);
+  return embedBatchFastembed(inputs);
 }
 
 export async function embedOne(text: string): Promise<number[]> {
@@ -177,4 +248,5 @@ export function toPgVector(embedding: number[]): string {
  */
 export function __resetClientsForTests(): void {
   _openaiClient = null;
+  _fastembedModel = null;
 }
