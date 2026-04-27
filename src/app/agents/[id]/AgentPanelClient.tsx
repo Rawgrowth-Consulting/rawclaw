@@ -420,7 +420,7 @@ export function AgentPanelClient({
           <div className="max-w-2xl space-y-4">
             <div>
               <label className="block text-xs uppercase tracking-widest text-primary">
-                System prompt
+                Job description
               </label>
               <textarea
                 rows={6}
@@ -428,6 +428,10 @@ export function AgentPanelClient({
                 onChange={(e) => setDraftDescription(e.target.value)}
                 className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 text-sm text-[var(--text-strong)]"
               />
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                Doubles as the agent's system prompt — Claude reads this at the
+                start of every run.
+              </p>
             </div>
 
             <div>
