@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { anthropic } from "@ai-sdk/anthropic";
 import {
   generateText,
@@ -93,14 +94,32 @@ export async function executeRun(runId: string): Promise<void> {
     const wallClockTimer = setTimeout(() => abortCtl.abort(), WALL_CLOCK_MS);
     let result;
     try {
-      result = await generateText({
-        model: anthropic(runtimeToModel(agent?.runtime ?? "claude-sonnet-4-5")),
-        system: systemPrompt,
-        prompt: userMessage,
-        tools,
-        stopWhen: stepCountIs(MAX_STEPS),
-        abortSignal: abortCtl.signal,
-      });
+      // Runtime selector per CTO brief §02 Decision 2:
+      //   Path A (RUNTIME_PATH=cli): Claude Code CLI subprocess. Reuses the
+      //     operator's Max OAuth token in ~/.claude. No ANTHROPIC_API_KEY
+      //     needed. MCP tool use only fires if the operator has registered
+      //     this v3 MCP server in claude_desktop_config (operational).
+      //   Path B (default): @ai-sdk/anthropic + Commercial API key. Full
+      //     in-process tool use via the AI SDK toolset.
+      // One env var flips per-VPS. Both paths build from the same systemPrompt
+      // + userMessage so prompt drift can't sneak between them.
+      if (process.env.RUNTIME_PATH === "cli") {
+        const text = await generateViaClaudeCli(
+          systemPrompt,
+          userMessage,
+          abortCtl.signal,
+        );
+        result = { text, steps: [] as unknown[] };
+      } else {
+        result = await generateText({
+          model: anthropic(runtimeToModel(agent?.runtime ?? "claude-sonnet-4-5")),
+          system: systemPrompt,
+          prompt: userMessage,
+          tools,
+          stopWhen: stepCountIs(MAX_STEPS),
+          abortSignal: abortCtl.signal,
+        });
+      }
     } finally {
       clearTimeout(wallClockTimer);
     }
@@ -137,6 +156,70 @@ export async function executeRun(runId: string): Promise<void> {
     // Swallow the throw — callers fire-and-forget.
     console.error("[executor]", runId, message);
   }
+}
+
+/**
+ * Path A runtime: spawn `claude --print` as a subprocess and read stdout.
+ * Reuses the host's Claude Max OAuth token (lives in ~/.claude/), no API
+ * key on the request path. Tool use fires only if the host's
+ * claude_desktop_config registers this v3 MCP server; otherwise the model
+ * just generates text. The wall-clock cap is shared with Path B via the
+ * abort signal so a stuck CLI doesn't outlive the executor's timeout.
+ */
+function generateViaClaudeCli(
+  systemPrompt: string,
+  userMessage: string,
+  signal: AbortSignal,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const bin = process.env.CLAUDE_CLI_PATH ?? "claude";
+    const child = spawn(
+      bin,
+      ["--print", "--dangerously-skip-permissions"],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+
+    const onAbort = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        /* already gone */
+      }
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (b) => {
+      out += b.toString("utf8");
+    });
+    child.stderr.on("data", (b) => {
+      err += b.toString("utf8");
+    });
+    child.on("error", (e) => {
+      signal.removeEventListener("abort", onAbort);
+      reject(e);
+    });
+    child.on("close", (code) => {
+      signal.removeEventListener("abort", onAbort);
+      if (code !== 0) {
+        reject(
+          new Error(
+            `claude --print exited ${code}: ${err.slice(0, 500) || "(no stderr)"}`,
+          ),
+        );
+        return;
+      }
+      resolve(out.trim());
+    });
+
+    // Pipe the merged prompt as stdin. Claude Code's --print mode reads the
+    // user message from stdin and ignores --system flags in some versions,
+    // so we prepend the system block to the user message and let the model
+    // read both as one input.
+    child.stdin.write(`${systemPrompt}\n\n---\n\n${userMessage}`);
+    child.stdin.end();
+  });
 }
 
 // ─── System prompt ──────────────────────────────────────────────────
