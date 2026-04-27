@@ -18,12 +18,21 @@ export async function PATCH(
     const orgId = await currentOrganizationId();
     const raw = (await req.json()) as Record<string, unknown>;
 
-    // Accept either snake_case (reports_to) or camelCase (reportsTo) on the
-    // wire so the agent-tree drag handler and existing callers both work.
+    // Accept either snake_case (postgres-style) or camelCase (frontend-style)
+    // on the wire so the agent-tree drag handler, the MCP tool, and the
+    // form-bound editor can all PATCH the same endpoint without translating.
+    const SNAKE_TO_CAMEL: Record<string, string> = {
+      reports_to: "reportsTo",
+      budget_monthly_usd: "budgetMonthlyUsd",
+      write_policy: "writePolicy",
+      spent_monthly_usd: "spentMonthlyUsd",
+    };
     const patch: Record<string, unknown> = { ...raw };
-    if ("reports_to" in raw && !("reportsTo" in raw)) {
-      patch.reportsTo = raw.reports_to;
-      delete patch.reports_to;
+    for (const [snake, camel] of Object.entries(SNAKE_TO_CAMEL)) {
+      if (snake in raw && !(camel in raw)) {
+        patch[camel] = raw[snake];
+        delete patch[snake];
+      }
     }
 
     // If we're touching the parent edge, do a tenant-scoped verification:
