@@ -13,6 +13,7 @@ import {
   Activity,
   Sparkles,
   BookOpen,
+  Palette,
 } from "lucide-react";
 
 import {
@@ -49,6 +50,7 @@ const navSections: NavSection[] = [
     label: "Overview",
     items: [
       { label: "Dashboard", href: "/", icon: LayoutDashboard },
+      { label: "Brand", href: "/brand", icon: Palette },
       { label: "Departments", href: "/departments", icon: Building2 },
       { label: "Knowledge", href: "/knowledge", icon: BookOpen },
     ],
