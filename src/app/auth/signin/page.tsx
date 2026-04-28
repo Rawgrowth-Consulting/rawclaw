@@ -24,27 +24,18 @@ export default function SignInPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    // Validate creds first (no redirect) so we can show a friendly error.
-    // If valid, kick a redirect-mode signIn so the Set-Cookie header and
-    // the 302 leave the server in a single response  -  avoids a race where
-    // middleware on the destination route runs before the session cookie
-    // has propagated to the client.
-    const probe = await signIn("credentials", {
+    const res = await signIn("credentials", {
       email,
       password,
       redirect: false,
     });
-    if (!probe || probe.error) {
-      setLoading(false);
+    setLoading(false);
+    if (!res || res.error) {
       setError("Invalid email or password.");
       return;
     }
-    await signIn("credentials", {
-      email,
-      password,
-      redirect: true,
-      callbackUrl,
-    });
+    router.push(callbackUrl);
+    router.refresh();
   }
 
   return (

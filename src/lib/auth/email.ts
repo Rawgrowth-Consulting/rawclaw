@@ -11,7 +11,6 @@ function client(): Resend {
 }
 
 function resetEmailHtml(link: string): string {
-  // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- inline box-shadow in email HTML uses brand rgba; not a Tailwind class
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -100,7 +99,6 @@ function inviteEmailHtml(params: {
     ? `${params.inviterName} invited you to join`
     : `You've been invited to join`;
   const greeting = params.recipientName ? `Hi ${params.recipientName},` : "Hello,";
-  // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- inline box-shadow in email HTML uses brand rgba; not a Tailwind class
   return `<!doctype html>
 <html lang="en">
   <head>

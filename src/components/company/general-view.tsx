@@ -98,16 +98,12 @@ function OpsCard({
         <Row icon={ShieldCheck} label="Deploy mode">
           <span
             className={
-              deployMode === "hosted"
-                ? "inline-flex items-center gap-1.5 rounded-md border border-border bg-input/40 px-2 py-0.5 text-[11.5px] font-medium text-foreground"
-                : "inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11.5px] font-medium text-primary"
+              deployMode === "self_hosted"
+                ? "inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11.5px] font-medium text-primary"
+                : "inline-flex items-center gap-1.5 rounded-md border border-border bg-input/40 px-2 py-0.5 text-[11.5px] font-medium text-foreground"
             }
           >
-            {deployMode === "hosted"
-              ? "Hosted SaaS"
-              : deployMode === "v3"
-                ? "v3 (per-VPS + shared Supabase)"
-                : "Self-hosted VPS"}
+            {deployMode === "self_hosted" ? "Self-hosted VPS" : "Hosted SaaS"}
           </span>
         </Row>
         <Row icon={Globe} label="Domain">
@@ -146,9 +142,10 @@ function OpsCard({
           Active pillars
         </h3>
         <div className="flex flex-wrap gap-2">
-          {org.pillars.map((p) => (
-            <Pillar key={p.slug} label={p.label} active={p.active} />
-          ))}
+          <Pillar label="Marketing" active={org.pillars.marketing} />
+          <Pillar label="Sales" active={org.pillars.sales} />
+          <Pillar label="Fulfilment" active={org.pillars.fulfilment} />
+          <Pillar label="Finance" active={org.pillars.finance} />
         </div>
       </div>
     </section>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import useSWR from "swr";
 import {
   Check,
@@ -33,12 +32,12 @@ import { CreateClientSheet } from "@/components/admin/create-client-sheet";
 import { jsonFetcher } from "@/lib/swr";
 
 /**
- * Connections  -  every external link this workspace owns:
+ * Connections — every external link this workspace owns:
  *
  *   1. Claude Max          (powers the VPS-side 24/7 agent runtime)
  *   2. Rawgrowth MCP       (URL + bearer for Claude Desktop / Cursor / Code)
  *   3. Messaging channels  (Telegram live, WhatsApp / Slack soon)
- *   4. Analytics sources   (Shopify / Stripe / GA4 etc  -  coming soon)
+ *   4. Analytics sources   (Shopify / Stripe / GA4 etc — coming soon)
  */
 
 type ChannelTone = "primary" | "coming-soon";
@@ -59,7 +58,7 @@ const COMING_SOON_MESSAGING: MessagingChannel[] = [
     name: "WhatsApp",
     Icon: SiWhatsapp,
     brand: "#25D366",
-    blurb: "Same inbox pattern as Telegram  -  message in, routine fires, reply goes out.",
+    blurb: "Same inbox pattern as Telegram — message in, routine fires, reply goes out.",
     tone: "coming-soon",
   },
 ];
@@ -149,7 +148,7 @@ export function ConnectionsView() {
         <div className="mb-3 flex items-baseline justify-between">
           <SectionHeading
             title="Analytics sources"
-            subtitle="Read-only feeds for the Dashboard. Separate from agent tools  -  these are for charts."
+            subtitle="Read-only feeds for the Dashboard. Separate from agent tools — these are for charts."
             inline
           />
           <Badge
@@ -209,7 +208,7 @@ function McpCard() {
     if (!org) return;
     if (
       !confirm(
-        `Rotate the MCP token for ${org.name}?\n\nThe old token stops working immediately  -  any Claude Desktop / Cursor config still using it will lose access until you paste in the new one.`,
+        `Rotate the MCP token for ${org.name}?\n\nThe old token stops working immediately — any Claude Desktop / Cursor config still using it will lose access until you paste in the new one.`,
       )
     )
       return;
@@ -389,12 +388,12 @@ function DepartmentHeadTelegramCard() {
               </p>
             </div>
           </div>
-          <Link
+          <a
             href="/agents"
             className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[11px] font-medium text-foreground hover:bg-white/5"
           >
             Manage in agents
-          </Link>
+          </a>
         </div>
 
         {isLoading ? (
@@ -516,7 +515,7 @@ function TelegramCard({
             </div>
           ) : (
             <div className="mt-0.5 text-[11.5px] text-muted-foreground">
-              Not connected  -  click to set up a bot token
+              Not connected — click to set up a bot token
             </div>
           )}
         </div>

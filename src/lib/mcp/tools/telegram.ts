@@ -6,10 +6,7 @@ import { tryDecryptSecret } from "@/lib/crypto";
 /**
  * MCP tools for conversational Telegram. Used by the drain skill
  * `/rawgrowth-chat` (and any other Claude Code session) to read inbound
- * messages and reply via the right bot. Bot tokens never leave the VPS
- * (encrypted in rgaios_connections.metadata.bot_token or
- * rgaios_agent_telegram_bots.bot_token) — Claude Code only sees an
- * opaque message_id / chat_id.
+ * messages and reply via the right bot.
  *
  * Token lookup is dual-path:
  *   • Per-Department-Head bots — the new model. Inbox rows carry an
@@ -46,13 +43,13 @@ async function resolveBotForInboxRow(row: {
   organization_id: string;
   agent_telegram_bot_id: string | null;
   connection_id: string | null;
-}): Promise<{ token: string; label: string; agentId: string | null } | null> {
+}): Promise<{ token: string; label: string } | null> {
   const db = supabaseAdmin();
 
   if (row.agent_telegram_bot_id) {
     const { data } = await db
       .from("rgaios_agent_telegram_bots")
-      .select("bot_token, bot_username, bot_first_name, agent_id")
+      .select("bot_token, bot_username, bot_first_name")
       .eq("id", row.agent_telegram_bot_id)
       .eq("organization_id", row.organization_id)
       .maybeSingle();
@@ -62,7 +59,6 @@ async function resolveBotForInboxRow(row: {
         return {
           token,
           label: data.bot_username ? `@${data.bot_username}` : (data.bot_first_name ?? "bot"),
-          agentId: data.agent_id ?? null,
         };
       }
     }
@@ -71,7 +67,7 @@ async function resolveBotForInboxRow(row: {
   if (row.connection_id) {
     const { data } = await db
       .from("rgaios_connections")
-      .select("metadata, display_name, agent_id")
+      .select("metadata, display_name")
       .eq("id", row.connection_id)
       .eq("organization_id", row.organization_id)
       .eq("provider_config_key", "telegram")
@@ -80,13 +76,7 @@ async function resolveBotForInboxRow(row: {
       const token = tryDecryptSecret(
         (data.metadata as { bot_token?: string } | null)?.bot_token,
       );
-      if (token) {
-        return {
-          token,
-          label: data.display_name ?? "bot",
-          agentId: (data as { agent_id?: string | null }).agent_id ?? null,
-        };
-      }
+      if (token) return { token, label: data.display_name ?? "bot" };
     }
   }
 
@@ -100,12 +90,12 @@ async function resolveBotForInboxRow(row: {
  */
 async function pickAnyBotForOrg(
   organizationId: string,
-): Promise<{ token: string; label: string; agentId: string | null } | null> {
+): Promise<{ token: string; label: string } | null> {
   const db = supabaseAdmin();
 
   const { data: head } = await db
     .from("rgaios_agent_telegram_bots")
-    .select("bot_token, bot_username, bot_first_name, agent_id")
+    .select("bot_token, bot_username, bot_first_name")
     .eq("organization_id", organizationId)
     .eq("status", "connected")
     .order("created_at", { ascending: true })
@@ -117,14 +107,13 @@ async function pickAnyBotForOrg(
       return {
         token,
         label: head.bot_username ? `@${head.bot_username}` : (head.bot_first_name ?? "bot"),
-        agentId: head.agent_id ?? null,
       };
     }
   }
 
   const { data: legacy } = await db
     .from("rgaios_connections")
-    .select("id, metadata, display_name, agent_id")
+    .select("metadata, display_name")
     .eq("organization_id", organizationId)
     .eq("provider_config_key", "telegram")
     .eq("status", "connected")
@@ -133,13 +122,7 @@ async function pickAnyBotForOrg(
     const token = tryDecryptSecret(
       (legacy.metadata as { bot_token?: string } | null)?.bot_token,
     );
-    if (token) {
-      return {
-        token,
-        label: legacy.display_name ?? "bot",
-        agentId: (legacy as { agent_id?: string | null }).agent_id ?? null,
-      };
-    }
+    if (token) return { token, label: legacy.display_name ?? "bot" };
   }
 
   return null;
@@ -244,15 +227,14 @@ registerTool({
     required: ["text"],
   },
   handler: async (args, ctx) => {
-    const raw = String(args.text ?? "").trim();
-    if (!raw) return textError("text is required");
+    const body = String(args.text ?? "").trim();
+    if (!body) return textError("text is required");
 
     const db = supabaseAdmin();
     let chatId: number | null = null;
     let rawclawMessageId: string | null = null;
     let placeholderMessageId: number | null = null;
-    let bot: { token: string; label: string; agentId: string | null } | null =
-      null;
+    let bot: { token: string; label: string } | null = null;
 
     if (args.message_id) {
       rawclawMessageId = String(args.message_id);
@@ -283,72 +265,6 @@ registerTool({
       return textError(
         "No connected Telegram bot for this org. Connect a bot to a Department Head agent first (Agents → edit → Telegram bot).",
       );
-    }
-
-    // Brand-voice guard (CTO brief §P09). Two-pass flow:
-    //   1. checkBrandVoice on raw output.
-    //   2. If hit, regenerateWithBrandReminder (Haiku, 10s timeout,
-    //      explicit "do not use these words" reminder). Result is
-    //      already re-checked inside the helper.
-    //   3. If still hit (or regen errored), hard-fail: refuse to send and
-    //      surface to the operator via rgaios_audit_log
-    //      (kind=brand_voice_hard_fail).
-    //   4. On clean-after-regen, audit a lower-severity
-    //      brand_voice_regenerated entry so the activity feed shows when
-    //      Claude tripped the filter.
-    const { checkBrandVoice, regenerateWithBrandReminder } = await import(
-      "@/lib/brand/runtime-filter"
-    );
-    const agentId = bot.agentId;
-
-    let body = raw;
-    const firstPass = checkBrandVoice(raw);
-    if (!firstPass.ok) {
-      console.warn(
-        `[telegram_reply] brand-voice pass-1 hit: ${firstPass.hits.join(",")}, regenerating`,
-      );
-      const regen = await regenerateWithBrandReminder(raw, firstPass.hits, {
-        organizationId: ctx.organizationId,
-        agentId,
-      });
-      if (!regen.ok) {
-        console.error(
-          `[telegram_reply] brand-voice hard-fail after pass-2: ${regen.hits.join(",")}`,
-        );
-        await db
-          .from("rgaios_audit_log")
-          .insert({
-            organization_id: ctx.organizationId,
-            kind: "brand_voice_hard_fail",
-            actor_type: "system",
-            actor_id: "telegram_reply",
-            detail: {
-              agent_id: agentId,
-              original_excerpt: raw.slice(0, 500),
-              final_attempt_excerpt: regen.finalAttempt.slice(0, 500),
-              hits_first: firstPass.hits,
-              hits_second: regen.hits,
-            },
-          });
-        return textError(
-          `Brand voice guard: copy still contained banned words after one regeneration. Operator review needed. Hits: ${regen.hits.join(", ")}`,
-        );
-      }
-      body = regen.text;
-      await db
-        .from("rgaios_audit_log")
-        .insert({
-          organization_id: ctx.organizationId,
-          kind: "brand_voice_regenerated",
-          actor_type: "system",
-          actor_id: "telegram_reply",
-          detail: {
-            agent_id: agentId,
-            hits_first: firstPass.hits,
-            original_excerpt: raw.slice(0, 500),
-            final_excerpt: body.slice(0, 500),
-          },
-        });
     }
 
     // Edit the thinking-placeholder in place if one is active — the user

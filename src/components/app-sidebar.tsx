@@ -12,8 +12,6 @@ import {
   Building2,
   Activity,
   Sparkles,
-  BookOpen,
-  Palette,
 } from "lucide-react";
 
 import {
@@ -50,9 +48,7 @@ const navSections: NavSection[] = [
     label: "Overview",
     items: [
       { label: "Dashboard", href: "/", icon: LayoutDashboard },
-      { label: "Brand", href: "/brand", icon: Palette },
       { label: "Departments", href: "/departments", icon: Building2 },
-      { label: "Knowledge", href: "/knowledge", icon: BookOpen },
     ],
   },
   {
@@ -145,11 +141,11 @@ export function AppSidebar({
                         render={<Link href={item.href} />}
                         className={
                           item.comingSoon
-                            ? "border border-dashed border-sidebar-border/70 bg-transparent text-[13px] text-muted-foreground/70 hover:text-foreground"
-                            : "text-[13px]"
+                            ? "border border-dashed border-sidebar-border/70 bg-transparent text-muted-foreground/70 hover:text-foreground"
+                            : undefined
                         }
                       >
-                        <item.icon className="size-4" strokeWidth={1.5} />
+                        <item.icon className="size-4" />
                         <span className={item.comingSoon ? "italic" : undefined}>
                           {item.label}
                         </span>

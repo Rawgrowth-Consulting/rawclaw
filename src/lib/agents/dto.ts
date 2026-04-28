@@ -1,19 +1,8 @@
 import type { Database } from "@/lib/supabase/types";
 import type { AgentRole, AgentRuntime, AgentStatus } from "./constants";
 
-// Department is a free-form slug (per /departments/new  -  lowercased + underscored
-// from the user's chosen name). The five values below are the seeded defaults
-// the dashboard ships with; any custom slug ("research", "engineering") is
-// also valid and renders under a "Custom" section in the UI.
-export type Department = string;
-export const DEFAULT_DEPARTMENTS = [
-  "marketing",
-  "sales",
-  "fulfilment",
-  "finance",
-  "development",
-] as const;
-export const DEPARTMENTS: readonly Department[] = DEFAULT_DEPARTMENTS;
+export type Department = "marketing" | "sales" | "fulfilment" | "finance" | "development";
+export const DEPARTMENTS: Department[] = ["marketing", "sales", "fulfilment", "finance", "development"];
 
 type AgentRow = Database["public"]["Tables"]["rgaios_agents"]["Row"];
 
@@ -57,7 +46,7 @@ export function agentFromRow(row: AgentRow): Agent {
   };
 }
 
-/** Input to hireAgent()  -  everything except server-controlled fields. */
+/** Input to hireAgent() — everything except server-controlled fields. */
 export type AgentCreateInput = {
   name: string;
   title: string;
