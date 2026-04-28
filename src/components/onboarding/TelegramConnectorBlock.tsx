@@ -51,23 +51,40 @@ export function TelegramConnectorBlock({
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/onboarding/telegram-pending")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!alive) return;
-        if (data.error) {
-          setLoadError(data.error);
+    // Retry up to 3 times with backoff. Dev-mode hot-reloads + transient
+    // network blips were surfacing as "Failed to fetch" in the UI before
+    // the route had a chance to recover.
+    async function load() {
+      const attempts = [0, 800, 2000];
+      let lastErr: string | null = null;
+      for (let i = 0; i < attempts.length; i++) {
+        if (attempts[i]) await new Promise((r) => setTimeout(r, attempts[i]));
+        try {
+          const r = await fetch("/api/onboarding/telegram-pending");
+          if (!r.ok) {
+            lastErr = `HTTP ${r.status}`;
+            continue;
+          }
+          const data = await r.json();
+          if (!alive) return;
+          if (data.error) {
+            lastErr = data.error;
+            continue;
+          }
+          setAgents(data.agents ?? []);
+          setLoadError(null);
+          setLoading(false);
           return;
+        } catch (err) {
+          lastErr = (err as Error).message;
         }
-        setAgents(data.agents ?? []);
-      })
-      .catch((err: Error) => {
-        if (!alive) return;
-        setLoadError(err.message);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+      }
+      if (alive) {
+        setLoadError(lastErr ?? "could not load");
+        setLoading(false);
+      }
+    }
+    void load();
     return () => {
       alive = false;
     };
