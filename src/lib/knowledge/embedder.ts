@@ -238,6 +238,20 @@ export function toPgVector(embedding: number[]): string {
 }
 
 /**
+ * Fire-and-forget warmup. Boots the fastembed singleton ahead of the
+ * first user upload so the operator-visible cold-start (~10s on a
+ * fresh VPS — model download + ONNX runtime warm) lands during boot
+ * instead of mid-demo. Safe to call multiple times: the singleton
+ * promise dedupes. No-op when EMBEDDING_PROVIDER is openai/voyage.
+ */
+export function warmEmbedder(): void {
+  if (selectedProvider() !== "fastembed") return;
+  fastembedModel().catch((err) => {
+    console.warn("[embedder] warmup failed:", (err as Error).message);
+  });
+}
+
+/**
  * Test-only hook. Lets specs reset the cached OpenAI client when they
  * mutate process.env between cases. Not exported via the package surface
  * for runtime callers; kept here so tests don't need to reach into

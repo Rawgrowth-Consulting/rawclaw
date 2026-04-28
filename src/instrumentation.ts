@@ -7,5 +7,10 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     await import("@/lib/env");
+    // Fire-and-forget warmup of the local fastembed model so the first
+    // user-facing upload doesn't pay the ~10s ONNX cold-start mid-demo.
+    // No-op on openai/voyage. Errors are swallowed inside warmEmbedder.
+    const { warmEmbedder } = await import("@/lib/knowledge/embedder");
+    warmEmbedder();
   }
 }
