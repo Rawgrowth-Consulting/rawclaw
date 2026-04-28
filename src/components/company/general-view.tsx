@@ -146,10 +146,9 @@ function OpsCard({
           Active pillars
         </h3>
         <div className="flex flex-wrap gap-2">
-          <Pillar label="Marketing" active={org.pillars.marketing} />
-          <Pillar label="Sales" active={org.pillars.sales} />
-          <Pillar label="Fulfilment" active={org.pillars.fulfilment} />
-          <Pillar label="Finance" active={org.pillars.finance} />
+          {org.pillars.map((p) => (
+            <Pillar key={p.slug} label={p.label} active={p.active} />
+          ))}
         </div>
       </div>
     </section>

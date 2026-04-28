@@ -162,9 +162,9 @@ export default async function DashboardPage() {
                 Dashboard analytics aren&apos;t configured yet
               </h3>
               <p className="mt-1 max-w-md text-[12.5px] leading-relaxed text-muted-foreground">
-                Charts for Marketing, Sales, Fulfilment, and Finance appear
-                here once we wire them to your data sources. Speak to the
-                team to configure the pillars that matter to your business.
+                Charts for each department light up once we wire them to
+                your data sources. Speak to the team to configure the
+                pillars that matter to your business.
               </p>
             </div>
           </CardContent>

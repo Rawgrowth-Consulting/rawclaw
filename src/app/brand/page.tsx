@@ -36,15 +36,23 @@ export default async function BrandProfilePage() {
       title={ctx.activeOrgName ?? "Brand profile"}
       description={subtitle}
     >
-      <div className="mx-auto max-w-3xl">
+      <div className="max-w-3xl">
         {profile?.content ? (
           <article className="prose prose-invert max-w-none">
             <ReactMarkdown>{profile.content}</ReactMarkdown>
           </article>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No brand profile yet. Complete onboarding to generate one.
-          </p>
+          <div className="rounded-lg border border-dashed border-border bg-card/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              No brand profile yet. Run the onboarding chat to generate one.
+            </p>
+            <a
+              href="/onboarding"
+              className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
+            >
+              Start onboarding →
+            </a>
+          </div>
         )}
       </div>
     </PageShell>
