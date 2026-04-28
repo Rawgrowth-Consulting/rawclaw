@@ -144,10 +144,10 @@ test("voyage path surfaces non-2xx HTTP errors with the response body", async ()
   }
 });
 
-test("openai is the default when EMBEDDING_PROVIDER is unset, and missing key fails loud", async () => {
+test("openai backend still fails loud when its key is missing (explicit opt-in)", async () => {
   const snap = snapshotEnv();
   try {
-    delete process.env.EMBEDDING_PROVIDER;
+    process.env.EMBEDDING_PROVIDER = "openai";
     delete process.env.OPENAI_API_KEY;
 
     const mod = await import("../../src/lib/knowledge/embedder.ts");
