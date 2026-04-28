@@ -238,8 +238,7 @@ export async function chatReply(input: {
    */
   agentId?: string;
 }): Promise<AgentChatResult> {
-  const { organizationId, organizationName, chatId, userMessage, publicAppUrl, agentId } =
-    input;
+  const { organizationId, organizationName, chatId, userMessage, agentId } = input;
 
   const claudeToken = await loadClaudeMaxToken(organizationId);
   if (!claudeToken) {

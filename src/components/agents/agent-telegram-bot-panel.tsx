@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { Bot, KeyRound, ShieldCheck, X } from "lucide-react";
@@ -148,7 +148,7 @@ function ConnectForm({
         {busy ? "Validating…" : "Connect bot"}
       </Button>
       <p className="mt-1.5 text-center text-[10.5px] text-muted-foreground">
-        DMs to this bot will route to this agent's persona.
+        DMs to this bot will route to this agent&apos;s persona.
       </p>
     </div>
   );
@@ -166,6 +166,15 @@ function ConnectedCard({
   const [revealing, setRevealing] = useState(false);
   const [revealed, setRevealed] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+
+  // Reset reveal when the bot row changes underneath us (e.g. token rotated).
+  // React 19 pattern: track previous prop in state and reset during render so
+  // we avoid a set-state-in-effect cascade.
+  const [prevBotId, setPrevBotId] = useState(bot.id);
+  if (prevBotId !== bot.id) {
+    setPrevBotId(bot.id);
+    setRevealed(null);
+  }
 
   // Mask: the leading numeric part of a Telegram token is the bot id and
   // is shown as-is for recognisability; the secret half stays hidden.
@@ -208,11 +217,6 @@ function ConnectedCard({
       setDisconnecting(false);
     }
   };
-
-  // Reset reveal when the bot row changes underneath us (e.g. token rotated).
-  useEffect(() => {
-    setRevealed(null);
-  }, [bot.id]);
 
   return (
     <div

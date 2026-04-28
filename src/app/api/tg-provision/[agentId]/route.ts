@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto";
-import { getMe, setWebhook, sendMessage } from "@/lib/telegram/client";
+import { getMe, setWebhook } from "@/lib/telegram/client";
 
 export const runtime = "nodejs";
 

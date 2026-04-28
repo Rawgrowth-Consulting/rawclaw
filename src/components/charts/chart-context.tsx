@@ -2,12 +2,19 @@
 
 import type { scaleBand, scaleLinear, scaleTime } from "@visx/scale";
 
-type ScaleLinear<Output, _Input = number> = ReturnType<
-  typeof scaleLinear<Output>
->;
-type ScaleTime<Output, _Input = Date | number> = ReturnType<
-  typeof scaleTime<Output>
->;
+// Second generic param is preserved for call-site clarity (input type) even
+// though it isn't referenced in the body. ESLint flags it; keep as `_Input`
+// and silence the unused-vars warning at the param.
+type ScaleLinear<
+  Output,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- documents the input domain at call sites
+  _Input = number,
+> = ReturnType<typeof scaleLinear<Output>>;
+type ScaleTime<
+  Output,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- documents the input domain at call sites
+  _Input = Date | number,
+> = ReturnType<typeof scaleTime<Output>>;
 type ScaleBand<Domain extends { toString(): string }> = ReturnType<
   typeof scaleBand<Domain>
 >;

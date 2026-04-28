@@ -29,7 +29,7 @@ export default async function OnboardingPage() {
               Onboarding
             </h1>
             <p className="text-sm text-muted-foreground">
-              Let's get to know your business.
+              Let&apos;s get to know your business.
             </p>
           </div>
         </div>

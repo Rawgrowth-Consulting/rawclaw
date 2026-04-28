@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import useSWR from "swr";
 import { jsonFetcher } from "@/lib/swr";
 import { providerConfigKeyFor } from "@/lib/nango/providers";
@@ -26,7 +26,9 @@ export function useConnections() {
     { revalidateOnFocus: false },
   );
 
-  const connections = data?.connections ?? [];
+  // Stable reference so dependent useCallback hooks don't re-create on every
+  // render when SWR returns the same data shape.
+  const connections = useMemo(() => data?.connections ?? [], [data?.connections]);
   const loaded = !isLoading;
 
   const refresh = useCallback(async () => {

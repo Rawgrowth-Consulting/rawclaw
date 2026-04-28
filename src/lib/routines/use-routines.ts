@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import useSWR from "swr";
 import { jsonFetcher } from "@/lib/swr";
 import type { Routine, RoutineCreateInput, RoutineUpdateInput } from "./dto";
@@ -14,7 +14,9 @@ export function useRoutines() {
     { revalidateOnFocus: false },
   );
 
-  const routines = data?.routines ?? [];
+  // Stable reference so dependent useCallback hooks don't re-create on every
+  // render when SWR returns the same data shape.
+  const routines = useMemo(() => data?.routines ?? [], [data?.routines]);
   const hasHydrated = !isLoading;
 
   const createRoutine = useCallback(

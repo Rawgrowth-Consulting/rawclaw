@@ -34,10 +34,21 @@ export function KnowledgeFileSheet({ fileId, open, onOpenChange }: Props) {
   const [newTagInput, setNewTagInput] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Reset draftTags + loading state when the sheet opens for a new file.
+  // React 19 pattern: track the trigger key in state and reset during render
+  // so we avoid a set-state-in-effect cascade.
+  const triggerKey = open && file ? file.id : null;
+  const [prevTriggerKey, setPrevTriggerKey] = useState<string | null>(triggerKey);
+  if (prevTriggerKey !== triggerKey) {
+    setPrevTriggerKey(triggerKey);
+    if (triggerKey && file) {
+      setDraftTags(file.tags);
+      setLoadingContent(true);
+    }
+  }
+
   useEffect(() => {
     if (!open || !file) return;
-    setDraftTags(file.tags);
-    setLoadingContent(true);
     void fetchContent(file.id)
       .then(setContent)
       .catch(() => setContent("_(couldn't load content)_"))

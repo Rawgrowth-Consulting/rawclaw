@@ -21,9 +21,13 @@ export default function AcceptInvitePage() {
   const search = useSearchParams();
   const token = search.get("token") ?? "";
 
-  const [loading, setLoading] = useState(true);
+  // Missing-token path is derivable from props/search, so handle it during
+  // render instead of pushing it through a setState-in-effect cascade.
+  const tokenMissing = !token;
+  const [loading, setLoading] = useState(!tokenMissing);
   const [invite, setInvite] = useState<InvitePreview | null>(null);
-  const [invalidMsg, setInvalidMsg] = useState<string | null>(null);
+  const [fetchedInvalidMsg, setFetchedInvalidMsg] = useState<string | null>(null);
+  const invalidMsg = tokenMissing ? "Missing invitation token." : fetchedInvalidMsg;
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -31,18 +35,14 @@ export default function AcceptInvitePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) {
-      setInvalidMsg("Missing invitation token.");
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
     (async () => {
       const res = await fetch(
         `/api/invites/accept?token=${encodeURIComponent(token)}`,
       );
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setInvalidMsg(body.error ?? "Invitation is no longer valid.");
+        setFetchedInvalidMsg(body.error ?? "Invitation is no longer valid.");
       } else {
         const { invite } = (await res.json()) as { invite: InvitePreview };
         setInvite(invite);

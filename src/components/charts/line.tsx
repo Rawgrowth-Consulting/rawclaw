@@ -5,10 +5,11 @@ import { LinePath } from "@visx/shape";
 
 // CurveFactory type - simplified version compatible with visx
 // biome-ignore lint/suspicious/noExplicitAny: d3 curve factory type
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- visx exposes d3 curve as a callable factory; no shipped type
 type CurveFactory = any;
 
 import { motion, useMotionTemplate, useSpring } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { chartCssVars, useChart } from "./chart-context";
 
 export interface LineProps {
@@ -54,11 +55,11 @@ export function Line({
   const [pathLength, setPathLength] = useState(0);
   const [clipWidth, setClipWidth] = useState(0);
 
-  // Unique gradient ID for this line
-  const gradientId = useMemo(
-    () => `line-gradient-${dataKey}-${Math.random().toString(36).slice(2, 9)}`,
-    [dataKey]
-  );
+  // Unique gradient ID for this line. useId() is stable across renders and
+  // unique per component instance - avoids the impure Math.random() call
+  // during render that React 19's purity rule flags.
+  const uniqueId = useId();
+  const gradientId = `line-gradient-${dataKey}-${uniqueId}`;
 
   // Measure path length and trigger animation
   useEffect(() => {

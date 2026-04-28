@@ -61,8 +61,10 @@ export function SkillsMarketplaceView() {
   const [category, setCategory] = useState<SkillCategory | "all">("all");
   const [openSkillId, setOpenSkillId] = useState<string | null>(null);
 
-  const catalog = data?.catalog ?? [];
-  const assignments = data?.assignments ?? [];
+  // Stable references so dependent useMemo hooks below don't re-fire on
+  // every render when SWR returns the same data shape.
+  const catalog = useMemo(() => data?.catalog ?? [], [data?.catalog]);
+  const assignments = useMemo(() => data?.assignments ?? [], [data?.assignments]);
 
   const assignedAgentsBySkill = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -240,14 +242,18 @@ function SkillSheet({
   agents: { id: string; name: string; title: string }[];
   onSaved: () => void;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set(initialAssigned));
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Reset when skill changes
-  useMemo(() => {
+  // Reset when the skill changes. React 19 pattern: track the trigger key in
+  // state and reset during render so we avoid the set-state-in-render that
+  // useMemo would otherwise cause (infinite loop risk).
+  const [prevSkillId, setPrevSkillId] = useState<string | null>(skill?.id ?? null);
+  if (prevSkillId !== (skill?.id ?? null)) {
+    setPrevSkillId(skill?.id ?? null);
     setSelected(new Set(initialAssigned));
-  }, [initialAssigned, skill?.id]);
+  }
 
   function toggleAgent(id: string) {
     setSelected((prev) => {

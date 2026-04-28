@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { drainScrapeQueue, isScrapeComplete } from "@/lib/scrape/worker";
@@ -13,7 +13,7 @@ import { drainScrapeQueue, isScrapeComplete } from "@/lib/scrape/worker";
  * progress while the worker drains.
  */
 
-export async function POST(_req: NextRequest) {
+export async function POST() {
   const ctx = await getOrgContext();
   if (!ctx?.activeOrgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

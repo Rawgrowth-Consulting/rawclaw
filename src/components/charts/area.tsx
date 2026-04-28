@@ -5,6 +5,7 @@ import { AreaClosed, LinePath } from "@visx/shape";
 
 // CurveFactory type - simplified version compatible with visx
 // biome-ignore lint/suspicious/noExplicitAny: d3 curve factory type
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- visx exposes d3 curve as a callable factory; no shipped type
 type CurveFactory = any;
 
 import { motion, useMotionTemplate, useSpring } from "motion/react";
@@ -72,17 +73,12 @@ export function Area({
   const pathRef = useRef<SVGPathElement>(null);
   const [clipWidth, setClipWidth] = useState(0);
 
-  // Unique IDs for this area
+  // Unique IDs for this area. useId() is stable across renders and unique
+  // per component instance - avoids the impure Math.random() call during
+  // render that React 19's purity rule flags.
   const uniqueId = useId();
-  const gradientId = useMemo(
-    () => `area-gradient-${dataKey}-${Math.random().toString(36).slice(2, 9)}`,
-    [dataKey]
-  );
-  const strokeGradientId = useMemo(
-    () =>
-      `area-stroke-gradient-${dataKey}-${Math.random().toString(36).slice(2, 9)}`,
-    [dataKey]
-  );
+  const gradientId = `area-gradient-${dataKey}-${uniqueId}`;
+  const strokeGradientId = `area-stroke-gradient-${dataKey}-${uniqueId}`;
   const edgeMaskId = `area-edge-mask-${dataKey}-${uniqueId}`;
   const edgeGradientId = `${edgeMaskId}-gradient`;
 

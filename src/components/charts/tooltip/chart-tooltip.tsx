@@ -2,6 +2,7 @@
 
 import { motion, useSpring } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { chartCssVars, useChart } from "../chart-context";
 import { DateTicker } from "./date-ticker";
 import { TooltipBox } from "./tooltip-box";
@@ -141,9 +142,6 @@ export function ChartTooltip({
   if (!(mounted && container)) {
     return null;
   }
-
-  // Dynamic import to avoid SSR issues
-  const { createPortal } = require("react-dom") as typeof import("react-dom");
 
   const tooltipContent = (
     <>

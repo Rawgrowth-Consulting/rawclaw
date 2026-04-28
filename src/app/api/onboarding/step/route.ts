@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     const nextStep = Math.min(step + 1, 8);
-    const updateFields: Record<string, any> = {
+    const updateFields: Record<string, unknown> = {
       onboarding_step: nextStep,
       updated_at: new Date().toISOString(),
     };
@@ -58,8 +58,9 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json({ success: true, nextStep });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Onboarding step error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

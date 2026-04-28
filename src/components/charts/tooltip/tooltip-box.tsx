@@ -3,6 +3,7 @@
 import { motion, useSpring } from "motion/react";
 import type { RefObject } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 // Spring config for smooth tooltip movement
@@ -136,8 +137,6 @@ export function TooltipBox({
   if (!(mounted && container)) {
     return null;
   }
-
-  const { createPortal } = require("react-dom") as typeof import("react-dom");
 
   if (!visible) {
     return null;

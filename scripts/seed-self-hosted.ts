@@ -1,4 +1,4 @@
-/* eslint-disable no-console */
+ 
 import { Client } from "pg";
 import bcrypt from "bcryptjs";
 import { randomBytes, createHash } from "crypto";

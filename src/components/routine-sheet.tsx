@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CalendarClock,
   Check,
@@ -147,13 +147,20 @@ export function RoutineSheet(props: Props) {
   );
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Reset form when the sheet opens for a new routine. React 19 pattern:
+  // track the trigger key in state and reset during render so we avoid a
+  // set-state-in-effect cascade. We intentionally do not include the full
+  // routine identity in the trigger to avoid stomping edits mid-typing when
+  // the store rehydrates the same object.
+  const triggerKey = `${open ? "1" : "0"}:${isEdit ? props.routine.id : "new"}`;
+  const [prevTriggerKey, setPrevTriggerKey] = useState(triggerKey);
+  if (prevTriggerKey !== triggerKey) {
+    setPrevTriggerKey(triggerKey);
     if (open) {
       setForm(isEdit ? routineToForm(props.routine) : emptyForm());
       setError(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit ? props.routine.id : null]);
+  }
 
   const addTrigger = (kind: TriggerKind) => {
     setForm((f) => ({ ...f, triggers: [...f.triggers, newTrigger(kind)] }));

@@ -18,7 +18,7 @@ const SECTION_TO_COLUMN: Record<string, string> = {
   additionalContext: "additional_context",
 };
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const ctx = await getOrgContext();
     if (!ctx?.activeOrgId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,8 +31,9 @@ export async function GET(req: NextRequest) {
       .single();
 
     return NextResponse.json({ intake });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -54,7 +55,8 @@ export async function POST(req: NextRequest) {
       );
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -54,16 +54,6 @@ function roleMeta(role: Agent["role"]) {
   );
 }
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
 const statusStyle: Record<
   AgentStatus,
   { label: string; className: string; dotClass: string }
@@ -170,8 +160,8 @@ function AgentCard({
     <button
       type="button"
       onClick={() => onEdit(agent)}
-      // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- transition list explicit; head amber border is intentional accent for department-head emphasis
       className={cn(
+        // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- transition-[box-shadow] is the explicit property name we animate; arbitrary shadow values below are intentional brand accents
         "group relative w-60 rounded-xl border bg-card/70 p-4 text-left transition-[transform,border-color,background-color,box-shadow] hover:-translate-y-0.5 hover:bg-card hover:shadow-[0_12px_40px_rgba(12,191,106,.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isHead
           ? "border-amber-400/40 hover:border-amber-300/60 shadow-[0_0_0_1px_rgba(251,191,36,.05)_inset]"

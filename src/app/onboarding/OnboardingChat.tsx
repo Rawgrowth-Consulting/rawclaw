@@ -25,7 +25,7 @@ type ChatMessage =
       id: string;
       label: string;
       status: "thinking" | "done" | "error";
-      fields?: Record<string, any>;
+      fields?: Record<string, unknown>;
       error?: string;
     }
   | { role: "brand_docs_uploader"; id: string }
@@ -119,10 +119,11 @@ export default function OnboardingChat({
       const wireMessages = next
         .slice(0, -1)
         .filter(
-          (m): m is { role: "user" | "assistant"; content: string } =>
-            (m.role === "user" || m.role === "assistant") &&
-            typeof (m as any).content === "string" &&
-            (m as any).content.trim().length > 0
+          (m): m is { role: "user" | "assistant"; content: string } => {
+            if (m.role !== "user" && m.role !== "assistant") return false;
+            const content = (m as { content?: unknown }).content;
+            return typeof content === "string" && content.trim().length > 0;
+          }
         );
       const res = await fetch("/api/onboarding/chat", {
         method: "POST",
@@ -148,6 +149,10 @@ export default function OnboardingChat({
 
         for (const line of lines) {
           if (!line.trim()) continue;
+          // Streamed protocol from /api/onboarding/chat. Server emits
+          // discriminated `type` events; structurally validate fields per
+          // branch so unknown payloads don't crash the parser.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- streamed JSON event from internal API; narrowed at each branch
           let event: any;
           try {
             event = JSON.parse(line);
@@ -263,8 +268,9 @@ export default function OnboardingChat({
         }
         return prev;
       });
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
       setMessages((prev) => prev.slice(0, -1));
     } finally {
       setStreaming(false);
@@ -495,7 +501,7 @@ function ReasoningBubble({ message }: { message: ReasoningMessage }) {
   );
 }
 
-function formatValue(v: any): string {
+function formatValue(v: unknown): string {
   if (v === null || v === undefined) return " - ";
   if (typeof v === "string") return v || " - ";
   if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -536,8 +542,9 @@ function BrandDocsUploader({
         if (!res.ok) throw new Error(data.error || "Upload failed");
         if (data.document) setDocs((prev) => [data.document, ...prev]);
       }
-    } catch (err: any) {
-      setUploadError(err.message || "Upload failed");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Upload failed";
+      setUploadError(message);
     } finally {
       setUploadingZone(null);
     }
@@ -736,7 +743,7 @@ function PortalButton() {
   return (
     <div className="rg-fade-in rounded-xl border border-[rgba(12,191,106,0.18)] bg-[rgba(12,191,106,0.04)] p-5 text-center">
       <p className="mb-1 text-sm font-medium text-foreground">
-        You're all set 🎉
+        You&apos;re all set 🎉
       </p>
       <p className="mb-4 text-xs text-muted-foreground/80">
         Your AI department is standing up now. Head into your portal to watch

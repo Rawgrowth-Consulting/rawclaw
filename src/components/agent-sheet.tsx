@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Pause, Play, Plus, Save, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -124,16 +124,20 @@ export function AgentSheet(props: Props) {
   );
   const [error, setError] = useState<string | null>(null);
 
-  // Reset form when the sheet opens for a new agent (edit mode) or when closing.
-  useEffect(() => {
+  // Reset form when the sheet opens for a new agent (edit mode) or when
+  // closing. React 19 pattern: track the trigger key in state and reset
+  // during render so we avoid a set-state-in-effect cascade. We intentionally
+  // do not include the full agent identity in the trigger to avoid stomping
+  // edits mid-typing when the store rehydrates the same object.
+  const triggerKey = `${open ? "1" : "0"}:${isEdit ? props.agent.id : "new"}`;
+  const [prevTriggerKey, setPrevTriggerKey] = useState(triggerKey);
+  if (prevTriggerKey !== triggerKey) {
+    setPrevTriggerKey(triggerKey);
     if (open) {
       setForm(isEdit ? agentToForm(props.agent) : emptyForm());
       setError(null);
     }
-    // We intentionally do not include agent identity in deps to avoid
-    // stomping edits mid-typing when the store rehydrates the same object.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isEdit ? props.agent.id : null]);
+  }
 
   const managerCandidates = agents.filter(
     (a) => !isEdit || a.id !== props.agent.id, // can't report to self

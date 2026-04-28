@@ -80,6 +80,21 @@ const eslintConfig = defineConfig([
       "rawgrowth-brand/banned-words": "error",
     },
   },
+  // Vendored chart components (shadcn/tremor port) trip every React 19
+  // strict hook rule (refs-during-render, set-state-in-effect, purity).
+  // The patterns are intentional in the original library - rewriting
+  // them risks breaking chart rendering. Silence here so the lint
+  // surface stays focused on v3-authored code.
+  {
+    files: ["src/components/charts/**"],
+    rules: {
+      "react-hooks/refs": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/set-state-in-render": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/exhaustive-deps": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
