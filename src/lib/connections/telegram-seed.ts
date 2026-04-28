@@ -1,10 +1,16 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { seedAutonomousRoutineForManager } from "@/lib/routines/autonomous-heartbeat";
 
 /**
  * After brand profile approval, seed three per-agent Telegram connection
  * rows in status='pending_token'. The dashboard's "Add to Telegram"
  * button on each default manager (Marketing/Sales/Ops) then flips the
  * row to 'connected' once the operator pastes a BotFather token.
+ *
+ * Side effect: every Telegram-eligible default manager also gets one
+ * autonomous heartbeat routine wired so the brief §9.6 idle-1h test
+ * produces activity-feed events. The heartbeat seed is idempotent and
+ * sub-agent-guarded inside seedAutonomousRoutineForManager.
  *
  * Idempotent under concurrent calls  -  relies on the partial unique index
  * `rgaios_connections_org_agent_provider_key` (migration 0028) on
@@ -87,6 +93,25 @@ export async function seedTelegramConnectionForAgent(
     detail: { agent_id: agentId, display_name: displayName },
   });
 
+  // Pair the Telegram slot with an autonomous heartbeat routine so
+  // brief §9.6 (1h idle → activity events) holds for any agent that
+  // later finishes Telegram connection. seedAutonomousRoutineForManager
+  // refuses to seed for sub-agents and is idempotent on re-call, so
+  // failures here are safe to swallow with a log.
+  try {
+    const r = await seedAutonomousRoutineForManager(organizationId, agentId);
+    if (!r.seeded && r.reason !== "already_exists" && r.reason !== "sub_agent" && r.reason !== "not_department_head") {
+      console.error(
+        `[telegram-seed] autonomous heartbeat seed failed for agent ${agentId}: ${r.reason}`,
+      );
+    }
+  } catch (err) {
+    console.error(
+      `[telegram-seed] autonomous heartbeat seed threw for agent ${agentId}:`,
+      err,
+    );
+  }
+
   return { seeded: true };
 }
 
@@ -161,6 +186,30 @@ export async function seedTelegramConnectionsForDefaults(
         ),
       },
     });
+  }
+
+  // Brief §9.6: every default manager needs an autonomous heartbeat
+  // routine so the 1h-idle test produces activity-feed events. We fan
+  // out across the SAME target list (the three default managers) and
+  // let seedAutonomousRoutineForManager handle idempotency + the
+  // sub-agent guard. We run this even if `seeded` was zero on the
+  // Telegram side - re-seed retries from /api/dashboard/gate poll
+  // shouldn't skip the heartbeat just because Telegram rows already
+  // existed.
+  for (const a of target) {
+    try {
+      const r = await seedAutonomousRoutineForManager(organizationId, a.id);
+      if (!r.seeded && r.reason !== "already_exists" && r.reason !== "sub_agent" && r.reason !== "not_department_head") {
+        console.error(
+          `[telegram-seed] heartbeat seed failed for ${a.name} (${a.id}): ${r.reason}`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[telegram-seed] heartbeat seed threw for ${a.name} (${a.id}):`,
+        err,
+      );
+    }
   }
 
   return { seeded, skipped };

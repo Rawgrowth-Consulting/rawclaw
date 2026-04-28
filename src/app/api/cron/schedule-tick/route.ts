@@ -136,7 +136,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const fired: Array<{ trigger_id: string; run_id: string; title: string }> = [];
+  const fired: Array<{
+    trigger_id: string;
+    run_id: string;
+    title: string;
+    autonomous_heartbeat?: boolean;
+  }> = [];
   const skipped: Array<{ trigger_id: string; reason: string }> = [];
 
   for (const row of rows) {
@@ -260,10 +265,18 @@ export async function GET(req: NextRequest) {
       // 4. Route to the executor (hosted) or leave pending for Claude Code (self-hosted)
       dispatchRun(run.id, orgId);
 
+      // Autonomous heartbeats (seeded per default manager via
+      // src/lib/routines/autonomous-heartbeat.ts) are tagged in
+      // trigger.config.autonomous_heartbeat=true so the brief §9.6
+      // 1h-idle audit can grep them out from the user-defined
+      // schedule traffic.
+      const isHeartbeat = (cfg as { autonomous_heartbeat?: unknown }).autonomous_heartbeat === true;
+
       fired.push({
         trigger_id: row.id,
         run_id: run.id,
         title: row.rgaios_routines.title,
+        ...(isHeartbeat ? { autonomous_heartbeat: true } : {}),
       });
     } catch (err) {
       skipped.push({
