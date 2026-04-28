@@ -159,12 +159,12 @@ export default async function DashboardPage() {
             </div>
             <div>
               <h3 className="text-[14px] font-semibold text-foreground">
-                Dashboard analytics aren&apos;t configured yet
+                No pillars wired yet
               </h3>
               <p className="mt-1 max-w-md text-[12.5px] leading-relaxed text-muted-foreground">
-                Charts for each department light up once we wire them to
-                your data sources. Speak to the team to configure the
-                pillars that matter to your business.
+                Each department chart lights up once its data source is
+                connected. Enable Marketing, Sales, Fulfilment or Finance
+                in Company settings to start tracking pillars.
               </p>
             </div>
           </CardContent>

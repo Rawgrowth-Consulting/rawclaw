@@ -27,17 +27,17 @@ export function DashboardStats() {
     {
       label: "Open issues",
       value: data ? String(data.openIssues) : " - ",
-      hint: "failed runs (7d)",
+      hint: "failed runs in 7d",
     },
     {
       label: "Pending approvals",
       value: data ? String(data.pendingApprovals) : " - ",
-      hint: data ? `${data.pendingApprovals} awaiting` : "loading…",
+      hint: "awaiting review",
     },
     {
       label: "Runs this week",
       value: data ? String(data.runsThisWeek) : " - ",
-      hint: "completed (7d)",
+      hint: "completed in 7d",
     },
   ];
 

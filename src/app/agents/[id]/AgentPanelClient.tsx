@@ -266,8 +266,8 @@ export function AgentPanelClient({
         {tab === "memory" && (
           <ul className="space-y-2">
             {memory.length === 0 && (
-              <li className="text-sm text-[var(--text-muted)]">
-                No memory entries yet.
+              <li className="rounded-md border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-6 text-center text-sm text-[var(--text-muted)]">
+                No memory yet. As this agent runs, decisions and learnings appear here.
               </li>
             )}
             {memory.map((m) => (
@@ -324,7 +324,7 @@ export function AgentPanelClient({
                   : "Drop files here, or click to browse"}
               </p>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
-                PDF / DOCX / MD / TXT / CSV / image . up to 100 MB
+                PDF / DOCX / MD / TXT / CSV / image · up to 100 MB
               </p>
               <input
                 ref={fileInputRef}
@@ -364,7 +364,7 @@ export function AgentPanelClient({
                         {f.filename}
                       </p>
                       <p className="font-mono text-[11px] text-[var(--text-muted)]">
-                        {f.mime_type} . {formatSize(f.size_bytes)}
+                        {f.mime_type} · {formatSize(f.size_bytes)}
                       </p>
                     </div>
                     <time className="ml-3 shrink-0 text-[11px] text-[var(--text-muted)]">
@@ -380,8 +380,8 @@ export function AgentPanelClient({
         {tab === "tasks" && (
           <ul className="space-y-2">
             {tasks.length === 0 && (
-              <li className="text-sm text-[var(--text-muted)]">
-                No routine runs assigned to this agent.
+              <li className="rounded-md border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-6 text-center text-sm text-[var(--text-muted)]">
+                No routines assigned. Wire this agent into a routine on the Routines page.
               </li>
             )}
             {tasks.map((t) => (

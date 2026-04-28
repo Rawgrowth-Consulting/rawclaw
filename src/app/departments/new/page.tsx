@@ -13,7 +13,7 @@ export default async function NewDepartmentPage() {
         <p className="text-xs uppercase tracking-widest text-primary">
           Add department
         </p>
-        <h1 className="mt-1 text-2xl">Spin up a new department</h1>
+        <h1 className="mt-1 font-serif text-3xl font-normal tracking-tight">New department</h1>
         <p className="mt-1 text-sm text-[var(--text-muted)]">
           Creates a manager and two sub-agents with sensible defaults. You
           can rename and re-skill them right after.

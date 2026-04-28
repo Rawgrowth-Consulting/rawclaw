@@ -68,7 +68,13 @@ async function replaceTriggers(
     organization_id: organizationId,
     routine_id: routineId,
     kind: t.kind,
-    enabled: t.enabled,
+    // `enabled` is NOT NULL in rgaios_routine_triggers. The UI always
+    // sends a boolean (newTrigger() defaults to true), but external
+    // callers (MCP, raw fetch from a script, the routine-from-chat
+    // tool) may omit the field entirely. Default to enabled=true so
+    // the insert never crashes with "violates not-null constraint";
+    // a routine with a manual trigger you can't fire isn't useful.
+    enabled: t.enabled ?? true,
     config: triggerConfigFor(t),
   }));
   const { error: insErr } = await db

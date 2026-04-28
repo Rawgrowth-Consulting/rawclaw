@@ -12,7 +12,7 @@ export default function DepartmentsPage() {
   return (
     <PageShell
       title="Departments"
-      description="Organize your agents by business pillar. Use the seeded set or spin up your own. Every agent can stay unassigned."
+      description="Group agents by business pillar. Use the seeded departments or add your own. Agents can also stay unassigned."
       actions={
         <Button asChild variant="default" size="sm">
           <Link href="/departments/new">+ Add department</Link>

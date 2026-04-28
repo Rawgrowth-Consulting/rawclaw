@@ -43,7 +43,7 @@ export default async function AgentTreePage() {
           Agent tree
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Your org chart. Right-click any node to add a sub-agent.
+          Your org chart. Use the + sub-agent button on any node to add a report.
         </p>
       </header>
       <div className="min-h-0 flex-1">

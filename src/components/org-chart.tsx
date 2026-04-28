@@ -193,12 +193,6 @@ function AgentCard({
             : []
         }
       />
-
-      <div className="mt-3 flex items-center justify-end">
-        <span className="font-mono text-[10px] text-muted-foreground">
-          {initials(agent.name)}
-        </span>
-      </div>
     </button>
   );
 }

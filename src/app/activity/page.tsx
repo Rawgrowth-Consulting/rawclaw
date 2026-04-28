@@ -26,7 +26,7 @@ export default async function ActivityPage() {
   return (
     <PageShell
       title="Activity"
-      description="Every routine run  -  live. Click any row to see the full chain of tool calls, inputs, and outputs."
+      description="Every routine run, live. Open any row for the full chain of tool calls, inputs, and outputs."
     >
       <div className="space-y-6">
         <ActivityView />
