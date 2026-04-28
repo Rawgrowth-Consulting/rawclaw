@@ -247,7 +247,7 @@ export function AgentSheet(props: Props) {
 
               <Field label="Reports to">
                 <Select
-                  value={form.reportsTo}
+                  value={form.reportsTo === NONE ? undefined : form.reportsTo}
                   onValueChange={(v) => setForm({ ...form, reportsTo: v ?? NONE })}
                 >
                   <SelectTrigger className="w-full bg-input/40">
@@ -271,7 +271,7 @@ export function AgentSheet(props: Props) {
               hint="Groups this agent under that pillar on the Departments page."
             >
               <Select
-                value={form.department}
+                value={form.department === NONE ? undefined : form.department}
                 onValueChange={(v) =>
                   setForm({ ...form, department: v ?? NONE })
                 }
