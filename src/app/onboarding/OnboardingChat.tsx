@@ -379,7 +379,7 @@ function MessageBubble({
 
   if (message.role === "user") {
     return (
-      <div className="rg-fade-in flex justify-end">
+      <div className="rg-fade-in flex justify-end" data-role="user">
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-[rgba(12,191,106,0.12)] px-4 py-2.5 text-sm text-foreground">
           {message.content}
         </div>
@@ -396,7 +396,7 @@ function MessageBubble({
   }
 
   return (
-    <div className="rg-fade-in flex gap-3">
+    <div className="rg-fade-in flex gap-3" data-role="assistant">
       <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[rgba(12,191,106,0.08)]">
         <Image
           src="/rawgrowth.png"
