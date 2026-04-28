@@ -172,6 +172,41 @@ for (const org of orgs) {
     if (rowCount > 0) totals.deptUpdated += 1;
   }
 
+  // Pass 3: normalize legacy slugs to the canonical set used by
+  // src/lib/agents/seed.ts. Older orgs used "engineering" instead of
+  // "development"; align so the /departments view groups correctly.
+  const SLUG_RENAMES = {
+    engineering: "development",
+  };
+  for (const [from, to] of Object.entries(SLUG_RENAMES)) {
+    const r = await client.query(
+      `update rgaios_agents
+          set department = $3
+        where organization_id = $1
+          and department = $2`,
+      [org.id, from, to],
+    );
+    if (r.rowCount > 0) {
+      totals.deptUpdated += r.rowCount;
+      console.log(`[backfill] org ${org.slug}: renamed ${r.rowCount} ${from} → ${to}`);
+    }
+  }
+
+  // Pass 4: anything STILL null after passes 1-3 (Sim/Demo leftovers,
+  // ad-hoc agents) gets dropped into 'fulfilment' as the catch-all
+  // operations bucket. Operator can re-bucket via the UI.
+  const r4 = await client.query(
+    `update rgaios_agents
+        set department = 'fulfilment'
+      where organization_id = $1
+        and department is null`,
+    [org.id],
+  );
+  if (r4.rowCount > 0) {
+    totals.deptUpdated += r4.rowCount;
+    console.log(`[backfill] org ${org.slug}: bucketed ${r4.rowCount} unmatched into fulfilment`);
+  }
+
   console.log(
     `[backfill] org ${org.slug}: ${agents.length} agents scanned`,
   );
