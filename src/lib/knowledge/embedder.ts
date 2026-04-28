@@ -246,6 +246,15 @@ export function toPgVector(embedding: number[]): string {
  */
 export function warmEmbedder(): void {
   if (selectedProvider() !== "fastembed") return;
+  // Dev-mode Turbopack rewrites dynamic require paths to hashed module
+  // names that miss the packed runtime, so the warmup import fails with
+  // ERR_MODULE_NOT_FOUND on every boot. The actual upload path
+  // (embedBatch via /api/agent-files/upload) uses the same dynamic
+  // import and resolves fine, since by the time it runs the
+  // serverExternalPackages bundle decision is final. Skip warmup in
+  // dev to keep the log clean; production (next start) routes through
+  // the standalone bundle where the warmup actually warms.
+  if (process.env.NODE_ENV !== "production") return;
   fastembedModel().catch((err) => {
     console.warn("[embedder] warmup failed:", (err as Error).message);
   });
