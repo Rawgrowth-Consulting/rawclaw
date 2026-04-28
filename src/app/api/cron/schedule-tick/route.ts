@@ -192,7 +192,39 @@ export async function GET(req: NextRequest) {
       const routineId = row.rgaios_routines.id;
       const orgId = row.organization_id;
 
-      // 1. Insert a pending run
+      // Atomic claim: bump last_fired_at conditional on it still matching
+      // the baseline we read above. Two concurrent ticks both pass the
+      // "not yet due" check, but only one's UPDATE returns a row — the
+      // other gets an empty result and skips. Stands in for Pedro's
+      // day1 §1 pg_try_advisory_lock commitment without needing a
+      // separate lock table or the advisory_lock RPC surface.
+      const baselineIso = row.last_fired_at
+        ? new Date(row.last_fired_at).toISOString()
+        : null;
+      const claim = baselineIso
+        ? db
+            .from("rgaios_routine_triggers")
+            .update({ last_fired_at: now.toISOString() })
+            .eq("id", row.id)
+            .eq("last_fired_at", baselineIso)
+            .select("id")
+        : db
+            .from("rgaios_routine_triggers")
+            .update({ last_fired_at: now.toISOString() })
+            .eq("id", row.id)
+            .is("last_fired_at", null)
+            .select("id");
+      const { data: claimed, error: claimErr } = await claim;
+      if (claimErr) {
+        skipped.push({ trigger_id: row.id, reason: `claim failed: ${claimErr.message}` });
+        continue;
+      }
+      if (!claimed || claimed.length === 0) {
+        skipped.push({ trigger_id: row.id, reason: "raced (another tick claimed)" });
+        continue;
+      }
+
+      // 1. Insert a pending run (now safe — we own the slot)
       const { data: run, error: runErr } = await db
         .from("rgaios_routine_runs")
         .insert({
@@ -218,12 +250,6 @@ export async function GET(req: NextRequest) {
         });
         continue;
       }
-
-      // 2. Advance the trigger's last_fired_at
-      await db
-        .from("rgaios_routine_triggers")
-        .update({ last_fired_at: now.toISOString() })
-        .eq("id", row.id);
 
       // 3. Bump routine.last_run_at so the UI reflects immediately
       await db
