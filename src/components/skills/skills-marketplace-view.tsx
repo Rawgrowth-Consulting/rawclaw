@@ -51,7 +51,7 @@ type SkillsResponse = {
 };
 
 export function SkillsMarketplaceView() {
-  const { data, isLoading, mutate } = useSWR<SkillsResponse>(
+  const { data, error, isLoading, mutate } = useSWR<SkillsResponse>(
     "/api/skills",
     jsonFetcher,
     { refreshInterval: 15_000 },
@@ -137,7 +137,11 @@ export function SkillsMarketplaceView() {
       </div>
 
       {/* Grid */}
-      {isLoading && !data ? (
+      {error && !data ? (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-[12.5px] text-destructive">
+          Couldn&apos;t load the skills catalog: {(error as Error).message}
+        </div>
+      ) : isLoading && !data ? (
         <div className="text-[12px] text-muted-foreground">Loading skills…</div>
       ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-card/30 p-10 text-center text-[13px] text-muted-foreground">

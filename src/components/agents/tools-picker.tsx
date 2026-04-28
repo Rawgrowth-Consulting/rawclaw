@@ -212,7 +212,7 @@ export function ToolsPicker({
       )}
 
       <Link
-        href="/integrations"
+        href="/connections"
         className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-card/30 px-3 py-2 text-[12px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
       >
         <Plus className="size-3.5" />

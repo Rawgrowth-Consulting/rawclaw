@@ -63,7 +63,7 @@ function roleBadgeClass(role: Role) {
 }
 
 export function MembersView() {
-  const { data, mutate, isLoading } = useSWR<Response>(
+  const { data, error, mutate, isLoading } = useSWR<Response>(
     "/api/members",
     jsonFetcher,
     { refreshInterval: 15_000 },
@@ -132,7 +132,13 @@ export function MembersView() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {isLoading && !data ? (
+            {error && !data ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-6 text-center text-destructive">
+                  Couldn&apos;t load members: {(error as Error).message}
+                </td>
+              </tr>
+            ) : isLoading && !data ? (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
                   Loading…

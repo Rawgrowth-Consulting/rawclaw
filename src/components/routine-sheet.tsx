@@ -615,7 +615,7 @@ function IntegrationTriggerConfig({
             connected yet, so this trigger won&apos;t fire.
           </span>
           <Link
-            href="/integrations"
+            href="/connections"
             className="ml-auto shrink-0 font-semibold text-amber-400 hover:underline"
           >
             Connect →
@@ -676,7 +676,7 @@ function TelegramTriggerConfig({
             Telegram isn&apos;t connected yet, so this trigger won&apos;t fire.
           </span>
           <Link
-            href="/integrations"
+            href="/connections"
             className="ml-auto shrink-0 font-semibold text-amber-400 hover:underline"
           >
             Connect →

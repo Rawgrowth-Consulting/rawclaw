@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { generateMcpToken } from "@/lib/mcp/token-resolver";
+import { seedDefaultAgentsForOrg } from "@/lib/agents/seed";
 
 /**
  * Admin-facing client provisioning. Every function assumes the caller
@@ -150,6 +151,26 @@ export async function createClient(
     // Roll back the org to keep things clean.
     await db.from("rgaios_organizations").delete().eq("id", org.id);
     throw new Error(`createClient owner: ${userErr?.message}`);
+  }
+
+  // Seed the default agent roster (one head per pillar + sub-agents).
+  // Idempotent + best-effort: if it fails the org is still usable, the
+  // operator can re-seed via /agents/new manually. Failure here must NOT
+  // leak past createClient because the org+owner rows are already
+  // committed and rolling them back would be more destructive than
+  // landing without default agents.
+  try {
+    const seedResult = await seedDefaultAgentsForOrg(org.id);
+    console.info(
+      `[createClient] default agents seeded for ${org.slug}: ` +
+        `managers ${seedResult.managersInserted} new / ${seedResult.managersSkipped} skipped, ` +
+        `sub-agents ${seedResult.subAgentsInserted} new / ${seedResult.subAgentsSkipped} skipped`,
+    );
+  } catch (err) {
+    console.error(
+      `[createClient] default agent seed failed for ${org.slug}:`,
+      (err as Error).message,
+    );
   }
 
   // Audit log

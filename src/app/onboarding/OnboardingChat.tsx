@@ -6,7 +6,7 @@ import { ArrowUp, Check, ChevronDown, AlertCircle, Upload, X, FileText, Image as
 import Link from "next/link";
 
 import { Response } from "@/components/ui/response";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { BRAND_DOC_ZONES } from "@/lib/onboarding";
 
 type DocumentRecord = {
@@ -749,12 +749,13 @@ function PortalButton() {
         Your AI department is standing up now. Head into your portal to watch
         the first deliverables land.
       </p>
-      <Button asChild size="lg" className="w-full sm:w-auto">
-        <Link href="/dashboard" className="inline-flex items-center gap-2">
-          Continue to Portal
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </Button>
+      <Link
+        href="/dashboard"
+        className={`${buttonVariants({ size: "lg" })} w-full inline-flex items-center gap-2 sm:w-auto`}
+      >
+        Continue to Portal
+        <ArrowRight className="h-4 w-4" />
+      </Link>
     </div>
   );
 }

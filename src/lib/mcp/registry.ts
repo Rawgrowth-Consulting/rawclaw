@@ -57,7 +57,7 @@ export async function callTool(
     const conn = await getConnection(ctx.organizationId, pck);
     if (!conn) {
       return textError(
-        `${tool.requiresIntegration} isn't connected for this organization. Connect it at /integrations and retry.`,
+        `${tool.requiresIntegration} isn't connected for this organization. Connect it at /connections and retry.`,
       );
     }
   }
