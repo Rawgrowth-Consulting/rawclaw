@@ -3,7 +3,13 @@ import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
-export const ADMIN_ORG_ID = "323cd2bf-7548-4ce1-8f25-9a66d1c3972c";
+// ADMIN_ORG_ID identifies the operator org that can create + impersonate
+// other client orgs via /api/admin/clients. Defaults to the original
+// hosted-mode admin org id, but can be overridden per-VPS via env so a
+// fresh deploy can grant admin to its first user without a code change
+// or DB rewrite. (Pedro hit this on D2 trying to demo create-org flow.)
+export const ADMIN_ORG_ID =
+  process.env.ADMIN_ORG_ID ?? "323cd2bf-7548-4ce1-8f25-9a66d1c3972c";
 export const ADMIN_VIEW_COOKIE = "rg_admin_view_org";
 
 export type OrgSummary = { id: string; name: string };
