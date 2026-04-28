@@ -102,7 +102,7 @@ test.describe("v3 ship-check", () => {
     }
   });
 
-  test("all primary routes return without 5xx", async ({ page }) => {
+  test("all primary routes return without 4xx/5xx", async ({ page }) => {
     await signIn(page);
     const routes = [
       "/",
@@ -119,13 +119,24 @@ test.describe("v3 ship-check", () => {
       "/brand",
       "/onboarding",
       "/departments/new",
+      "/connections",
+      "/integrations",
+      "/company",
+      "/company/general",
+      "/company/members",
+      "/company/skills",
+      "/departments",
+      "/org",
     ];
     const bad: string[] = [];
     for (const path of routes) {
       const res = await page.goto(path);
       const s = res?.status() ?? 0;
-      if (s >= 500) bad.push(`${path} → ${s}`);
+      // §9 acceptance: zero 404s AND zero 500s. Catch the auth-redirect
+      // case (200 after redirect to /auth/signin) by also asserting the
+      // final URL is not the sign-in page when we're already signed in.
+      if (s >= 400) bad.push(`${path} → ${s}`);
     }
-    expect(bad, `5xx routes: ${bad.join(", ")}`).toHaveLength(0);
+    expect(bad, `non-2xx/3xx routes: ${bad.join(", ")}`).toHaveLength(0);
   });
 });

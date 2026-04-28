@@ -17,7 +17,6 @@ import {
   SOFTWARE_ACCESS_PLATFORMS,
   SCHEDULE_CALLS,
   CALENDLY_BASE_URL,
-  BRAND_DOC_ZONES,
   computeOnboardingProgress,
 } from "@/lib/onboarding";
 
@@ -414,7 +413,7 @@ async function completeSection1(
     slack_channel_name: string | null;
   }
 ) {
-  const update: Record<string, any> = {
+  const update: Record<string, unknown> = {
     messaging_channel: args.messaging_channel,
     messaging_handle: args.messaging_handle,
     onboarding_step: 2,
@@ -434,7 +433,7 @@ async function completeSection1(
 
 async function saveQuestionnaireSection(
   userId: string,
-  args: { section_id: string; data: Record<string, any> }
+  args: { section_id: string; data: Record<string, unknown> }
 ) {
   const section = QUESTIONNAIRE_SECTIONS.find((s) => s.id === args.section_id);
   if (!section) {
@@ -457,7 +456,7 @@ async function saveQuestionnaireSection(
     .maybeSingle();
 
   const existingData =
-    (existing as Record<string, any> | null)?.[section.column] ?? {};
+    ((existing as Record<string, unknown> | null)?.[section.column] as Record<string, unknown> | undefined) ?? {};
   const merged = { ...existingData, ...args.data };
 
   const { error } = await supabaseAdmin()
@@ -492,7 +491,7 @@ async function generateBrandProfile(
   if (!intake) return { ok: false, error: "No brand intake found for client." };
 
   const sections = QUESTIONNAIRE_SECTIONS.map((s) => {
-    const data = (intake as any)[s.column];
+    const data = (intake as Record<string, unknown>)[s.column];
     if (!data || typeof data !== "object" || Object.keys(data).length === 0)
       return null;
     return `${s.label}: ${JSON.stringify(data)}`;
@@ -542,8 +541,9 @@ ${sections}`;
       content = result.text;
       onChunk?.(result.text);
     }
-  } catch (err: any) {
-    return { ok: false, error: err.message || "Profile generation failed" };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Profile generation failed";
+    return { ok: false, error: message };
   }
 
   if (!content.trim())
@@ -813,9 +813,8 @@ export async function POST(req: NextRequest) {
     // (ANTHROPIC_API_KEY), or anthropic-cli (host's Claude Max OAuth).
 
     // v3: onboarding chat is scoped to the active organization. orgId is
-    // the primary key into the rgaios_* tables; userId is who's filling it out.
+    // the primary key into the rgaios_* tables.
     const orgId = ctx.activeOrgId;
-    const userId = ctx.userId;
     const user = {
       id: orgId,
       name: ctx.userName,
@@ -893,7 +892,7 @@ export async function POST(req: NextRequest) {
 
     // Which Section 2 sub-sections have any data, and what was captured.
     const subsectionState = QUESTIONNAIRE_SECTIONS.map((s) => {
-      const data = ((intake as any)?.[s.column] ?? {}) as Record<string, any>;
+      const data = (((intake as Record<string, unknown> | null)?.[s.column]) ?? {}) as Record<string, unknown>;
       const keys = Object.keys(data);
       return { ...s, captured: keys, saved: keys.length > 0 };
     });
@@ -916,7 +915,7 @@ export async function POST(req: NextRequest) {
         const remaining = allFields.filter((f) => !nextSub.captured.includes(f));
         const captured = nextSub.captured.length
           ? `Already captured for this sub-section: ${JSON.stringify(
-              (intake as any)?.[nextSub.column]
+              (intake as Record<string, unknown> | null)?.[nextSub.column]
             )}. DO NOT re-ask any of these fields.`
           : "Nothing captured for this sub-section yet.";
 
@@ -975,7 +974,7 @@ export async function POST(req: NextRequest) {
       if (!uploaderShown && uploadCount === 0) {
         nextActionBlock = `You are in Section 4 (Brand Documents). Say ONE short inviting sentence asking them to drop in logos, brand guidelines, or other assets. Then IMMEDIATELY call \`show_brand_docs_uploader\`. Do NOT describe the widget.`;
       } else {
-        nextActionBlock = `You are in Section 4. The uploader is already visible to the client. They have uploaded ${uploadCount} file(s) so far${uploadCount ? `: ${docs!.map((d: any) => d.filename).join(", ")}` : ""}. Wait for them to say they're done (or indicate they have nothing). When they do, call \`complete_brand_docs_section\`. Do NOT call \`show_brand_docs_uploader\` again.`;
+        nextActionBlock = `You are in Section 4. The uploader is already visible to the client. They have uploaded ${uploadCount} file(s) so far${uploadCount ? `: ${docs!.map((d: { filename: string }) => d.filename).join(", ")}` : ""}. Wait for them to say they're done (or indicate they have nothing). When they do, call \`complete_brand_docs_section\`. Do NOT call \`show_brand_docs_uploader\` again.`;
       }
     } else if (!softwareAccessDone) {
       // Section 6  -  find next platform to ask about
@@ -1015,8 +1014,8 @@ export async function POST(req: NextRequest) {
       (m): m is IncomingMessage =>
         !!m &&
         (m.role === "user" || m.role === "assistant") &&
-        typeof (m as any).content === "string" &&
-        (m as any).content.trim().length > 0
+        typeof (m as { content?: unknown }).content === "string" &&
+        ((m as { content: string }).content).trim().length > 0
     );
 
     // Provider-agnostic conversation buffer. After each tool-using step we
@@ -1033,7 +1032,7 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        const emit = (event: Record<string, any>) => {
+        const emit = (event: Record<string, unknown>) => {
           controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
         };
 
@@ -1085,10 +1084,15 @@ export async function POST(req: NextRequest) {
               .join("\n");
             messages.push({ role: "assistant", content: assistantSummary });
 
-            const toolResultsForBuffer: string[] = [];
-
             for (const tc of toolCalls) {
-              let result: any;
+              type ToolResult = {
+                ok: boolean;
+                error?: string;
+                merged?: Record<string, unknown>;
+                note?: string;
+                brand_profile_generated?: boolean;
+              };
+              let result: ToolResult = { ok: false };
               let label: string | null = null;
               console.debug(
                 `[onboarding] tool call → ${tc.name}`,
@@ -1096,7 +1100,7 @@ export async function POST(req: NextRequest) {
               );
 
               // Derive a human-readable label for the reasoning bubble.
-              const parsedForReasoning: any = tc.input;
+              const parsedForReasoning: Record<string, unknown> = (tc.input as Record<string, unknown>) ?? {};
               let reasoningLabel = "Processing";
               if (tc.name === "complete_section_1") {
                 reasoningLabel = "Extracting your communication preferences";
@@ -1104,7 +1108,7 @@ export async function POST(req: NextRequest) {
                 const sec = QUESTIONNAIRE_SECTIONS.find(
                   (s) => s.id === parsedForReasoning.section_id
                 );
-                reasoningLabel = `Extracting your ${(sec?.label ?? parsedForReasoning.section_id ?? "answers").toLowerCase()}`;
+                reasoningLabel = `Extracting your ${String(sec?.label ?? parsedForReasoning.section_id ?? "answers").toLowerCase()}`;
               } else if (tc.name === "finalize_questionnaire") {
                 reasoningLabel = "Finalising your questionnaire";
               } else if (tc.name === "generate_brand_profile") {
@@ -1143,7 +1147,22 @@ export async function POST(req: NextRequest) {
               });
 
               try {
-                const parsed = parsedForReasoning;
+                // Tool argument shapes are validated by the model schema.
+                // Cast through unknown for each handler's specific arg type.
+                const parsed = parsedForReasoning as never as {
+                  messaging_channel: string;
+                  messaging_handle: string;
+                  slack_workspace_url: string | null;
+                  slack_channel_name: string | null;
+                  section_id: string;
+                  data: Record<string, unknown>;
+                  feedback?: string | null;
+                  platform: string;
+                  confirmed: boolean;
+                  notes: string | null;
+                  call_id: string;
+                  booked: boolean;
+                };
                 if (tc.name === "complete_section_1") {
                   result = await completeSection1(user.id, parsed);
                   label = "Communication preferences";
@@ -1160,7 +1179,7 @@ export async function POST(req: NextRequest) {
                   // Auto-chain: generate the brand profile immediately, streaming
                   // the markdown into the chat. This guarantees it happens even if
                   // the model forgets to call generate_brand_profile next.
-                  if ((result as any).ok) {
+                  if (result.ok) {
                     emit({
                       type: "text",
                       delta:
@@ -1217,7 +1236,7 @@ export async function POST(req: NextRequest) {
                   result = await approveBrandProfile(user.id);
                   label = "Brand profile approved";
                   // Auto-chain straight into Section 4 so the model can't stall.
-                  if ((result as any).ok) {
+                  if (result.ok) {
                     emit({
                       type: "text",
                       delta:
@@ -1260,7 +1279,7 @@ export async function POST(req: NextRequest) {
                 } else if (tc.name === "complete_onboarding") {
                   result = await completeOnboarding(user.id, incoming);
                   label = "Onboarding complete";
-                  if ((result as any).ok) {
+                  if (result.ok) {
                     emit({ type: "celebrate" });
                     emit({ type: "portal_button" });
                     result = {
@@ -1271,8 +1290,9 @@ export async function POST(req: NextRequest) {
                 } else {
                   result = { ok: false, error: `Unknown tool: ${tc.name}` };
                 }
-              } catch (err: any) {
-                result = { ok: false, error: err.message };
+              } catch (err: unknown) {
+                const message = err instanceof Error ? err.message : "Tool error";
+                result = { ok: false, error: message };
               }
 
               messages.push({
@@ -1283,7 +1303,7 @@ export async function POST(req: NextRequest) {
 
               // Close out the reasoning bubble with the extracted fields
               if (result?.ok) {
-                let fields: Record<string, any> | undefined;
+                let fields: Record<string, unknown> | undefined;
                 if (tc.name === "save_questionnaire_section" && result.merged) {
                   fields = result.merged;
                 } else if (tc.name === "complete_section_1") {
@@ -1338,9 +1358,10 @@ export async function POST(req: NextRequest) {
             }
           }
           controller.close();
-        } catch (err: any) {
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Stream error";
           try {
-            emit({ type: "error", message: err.message || "Stream error" });
+            emit({ type: "error", message });
           } catch {}
           controller.error(err);
         }
@@ -1353,8 +1374,9 @@ export async function POST(req: NextRequest) {
         "Cache-Control": "no-cache, no-transform",
       },
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 

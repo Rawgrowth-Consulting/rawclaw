@@ -22,16 +22,6 @@ export const runtime = "nodejs";
  * One bot per agent. Sub-agents (is_department_head=false) are rejected.
  */
 
-type BotListRow = {
-  id: string;
-  agent_id: string;
-  bot_id: number;
-  bot_username: string | null;
-  bot_first_name: string | null;
-  status: string;
-  created_at: string;
-};
-
 export async function GET() {
   const organizationId = await currentOrganizationId();
   const { data, error } = await supabaseAdmin()

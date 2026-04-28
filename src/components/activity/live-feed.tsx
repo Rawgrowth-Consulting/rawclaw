@@ -35,8 +35,16 @@ export function LiveActivityFeed({
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) return null;
+    // Disable session/token refresh - we only use this client for
+    // anon-keyed Realtime, and leaving auth on triggers a duplicate
+    // GoTrueClient warning when the auth-side Supabase client also boots.
     return createClient(url, key, {
       realtime: { params: { eventsPerSecond: 10 } },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
     });
   }, []);
 

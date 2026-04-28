@@ -173,12 +173,12 @@ registerTool({
     const { applyBrandFilter } = await import("@/lib/brand/apply-filter");
     const subjectFiltered = await applyBrandFilter(subject, {
       organizationId: ctx.organizationId,
-      surface: "gmail_send_message:subject",
+      surface: "gmail_draft:subject",
     });
     if (!subjectFiltered.ok) return textError(subjectFiltered.error);
     const bodyFiltered = await applyBrandFilter(body, {
       organizationId: ctx.organizationId,
-      surface: "gmail_send_message:body",
+      surface: "gmail_draft:body",
     });
     if (!bodyFiltered.ok) return textError(bodyFiltered.error);
 

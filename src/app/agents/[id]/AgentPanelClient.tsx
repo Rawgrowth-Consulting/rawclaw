@@ -429,7 +429,7 @@ export function AgentPanelClient({
                 className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 text-sm text-[var(--text-strong)]"
               />
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-                Doubles as the agent's system prompt  -  Claude reads this at the
+                Doubles as the agent&apos;s system prompt  -  Claude reads this at the
                 start of every run.
               </p>
             </div>

@@ -66,8 +66,8 @@ Run once for the whole fleet (not per-VPS).
      fallback + embedding (see §1 — the multi-provider abstraction
      defaults to Path A CLI, so this is only needed if `LLM_PROVIDER`
      is flipped to `openai` per call site)
-   - **Heartbeat**: `HEARTBEAT_INTERVAL_SEC=600` (defaults to 10 min;
-     drop to 60-120 for the demo)
+   - **Heartbeat**: `HEARTBEAT_INTERVAL_SEC=90` (default; brief §9.6
+     wants 1-2 min. Bump up if VPS RAM is tight.)
 4. Boot:
    ```bash
    docker compose -f docker-compose.v3.yml up -d --build

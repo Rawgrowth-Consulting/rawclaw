@@ -53,13 +53,14 @@ Implicit defaults locked by the plan:
   hosted → in-process via `after()`.
 - `src/lib/knowledge/embedder.ts` — fastembed default, openai +
   voyage as opt-in providers.
-- `src/lib/brand/{tokens,runtime-filter}.ts` — brand voice + 11
-  banned words enforced at build time (eslint.config.mjs) +
-  runtime (telegram_reply, slack_post_message,
-  gmail_send_message).
-- `src/lib/mcp/tools/` — 24 MCP tools registered in
+- `src/lib/brand/{tokens,runtime-filter,apply-filter}.ts` - brand
+  voice + 11 banned words enforced at build time
+  (eslint.config.mjs) + runtime. Filter applied at: telegram_reply
+  (MCP), telegram_chat (both per-Department-Head and legacy webhook
+  chat paths), slack_post_message, gmail_draft.
+- `src/lib/mcp/tools/` - 34 MCP tools registered in
   `src/lib/mcp/tools/index.ts`.
-- `supabase/migrations/0001-0032` — single source of truth for
+- `supabase/migrations/0001-0034` - single source of truth for
   schema; `npm run self-hosted:migrate` is idempotent.
 - `scripts/wire-supabase.sh` — one-shot wiring of a fresh Supabase
   project: writes `.env.production` + provisions `agent-files` +

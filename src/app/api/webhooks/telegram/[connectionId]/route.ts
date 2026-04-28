@@ -345,12 +345,24 @@ export async function POST(
         return;
       }
 
+      // Brand-voice guard before send. chatReply returns raw model text;
+      // org-level webhook has no agent context, so audit row gets agentId=null.
+      const { applyBrandFilter } = await import("@/lib/brand/apply-filter");
+      const guarded = await applyBrandFilter(result.reply, {
+        organizationId,
+        agentId: null,
+        surface: "telegram_chat",
+      });
+      const replyToSend = guarded.ok
+        ? guarded.text
+        : `⚠️ Reply blocked by brand-voice guard. Operator: see activity feed.`;
+
       // Plain chat reply  -  swap the placeholder for the real text.
       try {
         if (placeholderId !== null) {
-          await editMessageText(token, msg.chat.id, placeholderId, result.reply);
+          await editMessageText(token, msg.chat.id, placeholderId, replyToSend);
         } else {
-          await sendMessage(token, msg.chat.id, result.reply);
+          await sendMessage(token, msg.chat.id, replyToSend);
         }
       } catch {
         /* Telegram delivery failure  -  logged elsewhere */
@@ -360,7 +372,7 @@ export async function POST(
         .from("rgaios_telegram_messages")
         .update({
           responded_at: new Date().toISOString(),
-          response_text: result.reply,
+          response_text: replyToSend,
           placeholder_message_id: null,
         })
         .eq("organization_id", organizationId)
@@ -524,11 +536,23 @@ export async function POST(
         return;
       }
 
+      // Brand-voice guard. Second instant-path return in this route -
+      // command-routine path - mirrors the chat path above.
+      const { applyBrandFilter } = await import("@/lib/brand/apply-filter");
+      const guarded = await applyBrandFilter(result.reply, {
+        organizationId,
+        agentId: null,
+        surface: "telegram_chat",
+      });
+      const replyToSend = guarded.ok
+        ? guarded.text
+        : `⚠️ Reply blocked by brand-voice guard. Operator: see activity feed.`;
+
       try {
         if (placeholderId !== null) {
-          await editMessageText(token, msg.chat.id, placeholderId, result.reply);
+          await editMessageText(token, msg.chat.id, placeholderId, replyToSend);
         } else {
-          await sendMessage(token, msg.chat.id, result.reply);
+          await sendMessage(token, msg.chat.id, replyToSend);
         }
       } catch {
         /* telegram delivery failure logged elsewhere */
@@ -538,7 +562,7 @@ export async function POST(
         .from("rgaios_telegram_messages")
         .update({
           responded_at: new Date().toISOString(),
-          response_text: result.reply,
+          response_text: replyToSend,
           placeholder_message_id: null,
         })
         .eq("organization_id", organizationId)

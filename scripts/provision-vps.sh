@@ -575,7 +575,7 @@ StandardOutput=append:/var/log/rawgrowth-tick.log
 StandardError=append:/var/log/rawgrowth-tick.log
 UNIT
 
-HEARTBEAT_INTERVAL_SEC=${HEARTBEAT_INTERVAL_SEC:-600}
+HEARTBEAT_INTERVAL_SEC=${HEARTBEAT_INTERVAL_SEC:-90}
 if ! [[ "$HEARTBEAT_INTERVAL_SEC" =~ ^[0-9]+$ ]] || [ "$HEARTBEAT_INTERVAL_SEC" -lt 10 ]; then
   red "HEARTBEAT_INTERVAL_SEC must be an integer >= 10 (got: $HEARTBEAT_INTERVAL_SEC)"
   exit 1

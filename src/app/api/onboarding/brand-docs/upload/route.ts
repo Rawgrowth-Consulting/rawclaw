@@ -67,9 +67,10 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ document: doc });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[brand-docs/upload] error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -88,8 +89,9 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     return NextResponse.json({ documents: documents ?? [] });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -124,7 +126,8 @@ export async function DELETE(req: NextRequest) {
     await supabaseAdmin().from("rgaios_onboarding_documents").delete().eq("id", id);
 
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
