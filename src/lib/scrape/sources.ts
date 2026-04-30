@@ -200,3 +200,177 @@ export async function facebookAdsForPage(
     };
   });
 }
+
+/**
+ * One YouTube video pulled from streamers/youtube-scraper. The actor
+ * supports channel URLs + handle / username. We always sort by views
+ * (descending) so the copy + ads agents see what actually performed.
+ *
+ * Plan §8 (Apify YouTube top videos). Triggered when intake captures
+ * `youtube` (channel URL or @handle). Skipped when APIFY_API_TOKEN
+ * unset; the existing fetch + RSS path stays as the fallback.
+ */
+export type YouTubeVideo = {
+  url: string;
+  title: string | null;
+  view_count: number | null;
+  like_count: number | null;
+  comment_count: number | null;
+  duration_seconds: number | null;
+  published_at: string | null;
+  channel_name: string | null;
+  metrics: {
+    view_rank: number;
+  };
+};
+
+type ApifyYtItem = {
+  url?: string;
+  title?: string;
+  viewCount?: number | string;
+  likes?: number | string;
+  commentsCount?: number | string;
+  duration?: string | number;
+  date?: string;
+  publishedAt?: string;
+  channelName?: string;
+  channelUrl?: string;
+};
+
+function asInt(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  if (typeof v === "string") {
+    const n = Number(v.replace(/[,\s]/g, ""));
+    return Number.isFinite(n) ? Math.trunc(n) : null;
+  }
+  return null;
+}
+
+function durationToSeconds(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
+  if (typeof v !== "string") return null;
+  const parts = v.split(":").map((p) => Number(p.trim()));
+  if (parts.some((p) => !Number.isFinite(p))) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 1) return parts[0];
+  return null;
+}
+
+export async function youtubeTopVideos(
+  channel: string,
+  limit = 15,
+): Promise<YouTubeVideo[]> {
+  const normalized = channel.startsWith("http")
+    ? channel
+    : channel.startsWith("@")
+      ? `https://www.youtube.com/${channel}`
+      : `https://www.youtube.com/@${channel}`;
+
+  const items = await runActor<ApifyYtItem>("streamers/youtube-scraper", {
+    startUrls: [{ url: normalized }],
+    maxResults: limit * 4,
+    sortVideosBy: "POPULAR",
+  });
+  if (!items) return [];
+
+  const ranked = [...items]
+    .map((item) => ({ item, views: asInt(item.viewCount) ?? 0 }))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, limit);
+
+  return ranked.map<YouTubeVideo>(({ item }, idx) => ({
+    url: asString(item.url) ?? normalized,
+    title: asString(item.title),
+    view_count: asInt(item.viewCount),
+    like_count: asInt(item.likes),
+    comment_count: asInt(item.commentsCount),
+    duration_seconds: durationToSeconds(item.duration),
+    published_at: asString(item.publishedAt) ?? asString(item.date),
+    channel_name: asString(item.channelName),
+    metrics: { view_rank: idx },
+  }));
+}
+
+/**
+ * One Instagram post pulled from apify/instagram-profile-scraper.
+ * Sort by engagement (likes + comments) so the agent surfaces what
+ * actually moved. Public profile data only - no login.
+ *
+ * Plan §8 (Apify IG top posts). Triggered when intake captures
+ * `instagram` (handle or URL). Skipped when APIFY_API_TOKEN unset.
+ */
+export type InstagramPost = {
+  url: string;
+  caption: string | null;
+  like_count: number | null;
+  comment_count: number | null;
+  type: string | null;
+  posted_at: string | null;
+  display_url: string | null;
+  metrics: {
+    engagement_rank: number;
+    engagement_score: number;
+  };
+};
+
+type ApifyIgItem = {
+  url?: string;
+  shortCode?: string;
+  caption?: string;
+  likesCount?: number | string;
+  commentsCount?: number | string;
+  type?: string;
+  timestamp?: string;
+  takenAtTimestamp?: number;
+  displayUrl?: string;
+  videoUrl?: string;
+};
+
+export async function instagramTopPosts(
+  handle: string,
+  limit = 20,
+): Promise<InstagramPost[]> {
+  const normalized = handle
+    .replace(/^@/, "")
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//, "")
+    .replace(/\/$/, "");
+
+  const items = await runActor<ApifyIgItem>("apify/instagram-profile-scraper", {
+    usernames: [normalized],
+    resultsLimit: limit * 4,
+  });
+  if (!items) return [];
+
+  const ranked = [...items]
+    .map((item) => {
+      const likes = asInt(item.likesCount) ?? 0;
+      const comments = asInt(item.commentsCount) ?? 0;
+      return { item, likes, comments, score: likes + comments * 5 };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return ranked.map<InstagramPost>(({ item, score }, idx) => {
+    const url =
+      asString(item.url) ??
+      (item.shortCode
+        ? `https://www.instagram.com/p/${item.shortCode}/`
+        : `https://www.instagram.com/${normalized}/`);
+    const postedAt =
+      asString(item.timestamp) ??
+      (typeof item.takenAtTimestamp === "number"
+        ? new Date(item.takenAtTimestamp * 1000).toISOString()
+        : null);
+    return {
+      url,
+      caption: asString(item.caption),
+      like_count: asInt(item.likesCount),
+      comment_count: asInt(item.commentsCount),
+      type: asString(item.type),
+      posted_at: postedAt,
+      display_url: asString(item.displayUrl) ?? asString(item.videoUrl),
+      metrics: { engagement_rank: idx, engagement_score: score },
+    };
+  });
+}

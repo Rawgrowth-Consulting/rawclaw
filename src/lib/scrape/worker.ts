@@ -1,5 +1,10 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { buildScrapeSources, facebookAdsForPage } from "@/lib/scrape/sources";
+import {
+  buildScrapeSources,
+  facebookAdsForPage,
+  instagramTopPosts,
+  youtubeTopVideos,
+} from "@/lib/scrape/sources";
 import { fetchSource } from "@/lib/scrape/fetcher";
 import { isApifyEnabled } from "@/lib/scrape/apify-client";
 
@@ -100,6 +105,12 @@ export async function drainScrapeQueue(organizationId: string): Promise<{
   // of the pipeline keeps running on VPSes without an Apify key.
   await drainFacebookAds(organizationId, intake, stats);
 
+  // Plan §8: top-performing YouTube videos + Instagram posts via Apify.
+  // Both are token-gated; on a fresh deploy without APIFY_API_TOKEN we
+  // log a warn and skip, so the rest of the pipeline keeps shipping.
+  await drainYoutubeTop(organizationId, intake, stats);
+  await drainInstagramTop(organizationId, intake, stats);
+
   return stats;
 }
 
@@ -164,6 +175,142 @@ async function drainFacebookAds(
   const { error } = await db.from("rgaios_scrape_snapshots").insert(rows);
   if (error) {
     console.warn(`[scrape] failed to insert FB ad snapshots: ${error.message}`);
+    return;
+  }
+  stats.total += rows.length;
+  stats.succeeded += rows.length;
+}
+
+async function drainYoutubeTop(
+  organizationId: string,
+  intake: Record<string, unknown>,
+  stats: { total: number; succeeded: number; blocked: number; failed: number },
+): Promise<void> {
+  const social = intake.social_presence as Record<string, unknown> | null;
+  const yt =
+    social && typeof social.youtube === "string" ? social.youtube.trim() : "";
+  if (!yt) return;
+  if (!isApifyEnabled()) {
+    console.warn(
+      "[scrape] youtube channel set but APIFY_API_TOKEN missing - skipping YT top scrape",
+    );
+    return;
+  }
+
+  const db = supabaseAdmin();
+  let videos;
+  try {
+    videos = await youtubeTopVideos(yt, 15);
+  } catch (err) {
+    console.warn(
+      `[scrape] youtube top scrape failed for org=${organizationId}: ${(err as Error)?.message ?? err}`,
+    );
+    return;
+  }
+  if (!videos || videos.length === 0) return;
+
+  const { data: existing } = await db
+    .from("rgaios_scrape_snapshots")
+    .select("url")
+    .eq("organization_id", organizationId)
+    .eq("kind", "yt_top");
+  const seen = new Set((existing ?? []).map((r) => r.url));
+
+  const rows = videos
+    .filter((v) => !seen.has(v.url))
+    .map((v) => ({
+      organization_id: organizationId,
+      url: v.url,
+      kind: "yt_top" as const,
+      status: "succeeded" as const,
+      title: v.title,
+      content: v.title ?? "",
+      scraped_at: new Date().toISOString(),
+      metrics: v.metrics,
+      metadata: {
+        view_count: v.view_count,
+        like_count: v.like_count,
+        comment_count: v.comment_count,
+        duration_seconds: v.duration_seconds,
+        published_at: v.published_at,
+        channel_name: v.channel_name,
+      },
+    }));
+
+  if (rows.length === 0) return;
+
+  const { error } = await db.from("rgaios_scrape_snapshots").insert(rows);
+  if (error) {
+    console.warn(`[scrape] failed to insert YT top snapshots: ${error.message}`);
+    return;
+  }
+  stats.total += rows.length;
+  stats.succeeded += rows.length;
+}
+
+async function drainInstagramTop(
+  organizationId: string,
+  intake: Record<string, unknown>,
+  stats: { total: number; succeeded: number; blocked: number; failed: number },
+): Promise<void> {
+  const social = intake.social_presence as Record<string, unknown> | null;
+  const ig =
+    social && typeof social.instagram === "string"
+      ? social.instagram.trim()
+      : "";
+  if (!ig) return;
+  if (!isApifyEnabled()) {
+    console.warn(
+      "[scrape] instagram handle set but APIFY_API_TOKEN missing - skipping IG top scrape",
+    );
+    return;
+  }
+
+  const db = supabaseAdmin();
+  let posts;
+  try {
+    posts = await instagramTopPosts(ig, 20);
+  } catch (err) {
+    console.warn(
+      `[scrape] instagram top scrape failed for org=${organizationId}: ${(err as Error)?.message ?? err}`,
+    );
+    return;
+  }
+  if (!posts || posts.length === 0) return;
+
+  const { data: existing } = await db
+    .from("rgaios_scrape_snapshots")
+    .select("url")
+    .eq("organization_id", organizationId)
+    .eq("kind", "ig_top");
+  const seen = new Set((existing ?? []).map((r) => r.url));
+
+  const rows = posts
+    .filter((p) => !seen.has(p.url))
+    .map((p) => ({
+      organization_id: organizationId,
+      url: p.url,
+      kind: "ig_top" as const,
+      status: "succeeded" as const,
+      title: null,
+      content: p.caption ?? "",
+      scraped_at: new Date().toISOString(),
+      metrics: p.metrics,
+      metadata: {
+        caption: p.caption,
+        like_count: p.like_count,
+        comment_count: p.comment_count,
+        type: p.type,
+        posted_at: p.posted_at,
+        display_url: p.display_url,
+      },
+    }));
+
+  if (rows.length === 0) return;
+
+  const { error } = await db.from("rgaios_scrape_snapshots").insert(rows);
+  if (error) {
+    console.warn(`[scrape] failed to insert IG top snapshots: ${error.message}`);
     return;
   }
   stats.total += rows.length;
