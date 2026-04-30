@@ -1,17 +1,113 @@
 "use client";
 
 import { useRef, useState, type DragEvent } from "react";
+import {
+  Bot,
+  Brain,
+  ClipboardList,
+  Code,
+  Cpu,
+  Crown,
+  FileText,
+  ListChecks,
+  Megaphone,
+  MessageSquare,
+  Palette,
+  PhoneCall,
+  Settings as SettingsIcon,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { TgProvisionModal } from "@/components/tg-provision-modal";
 import AgentChatTab from "@/components/agents/AgentChatTab";
-import { AGENT_RUNTIMES } from "@/lib/agents/constants";
+import { AGENT_RUNTIMES, AGENT_ROLES } from "@/lib/agents/constants";
 
 function runtimeLabel(value: string | null): string {
   if (!value) return "Default";
   const meta = AGENT_RUNTIMES.find((r) => r.value === value);
   return meta ? meta.label : value;
 }
+
+const ROLE_ICON_MAP = {
+  Crown,
+  Cpu,
+  Code,
+  Megaphone,
+  PhoneCall,
+  ClipboardList,
+  Palette,
+  Bot,
+} as const;
+type RoleIconKey = keyof typeof ROLE_ICON_MAP;
+
+
+// Department palette - mint for active dept (marketing/sales/development),
+// muted for support functions (fulfilment/finance). Custom slugs fall
+// back to the muted neutral.
+const DEPT_STYLE: Record<string, { label: string; tone: string }> = {
+  marketing: {
+    label: "Marketing",
+    tone: "border-[var(--brand-primary)]/40 bg-[var(--brand-primary)]/12 text-[var(--brand-primary)]",
+  },
+  sales: {
+    label: "Sales",
+    tone: "border-[var(--brand-primary)]/40 bg-[var(--brand-primary)]/12 text-[var(--brand-primary)]",
+  },
+  development: {
+    label: "Development",
+    tone: "border-[var(--brand-primary)]/30 bg-[var(--brand-primary)]/8 text-[var(--brand-primary)]",
+  },
+  fulfilment: {
+    label: "Fulfilment",
+    tone: "border-[var(--line-strong)] bg-white/5 text-[var(--text-body)]",
+  },
+  finance: {
+    label: "Finance",
+    tone: "border-[var(--line-strong)] bg-white/5 text-[var(--text-body)]",
+  },
+};
+
+function deptStyle(dept: string | null) {
+  if (!dept) return null;
+  if (DEPT_STYLE[dept]) return DEPT_STYLE[dept];
+  return {
+    label: dept.charAt(0).toUpperCase() + dept.slice(1).replace(/_/g, " "),
+    tone: "border-[var(--line-strong)] bg-white/5 text-[var(--text-body)]",
+  };
+}
+
+type AgentStatus = "idle" | "running" | "paused" | "error";
+
+const STATUS_STYLE: Record<
+  AgentStatus,
+  { label: string; dot: string; text: string; pulse: boolean }
+> = {
+  idle: {
+    label: "Idle",
+    dot: "bg-[var(--text-muted)]",
+    text: "text-[var(--text-muted)]",
+    pulse: false,
+  },
+  running: {
+    label: "Running",
+    dot: "bg-[var(--brand-primary)] shadow-[0_0_8px_rgba(51,202,127,.7)]",
+    text: "text-[var(--brand-primary)]",
+    pulse: true,
+  },
+  paused: {
+    label: "Paused",
+    dot: "bg-amber-400",
+    text: "text-amber-300",
+    pulse: false,
+  },
+  error: {
+    label: "Error",
+    dot: "bg-[var(--destructive)]",
+    text: "text-[var(--destructive)]",
+    pulse: false,
+  },
+};
 
 type Agent = {
   id: string;
@@ -22,6 +118,10 @@ type Agent = {
   department: string | null;
   runtime: string | null;
   reports_to: string | null;
+  status?: AgentStatus | null;
+  is_department_head?: boolean | null;
+  system_prompt?: string | null;
+  updated_at?: string | null;
 };
 
 type MemoryEntry = {
@@ -167,42 +267,126 @@ export function AgentPanelClient({
     }
   }
 
+  const _roleMeta =
+    AGENT_ROLES.find((r) => r.value === agent.role) ??
+    AGENT_ROLES[AGENT_ROLES.length - 1];
+  const RoleIcon = ROLE_ICON_MAP[_roleMeta.icon as RoleIconKey] ?? Bot;
+  const dept = deptStyle(agent.department);
+  const status = STATUS_STYLE[(agent.status ?? "idle") as AgentStatus];
+  const isCeo = agent.role === "ceo";
+  const lastActivity = agent.updated_at
+    ? new Date(agent.updated_at).toLocaleString()
+    : "no activity yet";
+  const reportsToLabel = agent.reports_to ? "reports up the org" : "top of org";
+
+  const tabMeta: Record<Tab, { label: string; Icon: LucideIcon }> = {
+    chat: { label: "Chat", Icon: MessageSquare },
+    overview: { label: "Overview", Icon: ClipboardList },
+    memory: { label: "Memory", Icon: Brain },
+    files: { label: "Files", Icon: FileText },
+    tasks: { label: "Tasks", Icon: ListChecks },
+    settings: { label: "Settings", Icon: SettingsIcon },
+  };
+
   return (
     <div className="flex h-screen flex-col bg-[var(--brand-bg)]">
       <header className="shrink-0 border-b border-[var(--line)] px-6 py-5">
-        <h1 className="font-serif text-3xl font-normal tracking-tight text-foreground">
-          {agent.name}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {agent.title}
-          {agent.department ? ` · ${agent.department}` : ""}
-        </p>
+        <div className="flex items-start gap-4">
+          <div
+            className={
+              "flex size-11 shrink-0 items-center justify-center rounded-xl border " +
+              "border-[var(--brand-primary)]/40 bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]"
+            }
+            aria-hidden
+          >
+            <RoleIcon className="size-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-serif text-3xl font-normal tracking-tight text-foreground">
+                {agent.name}
+              </h1>
+              {dept && (
+                <span
+                  className={
+                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-widest " +
+                    dept.tone
+                  }
+                >
+                  {dept.label}
+                </span>
+              )}
+              <span
+                className={
+                  "inline-flex items-center gap-1.5 rounded-full bg-white/5 px-2 py-0.5 text-[11px] " +
+                  status.text
+                }
+                title={`Status: ${status.label}`}
+              >
+                <span
+                  className={
+                    "size-1.5 rounded-full " +
+                    status.dot +
+                    (status.pulse ? " animate-pulse" : "")
+                  }
+                />
+                {status.label}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {agent.title}
+            </p>
+            {isCeo && (
+              <p className="mt-0.5 text-xs italic text-[var(--brand-primary)]/85">
+                Commands all departments
+              </p>
+            )}
+            <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
+              <span>{agent.department ?? "no department"}</span>
+              <span className="mx-1.5 text-border">·</span>
+              <span>{reportsToLabel}</span>
+              <span className="mx-1.5 text-border">·</span>
+              <span>last activity {lastActivity}</span>
+            </p>
+          </div>
+        </div>
       </header>
 
       <nav className="shrink-0 border-b border-[var(--line)] px-6">
-        <div className="flex gap-6 text-sm">
-          {(["chat", "overview", "memory", "files", "tasks", "settings"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={
-                "py-3 uppercase tracking-widest " +
-                (tab === t
-                  ? "text-primary border-b-2 border-primary"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-strong)]")
-              }
-            >
-              {t}
-            </button>
-          ))}
+        <div className="flex gap-1 text-sm">
+          {(["chat", "overview", "memory", "files", "tasks", "settings"] as Tab[]).map((t) => {
+            const { label, Icon } = tabMeta[t];
+            const active = tab === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={
+                  // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- transition target names box-shadow as the explicit property; arbitrary shadow value is an intentional brand accent
+                  "group inline-flex items-center gap-1.5 px-3 py-3 text-[12px] uppercase tracking-widest transition-[color,box-shadow,background-color] " +
+                  (active
+                    ? "text-primary border-b-2 border-primary"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-strong)] hover:bg-[var(--brand-primary)]/8 hover:shadow-[inset_0_-2px_0_rgba(51,202,127,.25)]")
+                }
+              >
+                <Icon className="size-3.5" />
+                <span>{label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
       <main className="relative min-h-0 flex-1 overflow-auto">
         {tab === "chat" && (
           <div className="h-full">
-            <AgentChatTab agentId={agent.id} />
+            <AgentChatTab
+              agentId={agent.id}
+              agentName={agent.name}
+              agentRole={agent.role}
+              agentTitle={agent.title}
+            />
           </div>
         )}
 

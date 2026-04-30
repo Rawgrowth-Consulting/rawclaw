@@ -54,6 +54,7 @@ export function agentFromRow(row: AgentRow): Agent {
     writePolicy: row.write_policy,
     department: (row.department ?? null) as Department | null,
     isDepartmentHead: row.is_department_head ?? false,
+    systemPrompt: row.system_prompt ?? null,
     createdAt: row.created_at,
   };
 }

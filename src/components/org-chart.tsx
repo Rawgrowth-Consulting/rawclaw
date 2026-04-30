@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import {
@@ -7,12 +8,14 @@ import {
   Crown,
   Cpu,
   Code,
+  MessageSquare,
   Megaphone,
   PhoneCall,
   ClipboardList,
   Palette,
   Pencil,
   Network,
+  Sparkles,
 } from "lucide-react";
 import { SiTelegram } from "react-icons/si";
 
@@ -155,32 +158,49 @@ function AgentCard({
   const Icon = roleIconMap[role.icon as RoleIconName] ?? Bot;
   const status = statusStyle[agent.status];
   const isHead = agent.isDepartmentHead;
+  const isCeo = agent.role === "ceo";
+  // "Trained" indicator: agent has either a system prompt or a non-empty
+  // free-form description. Attached files are out of scope here because
+  // the org-chart payload from /api/agents does not include file counts;
+  // the panel's Files tab is the source of truth for those.
+  const isTrained =
+    Boolean(agent.systemPrompt && agent.systemPrompt.trim().length > 0) ||
+    Boolean(agent.description && agent.description.trim().length > 0);
 
   return (
-    <button
-      type="button"
-      onClick={() => onEdit(agent)}
+    <div
       className={cn(
         // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- transition-[box-shadow] is the explicit property name we animate; arbitrary shadow values below are intentional brand accents
-        "group relative w-60 rounded-xl border bg-card/70 p-4 text-left transition-[transform,border-color,background-color,box-shadow] hover:-translate-y-0.5 hover:bg-card hover:shadow-[0_12px_40px_rgba(12,191,106,.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        isHead
-          ? "border-amber-400/40 hover:border-amber-300/60 shadow-[0_0_0_1px_rgba(251,191,36,.05)_inset]"
-          : "border-border hover:border-primary/40",
+        "group relative w-60 rounded-xl border bg-card/70 p-4 text-left transition-[transform,border-color,background-color,box-shadow] hover:-translate-y-0.5 hover:bg-card hover:shadow-[0_12px_40px_rgba(12,191,106,.08)] focus-within:outline-none focus-within:ring-2 focus-within:ring-ring",
+        isCeo
+          ? "border-[var(--brand-primary)]/45 shadow-[0_0_24px_rgba(51,202,127,.12)] hover:border-[var(--brand-primary)]/65"
+          : isHead
+            ? "border-amber-400/40 hover:border-amber-300/60 shadow-[0_0_0_1px_rgba(251,191,36,.05)_inset]"
+            : "border-border hover:border-primary/40",
       )}
     >
-      <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
+      <button
+        type="button"
+        onClick={() => onEdit(agent)}
+        aria-label={`Edit ${agent.name}`}
+        className="absolute inset-0 z-0 cursor-pointer rounded-xl focus-visible:outline-none"
+      />
+
+      <div className="pointer-events-none absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="flex size-6 items-center justify-center rounded-md bg-primary/15 text-primary">
           <Pencil className="size-3" />
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="relative z-10 flex items-center gap-3">
         <div
           className={cn(
             "flex size-10 shrink-0 items-center justify-center rounded-lg border",
-            isHead
-              ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-              : "border-border bg-primary/10 text-primary",
+            isCeo
+              ? "border-[var(--brand-primary)]/50 bg-[var(--brand-primary)]/12 text-[var(--brand-primary)] shadow-[0_0_14px_rgba(51,202,127,.25)]"
+              : isHead
+                ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                : "border-border bg-primary/10 text-primary",
           )}
         >
           <Icon className="size-5" />
@@ -190,17 +210,25 @@ function AgentCard({
             <div className="truncate text-[13px] font-semibold text-foreground">
               {agent.name}
             </div>
-            {isHead && (
+            {isHead && !isCeo && (
               <Crown className="size-3 shrink-0 text-amber-400" />
+            )}
+            {isCeo && (
+              <Crown className="size-3 shrink-0 text-[var(--brand-primary)]" />
             )}
           </div>
           <div className="truncate text-[11px] text-muted-foreground">
             {agent.title || role.label}
           </div>
+          {isCeo && (
+            <div className="truncate text-[10px] italic text-[var(--brand-primary)]/85">
+              Commands all departments
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-1">
+      <div className="relative z-10 mt-3 flex flex-wrap items-center gap-1">
         <Badge variant="secondary" className={cn("gap-1", status.className)}>
           <span className={cn("size-1.5 rounded-full", status.dotClass)} />
           {status.label}
@@ -208,9 +236,14 @@ function AgentCard({
         {isHead && (
           <Badge
             variant="secondary"
-            className="bg-amber-400/15 text-[10px] text-amber-300"
+            className={cn(
+              "text-[10px]",
+              isCeo
+                ? "bg-[var(--brand-primary)]/15 text-[var(--brand-primary)]"
+                : "bg-amber-400/15 text-amber-300",
+            )}
           >
-            Head
+            {isCeo ? "CEO" : "Head"}
           </Badge>
         )}
         <Badge
@@ -219,6 +252,16 @@ function AgentCard({
         >
           {role.label}
         </Badge>
+        {isTrained && (
+          <Badge
+            variant="secondary"
+            title="Has system prompt or job description"
+            className="gap-1 bg-[var(--brand-primary)]/12 text-[10px] text-[var(--brand-primary)]"
+          >
+            <span className="size-1 rounded-full bg-[var(--brand-primary)]" />
+            Trained
+          </Badge>
+        )}
         {bot && (
           <Badge
             variant="secondary"
@@ -235,16 +278,42 @@ function AgentCard({
         )}
       </div>
 
-      <ConnectorsRow
-        ids={
-          agent.writePolicy &&
-          typeof agent.writePolicy === "object" &&
-          !Array.isArray(agent.writePolicy)
-            ? Object.keys(agent.writePolicy)
-            : []
-        }
-      />
-    </button>
+      <div className="relative z-10">
+        <ConnectorsRow
+          ids={
+            agent.writePolicy &&
+            typeof agent.writePolicy === "object" &&
+            !Array.isArray(agent.writePolicy)
+              ? Object.keys(agent.writePolicy)
+              : []
+          }
+        />
+      </div>
+
+      <div className="relative z-10 mt-3 flex items-center justify-between border-t border-[var(--line)]/70 pt-2.5">
+        <Link
+          href={`/agents/${agent.id}`}
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] transition-[color,background-color]",
+            "text-[var(--brand-primary)]/85 hover:bg-[var(--brand-primary)]/10 hover:text-[var(--brand-primary)]",
+          )}
+          aria-label={`Open chat with ${agent.name}`}
+        >
+          <MessageSquare className="size-3" />
+          Chat
+        </Link>
+        {isCeo && (
+          <span
+            className="inline-flex items-center gap-1 text-[10px] text-[var(--brand-primary)]/70"
+            title="Coordinator"
+          >
+            <Sparkles className="size-2.5" />
+            Coordinator
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

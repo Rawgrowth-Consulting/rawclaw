@@ -1,10 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { ArrowUp, Paperclip } from "lucide-react";
+import {
+  ArrowUp,
+  Bot,
+  ClipboardList,
+  Code,
+  Cpu,
+  Crown,
+  Megaphone,
+  Palette,
+  Paperclip,
+  PhoneCall,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Response } from "@/components/ui/response";
 import { Button } from "@/components/ui/button";
+import { AGENT_ROLES } from "@/lib/agents/constants";
 
 type ChatMessage = {
   role: "user" | "assistant" | "system";
@@ -20,6 +33,148 @@ type HistoryRow = {
 
 interface AgentChatTabProps {
   agentId: string;
+  agentName?: string;
+  agentRole?: string | null;
+  agentTitle?: string;
+}
+
+// Lucide icons keyed by the string the AGENT_ROLES catalog stores.
+const ROLE_ICON_MAP = {
+  Crown,
+  Cpu,
+  Code,
+  Megaphone,
+  PhoneCall,
+  ClipboardList,
+  Palette,
+  Bot,
+} as const;
+type RoleIconKey = keyof typeof ROLE_ICON_MAP;
+
+
+// Starter prompts surfaced as chips on an empty conversation. Keys are
+// the title-cased role labels stored in role-templates.ts (Copywriter,
+// SDR, etc.), with role-value fallbacks (ceo, marketer) so seeded agents
+// hit the chip set even when their title is freeform.
+const ROLE_STARTERS: Record<string, string[]> = {
+  ceo: [
+    "Run a cross-department health check",
+    "Draft a 3-bullet weekly briefing",
+    "Which department needs my attention this week?",
+  ],
+  copywriter: [
+    "Draft a 3-line LinkedIn hook",
+    "Audit my last email send",
+    "PAS frame this offer for me",
+  ],
+  "media buyer": [
+    "Plan a $500/day Meta test",
+    "Audit my last week of Google ads",
+    "Suggest 3 creative angles for our offer",
+  ],
+  sdr: [
+    "Write a 6-touch cold cadence",
+    "Personalise this opener with one public signal",
+    "Handle the objection: send me info",
+  ],
+  "marketing manager": [
+    "Plan this week's marketing sprint",
+    "Pick the single Friday number to report",
+    "Brief the copywriter on a new test",
+  ],
+  "sales manager": [
+    "Walk me through the commit forecast",
+    "Coach an AE on a stalled deal",
+    "Pick one risk that could move the number",
+  ],
+  "operations manager": [
+    "Plan a 7-day client onboarding",
+    "Audit a stuck account by handoff",
+    "Draft a change order template",
+  ],
+  "finance manager": [
+    "Project runway in 3 scenarios",
+    "Review last month close",
+    "Pick the top 3 cost cuts",
+  ],
+  "engineering manager": [
+    "Plan the next 2-week sprint",
+    "Review a stalled PR",
+    "Triage a production outage",
+  ],
+  "backend engineer": [
+    "Sketch a SQL migration for a new feature",
+    "Add idempotency to this webhook",
+    "Write a failing test for this bug",
+  ],
+  "frontend engineer": [
+    "List data needs for this screen",
+    "Fix the loading + empty + error states",
+    "Refactor this client component",
+  ],
+  "qa engineer": [
+    "Draft a test plan for this PR",
+    "Write a regression test for this bug",
+    "Run a smoke pass on the deployed preview",
+  ],
+  "content strategist": [
+    "Plan a quarterly editorial calendar",
+    "Repurpose this long-form into 8 atomic pieces",
+    "Outline next week's lead piece",
+  ],
+  "social media manager": [
+    "Plan a 7-day social schedule",
+    "Repurpose this interview into 8 short posts",
+    "Test 3 alternate hooks for this post",
+  ],
+  "project coordinator": [
+    "Build a 4-week project plan",
+    "Draft this week's status one-pager",
+    "List the top 3 risks on the project",
+  ],
+  bookkeeper: [
+    "Run the month-end close checklist",
+    "Reconcile last week of transactions",
+    "Spot variance vs last month",
+  ],
+  marketer: [
+    "Plan a 1-week marketing experiment",
+    "Pick the one number to report on Friday",
+    "Brief a creative test in 5 bullets",
+  ],
+  ops: [
+    "Plan a 7-day onboarding for a new client",
+    "Audit a stuck account by missing handoff",
+    "Draft an SLA escalation template",
+  ],
+  designer: [
+    "Sketch 3 directions for this hero section",
+    "Audit our type scale",
+    "Pick a color path for this campaign",
+  ],
+  engineer: [
+    "Plan a 2-week sprint",
+    "Triage a deploy that broke last night",
+    "Review a PR that needs a second eye",
+  ],
+  cto: [
+    "Plan the engineering roadmap",
+    "Pick the top 3 tech risks",
+    "Audit the team's deploy cadence",
+  ],
+};
+
+function startersFor(role: string | null | undefined, title?: string): string[] {
+  if (title) {
+    const titleKey = title.trim().toLowerCase();
+    if (ROLE_STARTERS[titleKey]) return ROLE_STARTERS[titleKey];
+  }
+  if (role && ROLE_STARTERS[role]) return ROLE_STARTERS[role];
+  return [
+    "Walk me through your job in 3 bullets",
+    "What context do you need from me?",
+    "Pick a sample task and run it end to end",
+  ];
 }
 
 /**
@@ -38,7 +193,12 @@ interface AgentChatTabProps {
  * embeds inline so the next reply can RAG-cite it. We surface the
  * upload result as a system bubble so the operator sees what happened.
  */
-export default function AgentChatTab({ agentId }: AgentChatTabProps) {
+export default function AgentChatTab({
+  agentId,
+  agentName,
+  agentRole,
+  agentTitle,
+}: AgentChatTabProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -46,6 +206,13 @@ export default function AgentChatTab({ agentId }: AgentChatTabProps) {
   const [hydrated, setHydrated] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  const _roleMeta =
+    AGENT_ROLES.find((r) => r.value === agentRole) ??
+    AGENT_ROLES[AGENT_ROLES.length - 1];
+  const RoleIcon = ROLE_ICON_MAP[_roleMeta.icon as RoleIconKey] ?? Bot;
+  const displayName = agentName?.trim() || "this agent";
+  const starters = startersFor(agentRole, agentTitle);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -262,8 +429,8 @@ export default function AgentChatTab({ agentId }: AgentChatTabProps) {
       {/* Drag overlay */}
       {dragActive && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-[var(--brand-primary)] bg-[var(--brand-primary-soft)]">
-          <p className="text-sm text-[var(--brand-primary)]">
-            Drop file to upload as agent context
+          <p className="text-sm font-medium text-[var(--brand-primary)]">
+            Drop to add to {displayName}&apos;s memory
           </p>
         </div>
       )}
@@ -277,9 +444,39 @@ export default function AgentChatTab({ agentId }: AgentChatTabProps) {
             </p>
           )}
           {hydrated && messages.length === 0 && (
-            <div className="rounded-md border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-6 text-center text-sm text-[var(--text-muted)]">
-              No messages yet. Ask this agent anything, or drop a file to
-              add it to its memory.
+            <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-8 text-center">
+              <div
+                className={
+                  "flex size-12 items-center justify-center rounded-2xl border " +
+                  "border-[var(--brand-primary)]/40 bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]"
+                }
+                aria-hidden
+              >
+                <RoleIcon className="size-5" />
+              </div>
+              <div>
+                <p className="font-serif text-xl tracking-tight text-foreground">
+                  Ask {displayName} anything
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  Or drop a file to add it to memory.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 pt-1">
+                {starters.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => setInput(prompt)}
+                    className={
+                      "rounded-full border border-[var(--line-strong)] bg-[var(--brand-surface)] px-3 py-1.5 text-[12px] text-[var(--text-body)] transition-[color,border-color,background-color] " +
+                      "hover:border-[var(--brand-primary)]/50 hover:bg-[var(--brand-primary)]/8 hover:text-[var(--brand-primary)]"
+                    }
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {messages.map((msg, i) => (
@@ -287,6 +484,7 @@ export default function AgentChatTab({ agentId }: AgentChatTabProps) {
               key={i}
               message={msg}
               streaming={streaming && i === messages.length - 1}
+              RoleIcon={RoleIcon}
             />
           ))}
           {error && (
@@ -339,7 +537,13 @@ export default function AgentChatTab({ agentId }: AgentChatTabProps) {
               onClick={() => sendMessage()}
               disabled={!input.trim() || streaming || uploading}
               aria-label="Send message"
-              className="h-9 w-9 shrink-0 rounded-xl"
+              className={
+                // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- transition target names box-shadow as the explicit property; arbitrary shadow value is an intentional brand accent
+                "h-9 w-9 shrink-0 rounded-xl transition-[box-shadow,transform] " +
+                (streaming
+                  ? "shadow-[0_0_18px_rgba(51,202,127,.55)] animate-pulse"
+                  : "")
+              }
             >
               <ArrowUp className="h-4 w-4" />
             </Button>
@@ -357,14 +561,16 @@ export default function AgentChatTab({ agentId }: AgentChatTabProps) {
 function Bubble({
   message,
   streaming,
+  RoleIcon,
 }: {
   message: ChatMessage;
   streaming: boolean;
+  RoleIcon: LucideIcon;
 }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end" data-role="user">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-[var(--brand-primary-soft)] px-4 py-2.5 text-sm text-foreground">
+        <div className="max-w-[85%] rounded-xl rounded-br-sm border border-[var(--brand-primary)]/20 bg-[var(--brand-primary-soft)] px-4 py-2.5 text-sm text-foreground">
           {message.content}
         </div>
       </div>
@@ -383,19 +589,26 @@ function Bubble({
 
   return (
     <div className="flex gap-3" data-role="assistant">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--brand-primary-soft)]">
-        <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--brand-primary)]">
-          AI
-        </span>
+      <div
+        className={
+          "flex size-7 shrink-0 items-center justify-center rounded-full border " +
+          "border-[var(--brand-primary)]/40 bg-[var(--brand-primary)]/10 text-[var(--brand-primary)]"
+        }
+        aria-hidden
+      >
+        <RoleIcon className="size-3.5" />
       </div>
-      <div className="min-w-0 flex-1 pt-0.5 text-sm leading-relaxed text-[var(--text-body)]">
+      <div className="min-w-0 flex-1 rounded-xl rounded-bl-sm border border-[var(--line)] bg-[var(--brand-surface-2)] px-4 py-2.5 text-sm leading-relaxed text-[var(--text-body)]">
         {message.content ? (
           <Response>{message.content}</Response>
         ) : streaming ? (
-          <span className="inline-flex h-3 items-center gap-1 text-[var(--text-muted)]">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current [animation-delay:.15s]" />
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current [animation-delay:.3s]" />
+          <span
+            className="inline-flex h-3 items-center gap-1 text-[var(--brand-primary)]"
+            aria-label="Streaming reply"
+          >
+            <span className="size-1.5 animate-pulse rounded-full bg-current" />
+            <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:.15s]" />
+            <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:.3s]" />
           </span>
         ) : null}
       </div>
