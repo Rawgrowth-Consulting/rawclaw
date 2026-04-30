@@ -18,6 +18,7 @@ import "./telegram";
 import "./slack";
 import "./skills";
 import "./supabase";
+import "./company-knowledge";
 // import "./shopify";   // re-enable when Shopify access is available
 // import "./outlook";   // re-enable when Microsoft Graph access is available
 // import "./canva";     // re-enable when Canva developer creds are set up
