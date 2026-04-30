@@ -1,4 +1,5 @@
 import { QUESTIONNAIRE_SECTIONS } from "@/lib/onboarding";
+import { runActor } from "@/lib/scrape/apify-client";
 
 /**
  * Build the list of URLs to scrape for a given organization, from the
@@ -103,4 +104,99 @@ export function buildScrapeSources(
     QUESTIONNAIRE_SECTIONS.find((s) => s.id === "competitors")!.column
   ];
   return [...socialPresenceToUrls(social ?? null), ...competitorsToUrls(competitors ?? null)];
+}
+
+/**
+ * One ad pulled from Meta Ad Library via apify/facebook-ads-scraper.
+ * Shape mirrors the actor's dataset items, with only the fields we
+ * persist. The actor returns most-recent first; we tag each row with
+ * its position via metrics.recency_rank so the media-buyer agent can
+ * sort or filter at query time.
+ *
+ * Plan §13: triggered when intake captures `facebook_page`. Snapshots
+ * land in rgaios_scrape_snapshots tagged kind='ads' (extended in
+ * migration 0041).
+ */
+export type FacebookAd = {
+  url: string;
+  ad_text: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  platforms: string[];
+  page_name: string | null;
+  metrics: {
+    recency_rank: number;
+  };
+};
+
+type ApifyFbAdItem = {
+  ad_archive_id?: string | number;
+  page_name?: string;
+  start_date_string?: string;
+  end_date_string?: string;
+  start_date?: string;
+  end_date?: string;
+  publisher_platform?: string[] | string;
+  snapshot?: {
+    body?: { text?: string } | string;
+    title?: string;
+    cta_text?: string;
+  };
+  url?: string;
+};
+
+function asString(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  return s.length > 0 ? s : null;
+}
+
+function asPlatforms(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter((p): p is string => typeof p === "string");
+  if (typeof v === "string") return v.split(",").map((p) => p.trim()).filter(Boolean);
+  return [];
+}
+
+/**
+ * Pull the most recent active ads for a Facebook page via Apify.
+ *
+ * Apify actor `apify/facebook-ads-scraper` accepts page URLs as input
+ * (https://www.facebook.com/<page>) and returns ad library entries with
+ * body text + run dates + platforms. Returns ranked results (Apify's
+ * own ordering preserved; recency_rank=0 is most recent).
+ *
+ * Returns [] when APIFY_API_TOKEN is unset so the worker can skip
+ * gracefully without erroring.
+ */
+export async function facebookAdsForPage(
+  pageUrl: string,
+  limit = 20,
+): Promise<FacebookAd[]> {
+  const normalized = pageUrl.startsWith("http")
+    ? pageUrl
+    : `https://www.facebook.com/${pageUrl.replace(/^@/, "").replace(/^facebook\.com\//, "")}`;
+
+  const items = await runActor<ApifyFbAdItem>("apify/facebook-ads-scraper", {
+    urls: [{ url: normalized }],
+    count: limit,
+    "scrapePageAds.activeStatus": "all",
+  });
+  if (!items) return [];
+
+  return items.slice(0, limit).map<FacebookAd>((item, idx) => {
+    const snapBody = item.snapshot?.body;
+    const adText =
+      typeof snapBody === "string"
+        ? snapBody
+        : asString(snapBody?.text);
+    return {
+      url: asString(item.url) ?? `${normalized}#ad-${item.ad_archive_id ?? idx}`,
+      ad_text: adText,
+      start_date: asString(item.start_date_string) ?? asString(item.start_date),
+      end_date: asString(item.end_date_string) ?? asString(item.end_date),
+      platforms: asPlatforms(item.publisher_platform),
+      page_name: asString(item.page_name),
+      metrics: { recency_rank: idx },
+    };
+  });
 }

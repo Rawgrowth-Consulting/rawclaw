@@ -237,8 +237,30 @@ export async function chatReply(input: {
    * Marketing bot replies as the Marketing head, not the first agent.
    */
   agentId?: string;
+  /**
+   * Optional: pre-loaded history that bypasses the rgaios_telegram_messages
+   * lookup. Used by the in-app /api/agents/[id]/chat route, which keeps its
+   * own thread in rgaios_agent_chat_messages. When provided, chatId is
+   * ignored for history fetch.
+   */
+  historyOverride?: Array<{ role: "user" | "assistant"; content: string }>;
+  /**
+   * Optional: extra text appended to the persona preamble (under the
+   * persona description, before the closing instructions). Used to inject
+   * RAG retrievals - "Relevant context: ..." - so the model can ground
+   * the reply on uploaded files without polluting `system`.
+   */
+  extraPreamble?: string;
 }): Promise<AgentChatResult> {
-  const { organizationId, organizationName, chatId, userMessage, agentId } = input;
+  const {
+    organizationId,
+    organizationName,
+    chatId,
+    userMessage,
+    agentId,
+    historyOverride,
+    extraPreamble,
+  } = input;
 
   const claudeToken = await loadClaudeMaxToken(organizationId);
   if (!claudeToken) {
@@ -256,7 +278,9 @@ export async function chatReply(input: {
   const [mcpToken, persona, history] = await Promise.all([
     loadOrgMcpToken(organizationId),
     personaLoader,
-    loadRecentHistory(organizationId, chatId),
+    historyOverride
+      ? Promise.resolve(historyOverride)
+      : loadRecentHistory(organizationId, chatId),
   ]);
 
   // mcpToken is unused on the OAuth path (MCP server tools aren't allowed
@@ -267,7 +291,10 @@ export async function chatReply(input: {
   // Persona + instructions live in the FIRST user turn, NOT in `system`.
   // The OAuth gate rejects any system content beyond CLAUDE_CODE_PREFIX.
   // We tag the preamble so the model can ignore the framing tokens.
-  const preamble = buildPersonaPreamble(organizationName, persona);
+  const basePreamble = buildPersonaPreamble(organizationName, persona);
+  const preamble = extraPreamble?.trim()
+    ? `${basePreamble}\n\n${extraPreamble.trim()}`
+    : basePreamble;
   const firstUserContent =
     `<persona-and-instructions>\n${preamble}\n</persona-and-instructions>\n\n${userMessage}`;
 

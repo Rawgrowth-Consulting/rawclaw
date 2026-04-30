@@ -32,6 +32,7 @@ import { UserMenu } from "@/components/user-menu";
 import { ChangeClientPopover } from "@/components/change-client-popover";
 import { ActivityNavBadge } from "@/components/activity-nav-badge";
 import { ApprovalsNavBadge } from "@/components/approvals-nav-badge";
+import { SidebarDepartmentsSection } from "@/components/sidebar-departments-section";
 
 type Org = { id: string; name: string };
 
@@ -133,6 +134,12 @@ export function AppSidebar({
             <SidebarGroupContent>
               <SidebarMenu>
                 {section.items.map((item) => {
+                  // Departments has its own collapsible submenu - render the
+                  // dedicated component instead of the flat link so dept slugs
+                  // hang off the same nav slot.
+                  if (item.href === "/departments") {
+                    return <SidebarDepartmentsSection key={item.href} />;
+                  }
                   const active =
                     item.href === "/"
                       ? pathname === "/"

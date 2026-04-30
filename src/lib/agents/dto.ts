@@ -35,6 +35,7 @@ export type Agent = {
   writePolicy: Record<string, "direct" | "requires_approval" | "draft_only">;
   department: Department | null;
   isDepartmentHead: boolean;
+  systemPrompt: string | null;
   createdAt: string;
 };
 

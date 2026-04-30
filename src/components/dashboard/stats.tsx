@@ -13,8 +13,14 @@ type Stats = {
   runsThisWeek: number;
 };
 
-export function DashboardStats() {
-  const { data } = useSWR<Stats>("/api/dashboard/stats", jsonFetcher, {
+export function DashboardStats({ department }: { department?: string } = {}) {
+  // When scoped to a single department the API filters runs/approvals/agents
+  // by the dept slug. SWR cache key includes the slug so two simultaneous
+  // dept dashboards don't collide.
+  const url = department
+    ? `/api/dashboard/stats?department=${encodeURIComponent(department)}`
+    : "/api/dashboard/stats";
+  const { data } = useSWR<Stats>(url, jsonFetcher, {
     refreshInterval: 15_000,
   });
 

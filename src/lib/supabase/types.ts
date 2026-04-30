@@ -316,6 +316,7 @@ export type Database = {
           >;
           department: "marketing" | "sales" | "fulfilment" | "finance" | "development" | null;
           is_department_head: boolean;
+          system_prompt: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -334,6 +335,7 @@ export type Database = {
           >;
           department?: "marketing" | "sales" | "fulfilment" | "finance" | "development" | null;
           is_department_head?: boolean;
+          system_prompt?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["rgaios_agents"]["Row"]>;
         Relationships: [];
@@ -655,6 +657,60 @@ export type Database = {
           content: string;
         };
         Update: Partial<Database["public"]["Tables"]["rgaios_agent_file_chunks"]["Row"]>;
+        Relationships: [];
+      };
+      rgaios_sales_calls: {
+        Row: {
+          id: string;
+          organization_id: string;
+          source_type:
+            | "audio_upload"
+            | "loom"
+            | "fireflies"
+            | "gong"
+            | "other_url";
+          source_url: string | null;
+          filename: string | null;
+          transcript: string | null;
+          duration_sec: number | null;
+          status: "pending" | "transcribing" | "ready" | "error";
+          metadata: Record<string, unknown>;
+          error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["rgaios_sales_calls"]["Row"]> & {
+          organization_id: string;
+          source_type:
+            | "audio_upload"
+            | "loom"
+            | "fireflies"
+            | "gong"
+            | "other_url";
+        };
+        Update: Partial<Database["public"]["Tables"]["rgaios_sales_calls"]["Row"]>;
+        Relationships: [];
+      };
+      rgaios_company_chunks: {
+        Row: {
+          id: string;
+          organization_id: string;
+          source: string;
+          source_id: string | null;
+          chunk_index: number;
+          content: string;
+          token_count: number | null;
+          embedding: string | null;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["rgaios_company_chunks"]["Row"]> & {
+          organization_id: string;
+          source: string;
+          chunk_index: number;
+          content: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rgaios_company_chunks"]["Row"]>;
         Relationships: [];
       };
     };

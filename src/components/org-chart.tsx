@@ -372,8 +372,18 @@ function TreeNode({
 
 // ────────────────────────── Top-level component ──────────────────────────
 
-export function OrgChart() {
-  const { agents, hasHydrated } = useAgents();
+export function OrgChart({ departmentSlug }: { departmentSlug?: string } = {}) {
+  const { agents: allAgents, hasHydrated } = useAgents();
+
+  // When a departmentSlug is set we slice the org down to agents whose
+  // department matches the slug. The tree builder already handles
+  // missing parents by promoting nodes to roots, so a sub-agent whose
+  // manager belongs to a different dept still renders standalone in
+  // the dept view (cycle guard in buildTree handles that path).
+  const agents = useMemo(() => {
+    if (!departmentSlug) return allAgents;
+    return allAgents.filter((a) => a.department === departmentSlug);
+  }, [allAgents, departmentSlug]);
 
   // Per-Department-Head Telegram bots — surfaced inline on the agent card
   // so the operator can see at a glance which heads are reachable via DM.

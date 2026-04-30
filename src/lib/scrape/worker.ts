@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { buildScrapeSources } from "@/lib/scrape/sources";
+import { buildScrapeSources, facebookAdsForPage } from "@/lib/scrape/sources";
 import { fetchSource } from "@/lib/scrape/fetcher";
+import { isApifyEnabled } from "@/lib/scrape/apify-client";
 
 /**
  * Drains a queued scrape job for an organization. Called from
@@ -93,7 +94,80 @@ export async function drainScrapeQueue(organizationId: string): Promise<{
     }
   }
 
+  // Plan §13: scrape best-performing Facebook ads via Apify when the
+  // intake provided a facebook_page handle. Tagged kind='ads' so the
+  // media-buyer agent can cite real ad copy. Token-gated so the rest
+  // of the pipeline keeps running on VPSes without an Apify key.
+  await drainFacebookAds(organizationId, intake, stats);
+
   return stats;
+}
+
+async function drainFacebookAds(
+  organizationId: string,
+  intake: Record<string, unknown>,
+  stats: { total: number; succeeded: number; blocked: number; failed: number },
+): Promise<void> {
+  const social = intake.social_presence as Record<string, unknown> | null;
+  const fbPage = social && typeof social.facebook_page === "string" ? social.facebook_page.trim() : "";
+  if (!fbPage) return;
+
+  if (!isApifyEnabled()) {
+    console.warn(
+      "[scrape] facebook_page set but APIFY_API_TOKEN missing  -  skipping FB ads scrape",
+    );
+    return;
+  }
+
+  const db = supabaseAdmin();
+  let ads;
+  try {
+    ads = await facebookAdsForPage(fbPage, 20);
+  } catch (err) {
+    console.warn(
+      `[scrape] facebook ads scrape failed for org=${organizationId}: ${(err as Error)?.message ?? err}`,
+    );
+    return;
+  }
+  if (!ads || ads.length === 0) return;
+
+  // Idempotent insert: skip ad URLs already stored for this org.
+  const { data: existingAds } = await db
+    .from("rgaios_scrape_snapshots")
+    .select("url")
+    .eq("organization_id", organizationId)
+    .eq("kind", "ads");
+  const seen = new Set((existingAds ?? []).map((r) => r.url));
+
+  const rows = ads
+    .filter((ad) => !seen.has(ad.url))
+    .map((ad) => ({
+      organization_id: organizationId,
+      url: ad.url,
+      kind: "ads" as const,
+      status: "succeeded" as const,
+      title: ad.page_name,
+      content: ad.ad_text ?? "",
+      scraped_at: new Date().toISOString(),
+      metrics: ad.metrics,
+      metadata: {
+        ad_text: ad.ad_text,
+        start_date: ad.start_date,
+        end_date: ad.end_date,
+        platforms: ad.platforms,
+        page_name: ad.page_name,
+      },
+    }));
+
+  if (rows.length === 0) return;
+
+  const { error } = await db.from("rgaios_scrape_snapshots").insert(rows);
+  if (error) {
+    console.warn(`[scrape] failed to insert FB ad snapshots: ${error.message}`);
+    return;
+  }
+  stats.total += rows.length;
+  stats.succeeded += rows.length;
 }
 
 /**

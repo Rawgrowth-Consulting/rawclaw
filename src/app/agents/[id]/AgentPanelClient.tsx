@@ -4,6 +4,7 @@ import { useRef, useState, type DragEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { TgProvisionModal } from "@/components/tg-provision-modal";
+import AgentChatTab from "@/components/agents/AgentChatTab";
 import { AGENT_RUNTIMES } from "@/lib/agents/constants";
 
 function runtimeLabel(value: string | null): string {
@@ -56,7 +57,7 @@ type AgentFile = {
   uploaded_at: string;
 };
 
-type Tab = "overview" | "memory" | "files" | "tasks" | "settings";
+type Tab = "chat" | "overview" | "memory" | "files" | "tasks" | "settings";
 
 export function AgentPanelClient({
   agent,
@@ -71,7 +72,7 @@ export function AgentPanelClient({
   telegram: Telegram;
   files: AgentFile[];
 }) {
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>("chat");
   const [fileList, setFileList] = useState<AgentFile[]>(files);
   const [uploading, setUploading] = useState(false);
   const [uploadFlash, setUploadFlash] = useState<string | null>(null);
@@ -180,7 +181,7 @@ export function AgentPanelClient({
 
       <nav className="shrink-0 border-b border-[var(--line)] px-6">
         <div className="flex gap-6 text-sm">
-          {(["overview", "memory", "files", "tasks", "settings"] as Tab[]).map((t) => (
+          {(["chat", "overview", "memory", "files", "tasks", "settings"] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -198,7 +199,14 @@ export function AgentPanelClient({
         </div>
       </nav>
 
-      <main className="min-h-0 flex-1 overflow-auto px-6 py-6">
+      <main className="relative min-h-0 flex-1 overflow-auto">
+        {tab === "chat" && (
+          <div className="h-full">
+            <AgentChatTab agentId={agent.id} />
+          </div>
+        )}
+
+        <div className={tab === "chat" ? "hidden" : "px-6 py-6"}>
         {tab === "overview" && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
@@ -464,6 +472,7 @@ export function AgentPanelClient({
             </div>
           </div>
         )}
+        </div>
       </main>
 
       {tgOpen && (

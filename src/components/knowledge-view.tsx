@@ -10,6 +10,7 @@ import {
   Eye,
   MoreHorizontal,
   BookOpen,
+  CalendarClock,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ import {
   type KnowledgeFileRow,
 } from "@/lib/knowledge/use-knowledge";
 import { KnowledgeFileSheet } from "@/components/knowledge-file-sheet";
+import { ScheduleSopModal } from "@/components/knowledge/ScheduleSopModal";
 
 const ALL_AGENTS = "__all__";
 const UNASSIGNED = "__unassigned__";
@@ -39,6 +41,10 @@ export function KnowledgeView({
 }) {
   const { files, loaded, uploading, upload, remove } = useKnowledge();
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [schedulingFile, setSchedulingFile] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agentFilter, setAgentFilter] = useState<string>(ALL_AGENTS);
@@ -212,6 +218,9 @@ export function KnowledgeView({
                   file={f}
                   onView={() => setViewingId(f.id)}
                   onDelete={() => remove(f.id)}
+                  onSchedule={() =>
+                    setSchedulingFile({ id: f.id, title: f.title })
+                  }
                 />
               ))}
             </div>
@@ -228,6 +237,15 @@ export function KnowledgeView({
           }}
         />
       )}
+
+      {schedulingFile && (
+        <ScheduleSopModal
+          knowledgeFileId={schedulingFile.id}
+          fileName={schedulingFile.title}
+          isOpen={!!schedulingFile}
+          onClose={() => setSchedulingFile(null)}
+        />
+      )}
     </>
   );
 }
@@ -236,10 +254,12 @@ function FileRow({
   file,
   onView,
   onDelete,
+  onSchedule,
 }: {
   file: KnowledgeFileRow;
   onView: () => void;
   onDelete: () => void;
+  onSchedule: () => void;
 }) {
   const sizeKb = file.size_bytes
     ? (file.size_bytes / 1024).toFixed(1)
@@ -315,6 +335,13 @@ function FileRow({
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <Eye className="size-3.5" /> View / edit tags
+            </button>
+            <button
+              type="button"
+              onClick={onSchedule}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <CalendarClock className="size-3.5" /> Schedule as routine
             </button>
             <Separator className="my-1" />
             <button

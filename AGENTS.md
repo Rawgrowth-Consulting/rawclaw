@@ -58,10 +58,24 @@ Implicit defaults locked by the plan:
   (eslint.config.mjs) + runtime. Filter applied at: telegram_reply
   (MCP), telegram_chat (both per-Department-Head and legacy webhook
   chat paths), slack_post_message, gmail_draft.
-- `src/lib/mcp/tools/` - 34 MCP tools registered in
-  `src/lib/mcp/tools/index.ts`.
-- `supabase/migrations/0001-0034` - single source of truth for
-  schema; `npm run self-hosted:migrate` is idempotent.
+- `src/lib/mcp/tools/` - 35+ MCP tools registered in
+  `src/lib/mcp/tools/index.ts`. v3 D3 added `company_query` for
+  cross-corpus semantic search.
+- `src/lib/auth/dept-acl.ts` - per-department visibility helpers
+  (P1 #6). `getAllowedDepartments(ctx)` reads
+  `rgaios_organization_memberships.allowed_departments` (migration
+  0037). Empty array = no restriction. Admin always bypasses.
+- `src/lib/agents/role-templates.ts` + `starter-content/` - 12+
+  role-specific system prompts + framework markdown bundled in the
+  repo. Hire flow + default seed auto-attach starter files +
+  default skills + system_prompt to every new agent (P0 #3 + #4).
+- `src/lib/knowledge/company-corpus.ts` (#7) - single
+  cross-source corpus over intake / brand profile / scrape / sales
+  calls / onboarding docs. Backed by `rgaios_company_chunks` table
+  + `match_company_chunks` RPC.
+- `supabase/migrations/0001-0043` - single source of truth for
+  schema; `npm run self-hosted:migrate` is idempotent. Cloud
+  applies via `scripts/apply-cloud-migrations.mjs`.
 - `scripts/wire-supabase.sh` — one-shot wiring of a fresh Supabase
   project: writes `.env.production` + provisions `agent-files` +
   `knowledge` storage buckets.

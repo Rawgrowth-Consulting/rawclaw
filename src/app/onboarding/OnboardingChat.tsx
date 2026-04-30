@@ -9,6 +9,27 @@ import { Response } from "@/components/ui/response";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { BRAND_DOC_ZONES } from "@/lib/onboarding";
 import { TelegramConnectorBlock } from "@/components/onboarding/TelegramConnectorBlock";
+import { IntegrationConnectorBlock } from "@/components/onboarding/IntegrationConnectorBlock";
+
+type IntegrationProvider = "slack" | "hubspot" | "google-drive" | "gmail";
+
+const INTEGRATION_PROVIDERS: ReadonlySet<IntegrationProvider> = new Set([
+  "slack",
+  "hubspot",
+  "google-drive",
+  "gmail",
+]);
+
+function isIntegrationProvider(v: unknown): v is IntegrationProvider {
+  return typeof v === "string" && INTEGRATION_PROVIDERS.has(v as IntegrationProvider);
+}
+
+const INTEGRATION_DISPLAY_NAME: Record<IntegrationProvider, string> = {
+  slack: "Slack",
+  hubspot: "HubSpot",
+  "google-drive": "Google Drive",
+  gmail: "Gmail",
+};
 
 type DocumentRecord = {
   id: string;
@@ -31,6 +52,7 @@ type ChatMessage =
     }
   | { role: "brand_docs_uploader"; id: string }
   | { role: "telegram_connector"; id: string }
+  | { role: "integration_connector"; id: string; provider: IntegrationProvider }
   | { role: "portal_button"; id: string };
 
 // If the last message is an empty assistant placeholder, drop it. Used before
@@ -231,6 +253,23 @@ export default function OnboardingChat({
                   `tgconn_${Date.now()}`,
               },
             ]);
+          } else if (event.type === "integration_connector") {
+            // Server gates this event on a known provider, but the
+            // wire payload is untrusted by definition  -  guard the
+            // discriminator so the union stays narrowed downstream.
+            if (isIntegrationProvider(event.provider)) {
+              const provider = event.provider;
+              setMessages((prev) => [
+                ...stripEmptyAssistant(prev),
+                {
+                  role: "integration_connector",
+                  id:
+                    (globalThis.crypto?.randomUUID?.() as string) ||
+                    `intconn_${Date.now()}`,
+                  provider,
+                },
+              ]);
+            }
           } else if (event.type === "portal_button") {
             setMessages((prev) => [
               ...stripEmptyAssistant(prev),
@@ -336,6 +375,7 @@ export default function OnboardingChat({
               streaming={streaming && i === messages.length - 1}
               onFinishUploader={(canned) => sendMessage(canned)}
               onFinishTelegram={(canned) => sendMessage(canned)}
+              onFinishIntegration={(canned) => sendMessage(canned)}
             />
           ))}
           {error && (
@@ -382,11 +422,13 @@ function MessageBubble({
   streaming,
   onFinishUploader,
   onFinishTelegram,
+  onFinishIntegration,
 }: {
   message: ChatMessage;
   streaming: boolean;
   onFinishUploader: (canned: string) => void;
   onFinishTelegram: (canned: string) => void;
+  onFinishIntegration: (canned: string) => void;
 }) {
   if (message.role === "reasoning") {
     return <ReasoningBubble message={message} />;
@@ -423,6 +465,23 @@ function MessageBubble({
             onFinishTelegram(
               "No Telegram bots connected yet - I'll wire them later from /agents.",
             );
+          }
+        }}
+      />
+    );
+  }
+
+  if (message.role === "integration_connector") {
+    const provider = message.provider;
+    const label = INTEGRATION_DISPLAY_NAME[provider] ?? provider;
+    return (
+      <IntegrationConnectorBlock
+        provider={provider}
+        onFinish={({ connected }) => {
+          if (connected) {
+            onFinishIntegration(`Connected ${label}. Continue.`);
+          } else {
+            onFinishIntegration(`Skipped ${label} for now. Continue.`);
           }
         }}
       />

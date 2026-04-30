@@ -25,6 +25,12 @@ if (!url) {
 const files = [
   "0033_agent_telegram_bots.sql",
   "0034_telegram_messages_connection_nullable.sql",
+  "0035_agent_chat_messages.sql",
+  "0036_agent_system_prompt.sql",
+  "0037_member_allowed_departments.sql",
+  "0040_sales_calls.sql",
+  "0042_v_company_corpus.sql",
+  "0043_provisioning_queue.sql",
 ];
 
 const client = new pg.Client({ connectionString: url });

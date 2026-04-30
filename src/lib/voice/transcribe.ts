@@ -144,25 +144,23 @@ async function transcribeViaWhisper(
 const TRANSCRIBE_WALL_CLOCK_MS = 25_000;
 
 /**
- * High-level entry: try Path A (Anthropic Messages API with audio
- * document block — currently fails for all audio MIME types since the
- * Messages API only accepts PDF/text in document blocks; left in as a
- * forward-compat slot for when Anthropic ships native audio on
- * messages.create) → falls back to Path B (whisper.cpp).
+ * Low-level entry, decoupled from Telegram. Takes raw audio bytes + a
+ * MIME type and runs Path A → Path B with a configurable wall-clock
+ * budget. Used by sales-call ingestion (Plan §12) which uploads
+ * mp3/m4a/webm directly via multipart - no Telegram in the loop.
  *
- * Both paths share a single AbortController capped at
- * TRANSCRIBE_WALL_CLOCK_MS so a hung whisper subprocess doesn't keep
- * the Telegram webhook open past the 30s SLA.
+ * wallClockMs defaults to TRANSCRIBE_WALL_CLOCK_MS (25s) for parity with
+ * the Telegram webhook SLA. Sales-call ingestion overrides this to
+ * ~290s so a 30-min mp3 doesn't trip the Telegram-shaped timeout.
  */
-export async function transcribeVoice(
-  botToken: string,
-  fileId: string,
+export async function transcribeAudio(
+  bytes: Buffer,
+  mimeType: string,
+  wallClockMs: number = TRANSCRIBE_WALL_CLOCK_MS,
 ): Promise<TranscribeResult> {
   const started = Date.now();
-  const { bytes, mimeType } = await downloadTelegramVoice(botToken, fileId);
-
   const abortCtl = new AbortController();
-  const timer = setTimeout(() => abortCtl.abort(), TRANSCRIBE_WALL_CLOCK_MS);
+  const timer = setTimeout(() => abortCtl.abort(), wallClockMs);
   try {
     if (process.env.ANTHROPIC_API_KEY) {
       try {
@@ -180,4 +178,23 @@ export async function transcribeVoice(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * High-level entry: try Path A (Anthropic Messages API with audio
+ * document block — currently fails for all audio MIME types since the
+ * Messages API only accepts PDF/text in document blocks; left in as a
+ * forward-compat slot for when Anthropic ships native audio on
+ * messages.create) → falls back to Path B (whisper.cpp).
+ *
+ * Both paths share a single AbortController capped at
+ * TRANSCRIBE_WALL_CLOCK_MS so a hung whisper subprocess doesn't keep
+ * the Telegram webhook open past the 30s SLA.
+ */
+export async function transcribeVoice(
+  botToken: string,
+  fileId: string,
+): Promise<TranscribeResult> {
+  const { bytes, mimeType } = await downloadTelegramVoice(botToken, fileId);
+  return transcribeAudio(bytes, mimeType);
 }
