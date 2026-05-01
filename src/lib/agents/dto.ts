@@ -76,6 +76,7 @@ export type AgentCreateInput = {
 export type AgentUpdateInput = Partial<AgentCreateInput> & {
   status?: AgentStatus;
   spentMonthlyUsd?: number;
+  systemPrompt?: string | null;
   writePolicy?: Record<
     string,
     "direct" | "requires_approval" | "draft_only"

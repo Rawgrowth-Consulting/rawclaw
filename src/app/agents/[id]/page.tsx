@@ -2,6 +2,8 @@ import { notFound, redirect } from "next/navigation";
 
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { listConnectionsForOrg } from "@/lib/connections/queries";
+import { SKILLS_CATALOG } from "@/lib/skills/catalog";
 import { AgentPanelClient } from "./AgentPanelClient";
 
 export default async function AgentDetailPage({
@@ -66,6 +68,56 @@ export default async function AgentDetailPage({
     .order("uploaded_at", { ascending: false })
     .limit(100);
 
+  // Vision tab data: skills wired to this agent + direct reports + org-wide
+  // connectors visible.
+  const { data: skillRows } = await db
+    .from("rgaios_agent_skills")
+    .select("skill_id")
+    .eq("organization_id", orgId)
+    .eq("agent_id", id);
+  const skills = (skillRows ?? [])
+    .map((r) => SKILLS_CATALOG.find((s) => s.id === (r as { skill_id: string }).skill_id))
+    .filter((s): s is (typeof SKILLS_CATALOG)[number] => !!s)
+    .map((s) => ({ id: s.id, name: s.name, category: s.category, tagline: s.tagline }));
+
+  const { data: directReportsRaw } = await db
+    .from("rgaios_agents")
+    .select("id, name, role, department")
+    .eq("organization_id", orgId)
+    .eq("reports_to", id)
+    .order("name", { ascending: true });
+  const directReports = (directReportsRaw ?? []).map((r) => ({
+    id: (r as { id: string }).id,
+    name: (r as { name: string }).name,
+    role: (r as { role: string }).role,
+    department: (r as { department: string | null }).department,
+  }));
+
+  let reportsToAgent: { id: string; name: string; role: string } | null = null;
+  if ((agent as { reports_to: string | null }).reports_to) {
+    const { data: parent } = await db
+      .from("rgaios_agents")
+      .select("id, name, role")
+      .eq("id", (agent as { reports_to: string }).reports_to)
+      .eq("organization_id", orgId)
+      .maybeSingle();
+    if (parent) {
+      reportsToAgent = {
+        id: (parent as { id: string }).id,
+        name: (parent as { name: string }).name,
+        role: (parent as { role: string }).role,
+      };
+    }
+  }
+
+  const orgConnections = await listConnectionsForOrg(orgId);
+  const connectors = orgConnections
+    .filter((c) => c.status === "connected")
+    .map((c) => ({
+      providerConfigKey: c.provider_config_key,
+      displayName: c.display_name ?? c.provider_config_key,
+    }));
+
   return (
     <AgentPanelClient
       agent={agent as unknown as Parameters<typeof AgentPanelClient>[0]["agent"]}
@@ -75,6 +127,10 @@ export default async function AgentDetailPage({
         (telegram as unknown as Parameters<typeof AgentPanelClient>[0]["telegram"]) ?? null
       }
       files={files ?? []}
+      skills={skills}
+      directReports={directReports}
+      reportsToAgent={reportsToAgent}
+      connectors={connectors}
     />
   );
 }

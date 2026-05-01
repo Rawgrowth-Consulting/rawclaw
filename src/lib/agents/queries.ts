@@ -72,6 +72,10 @@ export async function updateAgent(
   if (patch.department !== undefined) dbPatch.department = patch.department;
   if (patch.isDepartmentHead !== undefined)
     dbPatch.is_department_head = patch.isDepartmentHead;
+  if ((patch as { systemPrompt?: string | null }).systemPrompt !== undefined) {
+    dbPatch.system_prompt =
+      (patch as { systemPrompt: string | null }).systemPrompt || null;
+  }
 
   const { data, error } = await supabaseAdmin()
     .from("rgaios_agents")

@@ -8,6 +8,7 @@ import {
   Code,
   Cpu,
   Crown,
+  Eye,
   FileText,
   ListChecks,
   Megaphone,
@@ -121,6 +122,8 @@ type Agent = {
   status?: AgentStatus | null;
   is_department_head?: boolean | null;
   system_prompt?: string | null;
+  budget_monthly_usd?: number | null;
+  spent_monthly_usd?: number | null;
   updated_at?: string | null;
 };
 
@@ -157,7 +160,17 @@ type AgentFile = {
   uploaded_at: string;
 };
 
-type Tab = "chat" | "overview" | "memory" | "files" | "tasks" | "settings";
+type Tab = "chat" | "vision" | "memory" | "files" | "tasks" | "settings";
+
+type SkillLite = { id: string; name: string; category: string; tagline: string };
+type DirectReport = {
+  id: string;
+  name: string;
+  role: string;
+  department: string | null;
+};
+type ParentAgent = { id: string; name: string; role: string };
+type ConnectorLite = { providerConfigKey: string; displayName: string };
 
 export function AgentPanelClient({
   agent,
@@ -165,14 +178,24 @@ export function AgentPanelClient({
   tasks,
   telegram,
   files,
+  skills = [],
+  directReports = [],
+  reportsToAgent = null,
+  connectors = [],
 }: {
   agent: Agent;
   memory: MemoryEntry[];
   tasks: Task[];
   telegram: Telegram;
   files: AgentFile[];
+  skills?: SkillLite[];
+  directReports?: DirectReport[];
+  reportsToAgent?: ParentAgent | null;
+  connectors?: ConnectorLite[];
 }) {
   const [tab, setTab] = useState<Tab>("chat");
+  const [draftSystemPrompt, setDraftSystemPrompt] = useState(agent.system_prompt ?? "");
+  const [draftBudget, setDraftBudget] = useState(String(agent.budget_monthly_usd ?? 500));
   const [fileList, setFileList] = useState<AgentFile[]>(files);
   const [uploading, setUploading] = useState(false);
   const [uploadFlash, setUploadFlash] = useState<string | null>(null);
@@ -253,6 +276,8 @@ export function AgentPanelClient({
         body: JSON.stringify({
           description: draftDescription,
           runtime: draftRuntime,
+          systemPrompt: draftSystemPrompt,
+          budgetMonthlyUsd: Number(draftBudget) || 0,
         }),
       });
       if (!res.ok) {
@@ -281,7 +306,7 @@ export function AgentPanelClient({
 
   const tabMeta: Record<Tab, { label: string; Icon: LucideIcon }> = {
     chat: { label: "Chat", Icon: MessageSquare },
-    overview: { label: "Overview", Icon: ClipboardList },
+    vision: { label: "Vision", Icon: Eye },
     memory: { label: "Memory", Icon: Brain },
     files: { label: "Files", Icon: FileText },
     tasks: { label: "Tasks", Icon: ListChecks },
@@ -354,7 +379,7 @@ export function AgentPanelClient({
 
       <nav className="shrink-0 border-b border-[var(--line)] px-6">
         <div className="flex gap-1 text-sm">
-          {(["chat", "overview", "memory", "files", "tasks", "settings"] as Tab[]).map((t) => {
+          {(["chat", "vision", "memory", "files", "tasks", "settings"] as Tab[]).map((t) => {
             const { label, Icon } = tabMeta[t];
             const active = tab === t;
             return (
@@ -391,67 +416,222 @@ export function AgentPanelClient({
         )}
 
         <div className={tab === "chat" ? "hidden" : "px-6 py-6"}>
-        {tab === "overview" && (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
-              <h3 className="text-xs uppercase tracking-widest text-primary">
-                Job description
-              </h3>
-              <p className="mt-2 text-sm text-[var(--text-body)]">
-                {agent.description?.trim() || (
-                  <span className="text-[var(--text-muted)]">
-                    No description set. Edit in Settings tab.
-                  </span>
+        {tab === "vision" && (
+          <div className="space-y-6">
+            <p className="text-xs uppercase tracking-widest text-[var(--text-muted)]">
+              What {agent.name} sees and can do
+            </p>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+                <h3 className="text-xs uppercase tracking-widest text-primary">
+                  Job description
+                </h3>
+                <p className="mt-2 text-sm text-[var(--text-body)]">
+                  {agent.description?.trim() || (
+                    <span className="text-[var(--text-muted)]">
+                      No description set. Edit in Settings.
+                    </span>
+                  )}
+                </p>
+              </section>
+
+              <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+                <h3 className="text-xs uppercase tracking-widest text-primary">
+                  System prompt
+                </h3>
+                {agent.system_prompt?.trim() ? (
+                  <p className="mt-2 line-clamp-4 text-sm text-[var(--text-body)]">
+                    {agent.system_prompt}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-[var(--text-muted)]">
+                    No custom prompt. Falls back to role default.
+                  </p>
                 )}
-              </p>
-            </section>
+                <button
+                  type="button"
+                  onClick={() => setTab("settings")}
+                  className="mt-2 text-xs text-primary hover:underline"
+                >
+                  Edit in Settings -&gt;
+                </button>
+              </section>
+
+              <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+                <h3 className="text-xs uppercase tracking-widest text-primary">
+                  Org place
+                </h3>
+                <p className="mt-2 text-sm text-[var(--text-body)]">
+                  {reportsToAgent ? (
+                    <>
+                      Reports to{" "}
+                      <a
+                        href={`/agents/${reportsToAgent.id}`}
+                        className="text-primary hover:underline"
+                      >
+                        {reportsToAgent.name}
+                      </a>
+                    </>
+                  ) : isCeo ? (
+                    "Top of org - reports to no one"
+                  ) : (
+                    "Independent - reports to no one"
+                  )}
+                </p>
+                <p className="mt-1 text-sm text-[var(--text-body)]">
+                  Direct reports: {directReports.length}
+                </p>
+                {directReports.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-[12px] text-[var(--text-muted)]">
+                    {directReports.slice(0, 6).map((d) => (
+                      <li key={d.id}>
+                        <a
+                          href={`/agents/${d.id}`}
+                          className="hover:text-primary hover:underline"
+                        >
+                          {d.name}
+                        </a>
+                        {d.department && (
+                          <span className="ml-2 text-[10px] uppercase tracking-wider opacity-60">
+                            {d.department}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                    {directReports.length > 6 && (
+                      <li className="text-[10px] text-[var(--text-muted)]">
+                        ...+{directReports.length - 6} more
+                      </li>
+                    )}
+                  </ul>
+                )}
+              </section>
+
+              <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+                <h3 className="text-xs uppercase tracking-widest text-primary">
+                  Telegram bot
+                </h3>
+                {telegram?.status === "connected" ? (
+                  <p className="mt-2 text-sm text-[var(--text-body)]">
+                    Connected as{" "}
+                    <span className="font-mono text-primary">{telegram.display_name}</span>
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-[var(--text-muted)]">
+                    {telegram?.status === "pending_token"
+                      ? "Pending. Paste a BotFather token to go live."
+                      : "Not configured."}
+                  </p>
+                )}
+                <Button
+                  className="mt-3"
+                  onClick={() => setTgOpen(true)}
+                  variant={telegram?.status === "connected" ? "ghost" : "default"}
+                  size="sm"
+                >
+                  {telegram?.status === "connected" ? "Replace token" : "Add to Telegram"}
+                </Button>
+              </section>
+            </div>
 
             <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
               <h3 className="text-xs uppercase tracking-widest text-primary">
-                Telegram
+                Skills attached ({skills.length})
               </h3>
-              {telegram?.status === "connected" ? (
-                <p className="mt-2 text-sm text-[var(--text-body)]">
-                  Connected as{" "}
-                  <span className="font-mono text-primary">
-                    {telegram.display_name}
-                  </span>
+              {skills.length === 0 ? (
+                <p className="mt-2 text-sm text-[var(--text-muted)]">
+                  No skills wired. Hire-flow auto-attaches role-default skills; tweak
+                  in Skills page.
                 </p>
               ) : (
-                <p className="mt-2 text-sm text-[var(--text-muted)]">
-                  {telegram?.status === "pending_token"
-                    ? "Pending. Paste a BotFather token to go live."
-                    : "Not configured."}
-                </p>
+                <ul className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {skills.map((s) => (
+                    <li
+                      key={s.id}
+                      className="rounded border border-[var(--line)] bg-[var(--brand-surface-2)] p-2.5"
+                    >
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-sm font-medium text-[var(--text-strong)]">
+                          {s.name}
+                        </span>
+                        <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                          {s.category}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                        {s.tagline}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
               )}
-              <Button
-                className="mt-3"
-                onClick={() => setTgOpen(true)}
-                variant={telegram?.status === "connected" ? "ghost" : "default"}
-              >
-                {telegram?.status === "connected"
-                  ? "Replace token"
-                  : "Add to Telegram"}
-              </Button>
             </section>
 
-            <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
-              <h3 className="text-xs uppercase tracking-widest text-primary">
-                Runtime
-              </h3>
-              <p className="mt-2 text-sm text-[var(--text-body)]">
-                {runtimeLabel(agent.runtime)}
-              </p>
-            </section>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+                <h3 className="text-xs uppercase tracking-widest text-primary">
+                  Knowledge access
+                </h3>
+                <ul className="mt-2 space-y-1.5 text-sm text-[var(--text-body)]">
+                  <li>
+                    <span className="text-primary">{fileList.length}</span> files in
+                    private memory (RAG-retrieved per chat)
+                  </li>
+                  <li>
+                    <span className="text-primary">{memory.length}</span> audit-log
+                    entries
+                  </li>
+                  <li>
+                    Company corpus -{" "}
+                    <span className="text-primary">company_query</span> MCP tool (org-wide)
+                  </li>
+                  <li>
+                    Brand voice filter on outbound -{" "}
+                    <span className="text-primary">always on</span>
+                  </li>
+                </ul>
+              </section>
 
-            <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
-              <h3 className="text-xs uppercase tracking-widest text-primary">
-                Recent activity
-              </h3>
-              <p className="mt-2 text-sm text-[var(--text-body)]">
-                {memory.length} memory entries · {tasks.length} routine runs
-              </p>
-            </section>
+              <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+                <h3 className="text-xs uppercase tracking-widest text-primary">
+                  Org connectors visible
+                </h3>
+                {connectors.length === 0 ? (
+                  <p className="mt-2 text-sm text-[var(--text-muted)]">
+                    Nothing connected yet. See{" "}
+                    <a href="/connections" className="text-primary hover:underline">
+                      Connections
+                    </a>
+                    .
+                  </p>
+                ) : (
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {connectors.map((c) => (
+                      <li
+                        key={c.providerConfigKey}
+                        className="rounded-full bg-[var(--brand-surface-2)] px-2.5 py-1 text-[11px] text-[var(--text-body)]"
+                      >
+                        {c.displayName}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+                  Connectors are org-wide. Per-agent scoping coming.
+                </p>
+              </section>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <StatTile label="Model" value={runtimeLabel(agent.runtime)} />
+              <StatTile
+                label="Monthly budget"
+                value={`$${agent.budget_monthly_usd ?? 0}`}
+                detail={`spent $${(agent.spent_monthly_usd ?? 0).toFixed(2)}`}
+              />
+              <StatTile label="Status" value={status.label} accent={status.text} />
+            </div>
           </div>
         )}
 
@@ -609,55 +789,117 @@ export function AgentPanelClient({
         )}
 
         {tab === "settings" && (
-          <div className="max-w-2xl space-y-4">
-            <div>
-              <label className="block text-xs uppercase tracking-widest text-primary">
-                Job description
-              </label>
-              <textarea
-                rows={6}
-                value={draftDescription}
-                onChange={(e) => setDraftDescription(e.target.value)}
-                className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 text-sm text-[var(--text-strong)]"
-              />
-              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-                Doubles as the agent&apos;s system prompt  -  Claude reads this at the
-                start of every run.
-              </p>
-            </div>
+          <div className="max-w-3xl space-y-6">
+            <p className="text-xs uppercase tracking-widest text-[var(--text-muted)]">
+              Configuration for {agent.name}
+            </p>
 
-            <div>
-              <label className="block text-xs uppercase tracking-widest text-primary">
-                Model
-              </label>
-              <select
-                value={draftRuntime}
-                onChange={(e) => setDraftRuntime(e.target.value)}
-                className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 text-sm text-[var(--text-strong)]"
-              >
-                <option value="">default</option>
-                <option value="claude-opus-4-7">Opus 4.7 (managers)</option>
-                <option value="claude-sonnet-4-6">
-                  Sonnet 4.6 (sub-agents)
-                </option>
-                <option value="claude-haiku-4-5">Haiku 4.5 (high-volume)</option>
-              </select>
-            </div>
+            <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+              <h3 className="text-xs uppercase tracking-widest text-primary">
+                Identity
+              </h3>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <label className="block text-[11px] uppercase tracking-widest text-[var(--text-muted)]">
+                    Job description (1-3 sentences, public-facing)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={draftDescription}
+                    onChange={(e) => setDraftDescription(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 text-sm text-[var(--text-strong)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] uppercase tracking-widest text-[var(--text-muted)]">
+                    System prompt (full instructions Claude sees at run start)
+                  </label>
+                  <textarea
+                    rows={10}
+                    value={draftSystemPrompt}
+                    onChange={(e) => setDraftSystemPrompt(e.target.value)}
+                    placeholder="You are the marketing manager. Write copy in our brand voice. When asked to draft an ad, prefer AIDA. Cite sources from your files when possible."
+                    className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 font-mono text-[12px] text-[var(--text-strong)]"
+                  />
+                  <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                    Auto-set from role template on hire. Edit to specialize.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+              <h3 className="text-xs uppercase tracking-widest text-primary">
+                Runtime
+              </h3>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <label className="block text-[11px] uppercase tracking-widest text-[var(--text-muted)]">
+                    Model
+                  </label>
+                  <select
+                    value={draftRuntime}
+                    onChange={(e) => setDraftRuntime(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 text-sm text-[var(--text-strong)]"
+                  >
+                    <option value="">default</option>
+                    <option value="claude-opus-4-7">Opus 4.7 (managers)</option>
+                    <option value="claude-sonnet-4-6">Sonnet 4.6 (sub-agents)</option>
+                    <option value="claude-haiku-4-5">Haiku 4.5 (high-volume)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] uppercase tracking-widest text-[var(--text-muted)]">
+                    Monthly budget (USD)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={draftBudget}
+                    onChange={(e) => setDraftBudget(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface-2)] px-3 py-2 text-sm text-[var(--text-strong)]"
+                  />
+                  <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                    Spent: ${(agent.spent_monthly_usd ?? 0).toFixed(2)} this month
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-4">
+              <h3 className="text-xs uppercase tracking-widest text-primary">
+                Hooks (read-only)
+              </h3>
+              <ul className="mt-3 space-y-1.5 text-sm text-[var(--text-body)]">
+                <li>
+                  Brand-voice filter on outbound -{" "}
+                  <span className="text-primary">enforced</span>
+                </li>
+                <li>
+                  11 banned-word eslint rule on internal prompts -{" "}
+                  <span className="text-primary">enforced</span>
+                </li>
+                <li>
+                  Per-agent RAG over Files tab -{" "}
+                  <span className="text-primary">{fileList.length} docs indexed</span>
+                </li>
+              </ul>
+            </section>
 
             <div className="flex items-center gap-3">
               <Button onClick={savePersona} disabled={saving}>
-                {saving ? "Saving…" : "Save"}
+                {saving ? "Saving..." : "Save changes"}
               </Button>
               {savedFlash && (
-                <span className="text-sm text-[var(--text-muted)]">
-                  {savedFlash}
-                </span>
+                <span className="text-sm text-[var(--text-muted)]">{savedFlash}</span>
               )}
             </div>
           </div>
         )}
         </div>
       </main>
+
+      {/* end main */}
 
       {tgOpen && (
         <TgProvisionModal
@@ -670,6 +912,32 @@ export function AgentPanelClient({
             window.location.reload();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  detail,
+  accent,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  accent?: string;
+}) {
+  return (
+    <div className="rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-3">
+      <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+        {label}
+      </div>
+      <div className={"mt-1 font-serif text-lg tracking-tight " + (accent ?? "text-foreground")}>
+        {value}
+      </div>
+      {detail && (
+        <div className="mt-0.5 text-[11px] text-[var(--text-muted)]">{detail}</div>
       )}
     </div>
   );
