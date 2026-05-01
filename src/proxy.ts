@@ -6,6 +6,8 @@ const PUBLIC_PATHS = [
   "/auth/forgot-password",
   "/auth/reset-password",
   "/auth/invite",
+  "/book",  // public booking pages: /book/[orgSlug]/[eventSlug]
+  "/b",     // booking manage links: /b/[token]
 ];
 
 // API routes that authenticate themselves (bearer tokens, webhooks, etc).
@@ -20,6 +22,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/invites/accept",   // GET preview + POST accept use invite token, not session
   "/api/cron",             // CRON_SECRET bearer, called by the self-hosted tick timer
   "/api/connections/slack/oauth/callback", // Slack OAuth redirect  -  state is self-verifying
+  "/api/book",             // public booking endpoints (slot fetch + create + manage)
 ];
 
 export default auth((req) => {

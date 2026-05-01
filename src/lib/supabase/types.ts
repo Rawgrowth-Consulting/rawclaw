@@ -713,6 +713,103 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["rgaios_company_chunks"]["Row"]>;
         Relationships: [];
       };
+      rgaios_kalendly_calendar_bindings: {
+        Row: {
+          id: string;
+          organization_id: string;
+          calendar_id: string;
+          calendar_summary: string;
+          default_timezone: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["rgaios_kalendly_calendar_bindings"]["Row"]> & {
+          organization_id: string;
+          calendar_id: string;
+          calendar_summary: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rgaios_kalendly_calendar_bindings"]["Row"]>;
+        Relationships: [];
+      };
+      rgaios_kalendly_event_types: {
+        Row: {
+          id: string;
+          organization_id: string;
+          slug: string;
+          title: string;
+          description: string;
+          duration_minutes: number;
+          color: string;
+          location: Record<string, unknown>;
+          rules: Record<string, unknown>;
+          custom_questions: Record<string, unknown>[];
+          active: boolean;
+          position: number;
+          agent_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["rgaios_kalendly_event_types"]["Row"]> & {
+          organization_id: string;
+          slug: string;
+          title: string;
+          duration_minutes: number;
+          location: Record<string, unknown>;
+          rules: Record<string, unknown>;
+        };
+        Update: Partial<Database["public"]["Tables"]["rgaios_kalendly_event_types"]["Row"]>;
+        Relationships: [];
+      };
+      rgaios_kalendly_availability: {
+        Row: {
+          id: string;
+          organization_id: string;
+          timezone: string;
+          weekly_hours: Record<string, unknown>[];
+          date_overrides: Record<string, unknown>[];
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["rgaios_kalendly_availability"]["Row"]> & {
+          organization_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rgaios_kalendly_availability"]["Row"]>;
+        Relationships: [];
+      };
+      rgaios_kalendly_bookings: {
+        Row: {
+          id: string;
+          organization_id: string;
+          event_type_id: string;
+          event_type_slug: string;
+          guest_name: string;
+          guest_email: string;
+          guest_timezone: string;
+          custom_answers: Record<string, string>;
+          start_utc: string;
+          end_utc: string;
+          google_event_id: string | null;
+          meet_link: string | null;
+          manage_token: string;
+          status: "confirmed" | "cancelled" | "rescheduled";
+          rescheduled_to_booking_id: string | null;
+          notified_agent_at: string | null;
+          created_at: string;
+          cancelled_at: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["rgaios_kalendly_bookings"]["Row"]> & {
+          organization_id: string;
+          event_type_id: string;
+          event_type_slug: string;
+          guest_name: string;
+          guest_email: string;
+          guest_timezone: string;
+          start_utc: string;
+          end_utc: string;
+          manage_token: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rgaios_kalendly_bookings"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

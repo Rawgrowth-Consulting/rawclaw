@@ -14,6 +14,7 @@ import {
   Sparkles,
   BookOpen,
   Palette,
+  CalendarDays,
 } from "lucide-react";
 
 import {
@@ -61,6 +62,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Agents", href: "/agents", icon: Bot },
       { label: "Routines", href: "/routines", icon: Repeat },
+      { label: "Booking", href: "/booking", icon: CalendarDays },
       { label: "Activity", href: "/activity", icon: Activity },
       { label: "Approvals", href: "/approvals", icon: ShieldCheck },
     ],

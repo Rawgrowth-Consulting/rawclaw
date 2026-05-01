@@ -18,6 +18,7 @@ export const NANGO_PROVIDER_CONFIG_KEYS: Record<string, string> = {
   "google-drive": "google-drive",
   gmail: "google-mail",
   "google-analytics": "google-analytics",
+  "google-calendar": "google-calendar",
   // GitHub's Nango integration unique_key is non-standard ("getting-started"
   // suffix from when the user spun it up). The integration_id we surface
   // in our UI / catalog is just "github"  -  we map it here.
