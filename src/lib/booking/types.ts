@@ -82,6 +82,8 @@ export interface CalendarBindingRow {
   defaultTimezone: string;
 }
 
+// Default timezone is UTC at the DB level; the admin UI auto-detects the
+// browser's IANA zone on first load and offers it as a one-click override.
 export const DEFAULT_AVAILABILITY: Pick<AvailabilityRow, "timezone" | "weeklyHours" | "dateOverrides"> = {
   timezone: "UTC",
   weeklyHours: [

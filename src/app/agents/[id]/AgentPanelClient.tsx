@@ -638,8 +638,16 @@ export function AgentPanelClient({
         {tab === "memory" && (
           <ul className="space-y-2">
             {memory.length === 0 && (
-              <li className="rounded-md border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-6 text-center text-sm text-[var(--text-muted)]">
-                No memory yet. As this agent runs, decisions and learnings appear here.
+              <li className="rounded-md border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-10 text-center">
+                <Brain className="mx-auto size-8 text-[var(--brand-primary)]/60" strokeWidth={1.4} />
+                <p className="mt-3 text-sm font-medium text-[var(--text-strong)]">
+                  No memory yet
+                </p>
+                <p className="mt-1 mx-auto max-w-md text-[12px] text-[var(--text-muted)]">
+                  Every chat reply, routine run, and approval decision lands
+                  here as a structured audit entry. Send {agent.name} a
+                  message in the Chat tab to seed the first one.
+                </p>
               </li>
             )}
             {memory.map((m) => (
@@ -752,8 +760,18 @@ export function AgentPanelClient({
         {tab === "tasks" && (
           <ul className="space-y-2">
             {tasks.length === 0 && (
-              <li className="rounded-md border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-6 text-center text-sm text-[var(--text-muted)]">
-                No routines assigned. Wire this agent into a routine on the Routines page.
+              <li className="rounded-md border border-dashed border-[var(--line)] bg-[var(--brand-surface)]/40 p-10 text-center">
+                <ListChecks className="mx-auto size-8 text-[var(--brand-primary)]/60" strokeWidth={1.4} />
+                <p className="mt-3 text-sm font-medium text-[var(--text-strong)]">
+                  No routines assigned
+                </p>
+                <p className="mt-1 mx-auto max-w-md text-[12px] text-[var(--text-muted)]">
+                  Wire {agent.name} into a routine on the{" "}
+                  <a href="/routines" className="text-primary hover:underline">
+                    Routines page
+                  </a>
+                  . Each scheduled run lands here with its status and timing.
+                </p>
               </li>
             )}
             {tasks.map((t) => (

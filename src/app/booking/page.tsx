@@ -37,18 +37,26 @@ export default async function BookingHomePage() {
       }
     >
       {!binding && (
-        <div className="mb-6 rounded-md border border-amber-400/30 bg-amber-400/5 p-4 text-sm">
-          <p className="font-medium text-amber-300">
-            No Google Calendar bound yet
-          </p>
-          <p className="mt-1 text-muted-foreground">
-            Connect Google Calendar in <Link href="/connections" className="underline">Connections</Link>,
-            then{" "}
-            <Link href="/booking/calendar" className="underline">
-              pick which calendar
-            </Link>{" "}
-            to write bookings into.
-          </p>
+        <div className="mb-6 flex items-start gap-4 rounded-md border border-amber-400/30 bg-amber-400/5 p-4 text-sm">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-amber-400/15 text-amber-300">
+            <span className="text-[15px]">!</span>
+          </div>
+          <div className="flex-1">
+            <p className="font-medium text-amber-300">
+              Connect Google Calendar to start taking bookings
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Two steps: (1) authorise Google in{" "}
+              <Link href="/connections" className="underline hover:text-foreground">
+                Connections
+              </Link>
+              , (2){" "}
+              <Link href="/booking/calendar" className="underline hover:text-foreground">
+                pick which calendar
+              </Link>{" "}
+              bookings should land in.
+            </p>
+          </div>
         </div>
       )}
 

@@ -144,21 +144,19 @@ function AgentCard({
   onEdit: (agent: Agent) => void;
   bot: AgentBotSummary | null;
 }) {
-  // Visual-only role override: agents with reports_to IS NULL are
-  // managers regardless of the DB role column (which defaults to
-  // 'general' for legacy seeded rows). The org-chart label needs to
-  // read the actual hierarchy, not the stored string.
-  const isManager = !agent.reportsTo;
+  // Label by structural role (not by reports_to alone, since dept heads
+  // now report to Atlas - the previous `!reportsTo` check incorrectly
+  // labelled them as "Sub-agent" once the CEO edge was wired).
+  const isCeo = agent.role === "ceo";
+  const isHead = agent.isDepartmentHead;
   const baseRole = roleMeta(agent.role);
-  const role = isManager
-    ? { ...baseRole, label: "Manager" }
-    : agent.reportsTo
-      ? { ...baseRole, label: "Sub-agent" }
-      : baseRole;
+  const role = isCeo
+    ? { ...baseRole, label: "Coordinator" }
+    : isHead
+      ? { ...baseRole, label: "Manager" }
+      : { ...baseRole, label: "Sub-agent" };
   const Icon = roleIconMap[role.icon as RoleIconName] ?? Bot;
   const status = statusStyle[agent.status];
-  const isHead = agent.isDepartmentHead;
-  const isCeo = agent.role === "ceo";
   // "Trained" indicator: agent has either a system prompt or a non-empty
   // free-form description. Attached files are out of scope here because
   // the org-chart payload from /api/agents does not include file counts;

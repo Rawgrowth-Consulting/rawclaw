@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,14 @@ export function AvailabilityEditor({
   const [weeklyHours, setWeeklyHours] = useState<WeeklyHours[]>(initial.weeklyHours);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Browser timezone, picked up after hydration (avoids SSR mismatch).
+  const browserTz = useMemo(() => {
+    if (typeof Intl === "undefined") return null;
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; }
+    catch { return null; }
+  }, []);
+  const showTzSuggestion = browserTz && browserTz !== timezone;
 
   function patchInterval(dow: number, idx: number, k: keyof Interval, v: string) {
     setWeeklyHours((wh) =>
@@ -88,9 +96,20 @@ export function AvailabilityEditor({
           onChange={(e) => setTimezone(e.target.value)}
           placeholder="America/Sao_Paulo"
         />
-        <p className="mt-1 text-xs text-muted-foreground">
-          IANA timezone string. Used to interpret weekly hours.
-        </p>
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            IANA timezone string. Used to interpret weekly hours.
+          </p>
+          {showTzSuggestion && (
+            <button
+              type="button"
+              onClick={() => setTimezone(browserTz!)}
+              className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/25"
+            >
+              Use {browserTz}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">

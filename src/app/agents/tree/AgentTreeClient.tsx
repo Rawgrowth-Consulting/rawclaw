@@ -365,8 +365,8 @@ export function AgentTreeClient({
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         fitView
-        fitViewOptions={{ padding: 0.18, includeHiddenNodes: false }}
-        minZoom={0.5}
+        fitViewOptions={{ padding: 0.25, includeHiddenNodes: false }}
+        minZoom={0.2}
         maxZoom={1.4}
         proOptions={{ hideAttribution: true }}
       >
