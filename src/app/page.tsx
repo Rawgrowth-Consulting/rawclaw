@@ -87,21 +87,31 @@ function PillarCard({
   title,
   subtitle,
   kpi,
+  legend,
   children,
 }: {
   title: string;
   subtitle: string;
   kpi?: { value: string; delta?: string; positive?: boolean };
+  legend?: Array<{ label: string; color: string }>;
   children: ReactNode;
 }) {
   return (
     <Card className="border-border bg-card/50 backdrop-blur-sm transition-colors hover:border-primary/20">
       <CardContent className="p-5">
-        <div className="mb-5 flex items-start justify-between gap-4">
+        <div className="mb-3 flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-[13px] font-semibold uppercase tracking-[1.5px] text-muted-foreground">
-              {title}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-[13px] font-semibold uppercase tracking-[1.5px] text-muted-foreground">
+                {title}
+              </h3>
+              <span
+                className="rounded-full bg-primary/12 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-primary"
+                title="These charts use sample data until your integrations are connected"
+              >
+                Demo data
+              </span>
+            </div>
             <p className="mt-1 text-[12px] text-muted-foreground/70">{subtitle}</p>
           </div>
           {kpi && (
@@ -123,6 +133,19 @@ function PillarCard({
             </div>
           )}
         </div>
+        {legend && legend.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            {legend.map((l) => (
+              <div key={l.label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: l.color }}
+                />
+                {l.label}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="-mx-1">{children}</div>
       </CardContent>
     </Card>
@@ -178,6 +201,10 @@ export default async function DashboardPage() {
             title="Marketing"
             subtitle="Traffic & leads  -  last 12 weeks"
             kpi={{ value: "8.4K", delta: "+12.3% vs prev", positive: true }}
+            legend={[
+              { label: "Traffic", color: COLOR_PRIMARY },
+              { label: "Leads", color: COLOR_SECONDARY },
+            ]}
           >
             <LineChart
               data={marketingData}
@@ -218,6 +245,12 @@ export default async function DashboardPage() {
             title="Fulfilment"
             subtitle="Orders by region & status"
             kpi={{ value: "847", delta: "orders this week", positive: true }}
+            legend={[
+              { label: "Delivered", color: COLOR_PRIMARY },
+              { label: "Shipped", color: COLOR_BLUE },
+              { label: "In progress", color: COLOR_AMBER },
+              { label: "Pending", color: COLOR_MUTED },
+            ]}
           >
             <BarChart
               data={fulfilmentData}
@@ -242,6 +275,10 @@ export default async function DashboardPage() {
             title="Finance"
             subtitle="Revenue vs expenses  -  trailing 12 months"
             kpi={{ value: "$38.2K", delta: "net profit / mo", positive: true }}
+            legend={[
+              { label: "Revenue", color: COLOR_PRIMARY },
+              { label: "Expenses", color: COLOR_EXPENSE },
+            ]}
           >
             <AreaChart
               data={financeData}
