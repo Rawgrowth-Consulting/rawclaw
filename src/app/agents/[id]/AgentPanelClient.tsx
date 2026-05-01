@@ -144,6 +144,7 @@ type Task = {
   completed_at: string | null;
   error: string | null;
   routine_id: string | null;
+  routine_title?: string | null;
 };
 
 type Telegram = {
@@ -779,27 +780,34 @@ export function AgentPanelClient({
                 key={t.id}
                 className="flex items-center justify-between rounded-md border border-[var(--line)] bg-[var(--brand-surface)] p-3"
               >
-                <div>
-                  <span
-                    className={
-                      "inline-block rounded px-2 py-0.5 text-[11px] uppercase tracking-widest " +
-                      (t.status === "succeeded"
-                        ? "bg-[#0f1a0d] text-[#aad08f]"
-                        : t.status === "failed"
-                          ? "bg-[#1a0b08] text-[#f4b27a]"
-                          : "bg-[var(--brand-surface-2)] text-primary")
-                    }
-                  >
-                    {t.status}
-                  </span>
-                  <span className="ml-3 font-mono text-xs text-[var(--text-muted)]">
-                    {t.source ?? " - "}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={
+                        "inline-block rounded px-2 py-0.5 text-[11px] uppercase tracking-widest " +
+                        (t.status === "succeeded"
+                          ? "bg-[#0f1a0d] text-[#aad08f]"
+                          : t.status === "failed"
+                            ? "bg-[#1a0b08] text-[#f4b27a]"
+                            : t.status === "pending"
+                              ? "bg-amber-400/10 text-amber-300"
+                              : "bg-[var(--brand-surface-2)] text-primary")
+                      }
+                    >
+                      {t.status === "pending" ? "scheduled" : t.status}
+                    </span>
+                    <span className="truncate text-sm text-[var(--text-strong)]">
+                      {t.routine_title ?? "Routine run"}
+                    </span>
+                  </div>
+                  <div className="mt-1 font-mono text-[11px] text-[var(--text-muted)]">
+                    via {t.source ?? "manual"}
+                  </div>
                 </div>
-                <time className="text-[11px] text-[var(--text-muted)]">
+                <time className="ml-3 shrink-0 text-[11px] text-[var(--text-muted)]">
                   {t.started_at
                     ? new Date(t.started_at).toLocaleString()
-                    : " - "}
+                    : "Never run"}
                 </time>
               </li>
             ))}

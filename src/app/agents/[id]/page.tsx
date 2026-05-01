@@ -35,20 +35,48 @@ export default async function AgentDetailPage({
     .order("ts", { ascending: false })
     .limit(20);
 
-  // Tasks: last 50 routine runs whose routine assigned this agent.
-  const { data: tasks } = await db
+  // Tasks: routines assigned to this agent + their recent runs. Even
+  // routines with no runs yet should surface here so the operator sees
+  // what's wired (the previous query only returned RUNS, so a freshly
+  // assigned routine looked like "no routines" until it fired).
+  const { data: assignedRoutines } = await db
+    .from("rgaios_routines")
+    .select("id, title, status")
+    .eq("organization_id", orgId)
+    .eq("assignee_agent_id", id);
+  const routineIds =
+    (assignedRoutines ?? []).map((r) => (r as { id: string }).id) ?? [];
+  const titleById = new Map<string, string>();
+  for (const r of (assignedRoutines ?? []) as Array<{ id: string; title: string }>) {
+    titleById.set(r.id, r.title);
+  }
+  const { data: runs } = await db
     .from("rgaios_routine_runs")
     .select("id, status, source, started_at, completed_at, error, routine_id")
     .eq("organization_id", orgId)
-    .in("routine_id", (
-      await db
-        .from("rgaios_routines")
-        .select("id")
-        .eq("organization_id", orgId)
-        .eq("assignee_agent_id", id)
-    ).data?.map((r) => (r as { id: string }).id) ?? [])
+    .in("routine_id", routineIds.length > 0 ? routineIds : ["00000000-0000-0000-0000-000000000000"])
     .order("started_at", { ascending: false, nullsFirst: false })
     .limit(50);
+  // Tag each run with its routine title; surface unfired routines as
+  // synthetic placeholder rows so the panel renders something.
+  const taggedRuns = (runs ?? []).map((r) => ({
+    ...(r as Record<string, unknown>),
+    routine_title: titleById.get((r as { routine_id: string }).routine_id) ?? null,
+  }));
+  const fired = new Set(taggedRuns.map((r) => (r as { routine_id: string }).routine_id));
+  const placeholders = (assignedRoutines ?? [])
+    .filter((r) => !fired.has((r as { id: string }).id))
+    .map((r) => ({
+      id: `pending-${(r as { id: string }).id}`,
+      status: "pending",
+      source: "schedule",
+      started_at: null,
+      completed_at: null,
+      error: null,
+      routine_id: (r as { id: string }).id,
+      routine_title: (r as { title: string }).title,
+    }));
+  const tasks = [...taggedRuns, ...placeholders];
 
   // Telegram connection status for this agent.
   const { data: telegram } = await db
