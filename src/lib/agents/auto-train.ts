@@ -27,9 +27,29 @@ export async function autoTrainAgent(input: {
   const db = supabaseAdmin();
 
   try {
+    // Always set system_prompt. ALSO backfill description if the agent
+    // row currently has an empty/null one - the first sentence of the
+    // system_prompt makes a good 1-sentence public-facing summary, and
+    // an empty description leaves the Vision tab + org-chart card
+    // looking unfinished.
+    const update: Record<string, unknown> = { system_prompt: template.systemPrompt };
+    const { data: row } = await db
+      .from("rgaios_agents")
+      .select("description")
+      .eq("id", input.agentId)
+      .eq("organization_id", input.orgId)
+      .maybeSingle();
+    const currentDesc = (row as { description: string | null } | null)?.description?.trim();
+    if (!currentDesc) {
+      const firstSentence =
+        template.systemPrompt.split(/(?<=[.!?])\s/)[0]?.trim() ?? "";
+      if (firstSentence && firstSentence.length <= 280) {
+        update.description = firstSentence;
+      }
+    }
     const { error } = await db
       .from("rgaios_agents")
-      .update({ system_prompt: template.systemPrompt })
+      .update(update)
       .eq("id", input.agentId)
       .eq("organization_id", input.orgId);
     if (!error) result.system_prompt = true;
