@@ -162,11 +162,11 @@ export function KnowledgeView({
       )}
 
       {files.length === 0 ? (
-        <EmptyState
-          icon={BookOpen}
-          title="No knowledge files yet"
-          description="Upload markdown playbooks, SOPs, brand voice docs  -  anything your agents should reference. Tag them so they're easy to surface."
-        />
+        <p className="text-center text-[12px] text-muted-foreground">
+          No files yet - upload markdown playbooks, SOPs, brand voice docs.
+          Each file gets chunked + embedded so any agent can pull the right
+          snippet at runtime.
+        </p>
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-[12px] text-muted-foreground">
