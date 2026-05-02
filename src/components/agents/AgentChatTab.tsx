@@ -206,6 +206,9 @@ export default function AgentChatTab({
   const [hydrated, setHydrated] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyRows, setHistoryRows] = useState<HistoryRow[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const _roleMeta =
     AGENT_ROLES.find((r) => r.value === agentRole) ??
@@ -436,28 +439,108 @@ export default function AgentChatTab({
       )}
 
       {/* Chat header strip - thread controls */}
-      {hydrated && messages.length > 0 && (
+      {hydrated && (
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--brand-surface)]/40 px-4 py-2">
           <span className="text-[11px] uppercase tracking-[1.5px] text-[var(--text-muted)]">
-            {messages.length} message{messages.length === 1 ? "" : "s"} in this thread
+            {messages.length === 0
+              ? "New chat"
+              : `${messages.length} message${messages.length === 1 ? "" : "s"} in this thread`}
           </span>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!confirm("Start a new chat? This clears the visible thread (the audit log on Memory tab is kept).")) return;
-              try {
-                await fetch(`/api/agents/${agentId}/chat`, { method: "DELETE" });
-                setMessages([]);
-                setInput("");
-                setError("");
-              } catch (e) {
-                setError((e as Error).message);
-              }
-            }}
-            className="inline-flex h-6 items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface)] px-2 text-[11px] text-[var(--text-body)] hover:border-[var(--brand-primary)]/50 hover:text-[var(--brand-primary)]"
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                setHistoryOpen(true);
+                setHistoryLoading(true);
+                try {
+                  const r = await fetch(`/api/agents/${agentId}/chat?include=archived`);
+                  const j = await r.json();
+                  setHistoryRows(j.messages ?? []);
+                } finally {
+                  setHistoryLoading(false);
+                }
+              }}
+              className="inline-flex h-6 items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface)] px-2 text-[11px] text-[var(--text-body)] hover:border-[var(--brand-primary)]/50 hover:text-[var(--brand-primary)]"
+            >
+              History
+            </button>
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!confirm("Start a new chat? Past messages are archived (visible via History) — never deleted.")) return;
+                  try {
+                    await fetch(`/api/agents/${agentId}/chat`, { method: "DELETE" });
+                    setMessages([]);
+                    setInput("");
+                    setError("");
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
+                className="inline-flex h-6 items-center gap-1 rounded-md border border-[var(--line-strong)] bg-[var(--brand-surface)] px-2 text-[11px] text-[var(--text-body)] hover:border-[var(--brand-primary)]/50 hover:text-[var(--brand-primary)]"
+              >
+                + New chat
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* History drawer */}
+      {historyOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-sm"
+          onClick={() => setHistoryOpen(false)}
+        >
+          <div
+            className="h-full w-[480px] overflow-y-auto border-l border-[var(--line)] bg-[var(--brand-bg)] p-5"
+            onClick={(e) => e.stopPropagation()}
           >
-            + New chat
-          </button>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-serif text-xl tracking-tight text-foreground">
+                Chat history with {displayName}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(false)}
+                className="text-sm text-[var(--text-muted)] hover:text-foreground"
+              >
+                ×
+              </button>
+            </div>
+            {historyLoading ? (
+              <p className="text-xs text-[var(--text-muted)]">Loading...</p>
+            ) : (historyRows ?? []).length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)]">No history yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {(historyRows ?? []).map((m) => (
+                  <li
+                    key={m.id}
+                    className={
+                      "rounded-md border p-3 " +
+                      (m.role === "user"
+                        ? "border-[var(--brand-primary)]/30 bg-[var(--brand-primary)]/5"
+                        : "border-[var(--line)] bg-[var(--brand-surface)]")
+                    }
+                  >
+                    <div className="mb-1 flex items-baseline justify-between gap-2">
+                      <span className="text-[10px] uppercase tracking-[1.5px] text-[var(--text-muted)]">
+                        {m.role}
+                      </span>
+                      <time className="text-[10px] text-[var(--text-muted)]">
+                        {new Date(m.created_at).toLocaleString()}
+                      </time>
+                    </div>
+                    <p className="whitespace-pre-wrap text-[13px] text-[var(--text-body)]">
+                      {m.content}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
 

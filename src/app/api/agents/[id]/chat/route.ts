@@ -55,13 +55,19 @@ export async function GET(
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
   }
 
-  const { data, error } = await db
+  // include=archived → return archived messages too (for history viewer)
+  const includeArchived = new URL(_req.url).searchParams.get("include") === "archived";
+  let q = db
     .from("rgaios_agent_chat_messages")
-    .select("id, role, content, created_at")
+    .select("id, role, content, created_at, metadata")
     .eq("organization_id", orgId)
     .eq("agent_id", agentId)
     .order("created_at", { ascending: false })
-    .limit(HISTORY_LIMIT);
+    .limit(includeArchived ? 200 : HISTORY_LIMIT);
+  if (!includeArchived) {
+    q = q.or("metadata->>archived.is.null,metadata->>archived.eq.false");
+  }
+  const { data, error } = await q;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -73,8 +79,12 @@ export async function GET(
 
 /**
  * DELETE /api/agents/[id]/chat
- * "New chat" - deletes all chat messages for this agent in the current
- * org. Memory tab still shows the audit log; the chat tab starts fresh.
+ * "New chat" - soft-archives the current visible thread by tagging
+ * each message with metadata.archived = true + an archived_at stamp.
+ * The GET handler filters those out so the tab starts fresh, but the
+ * raw history is still in rgaios_agent_chat_messages and can be
+ * restored / surfaced later. Memory tab + extracted chat_memory rows
+ * are untouched.
  */
 export async function DELETE(
   _req: NextRequest,
@@ -98,15 +108,24 @@ export async function DELETE(
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
   }
 
-  const { error } = await db
+  // Pull current (non-archived) messages, merge archive flag into their
+  // metadata, write back. metadata is jsonb so we can carry an archive
+  // marker without a schema migration.
+  const { data: rows } = await db
     .from("rgaios_agent_chat_messages")
-    .delete()
+    .select("id, metadata")
     .eq("organization_id", orgId)
-    .eq("agent_id", agentId);
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    .eq("agent_id", agentId)
+    .or("metadata->>archived.is.null,metadata->>archived.eq.false");
+  const stamp = new Date().toISOString();
+  for (const r of (rows ?? []) as Array<{ id: string; metadata: Record<string, unknown> | null }>) {
+    const next = { ...(r.metadata ?? {}), archived: true, archived_at: stamp };
+    await db
+      .from("rgaios_agent_chat_messages")
+      .update({ metadata: next as never })
+      .eq("id", r.id);
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, archived: rows?.length ?? 0 });
 }
 
 /**
