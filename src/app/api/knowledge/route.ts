@@ -4,6 +4,7 @@ import {
   listKnowledgeFilesForOrg,
 } from "@/lib/knowledge/queries";
 import { currentOrganizationId } from "@/lib/supabase/constants";
+import { ingestCompanyChunk } from "@/lib/knowledge/company-corpus";
 
 export const runtime = "nodejs";
 // Allow slightly larger uploads without timing out the function. Keeps MVP simple.
@@ -70,13 +71,30 @@ export async function POST(req: NextRequest) {
       .map((t) => t.trim())
       .filter(Boolean);
 
+    const orgId = await currentOrganizationId();
     const row = await createKnowledgeFile({
-      organizationId: (await currentOrganizationId()),
+      organizationId: orgId,
       title,
       tags,
       content,
       mimeType: "text/markdown",
     });
+
+    // Mirror into the company corpus so chat preamble RAG can surface
+    // SOPs alongside brand + scrape + intake content. Best-effort -
+    // a missing embedder shouldn't fail the upload.
+    try {
+      await ingestCompanyChunk({
+        orgId,
+        source: "knowledge_file",
+        sourceId: row.id,
+        text: content,
+        metadata: { title, tags, kind: "knowledge_markdown" },
+      });
+    } catch (err) {
+      console.warn("[knowledge] corpus ingest failed:", (err as Error).message);
+    }
+
     return NextResponse.json({ file: row }, { status: 201 });
   } catch (err) {
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { currentOrganizationId } from "@/lib/supabase/constants";
+import { ingestCompanyChunk } from "@/lib/knowledge/company-corpus";
 
 export const runtime = "nodejs";
 
@@ -69,6 +70,28 @@ export async function PUT(req: NextRequest) {
       .select("id, version")
       .single();
     if (error) throw error;
+
+    // Re-mirror into company_chunks. Wipe ALL prior brand_profile chunks
+    // for this org (regardless of source_id - old versions had different
+    // ids and would leave stale RAG hits otherwise), then chunk + embed
+    // the new markdown. Best-effort.
+    try {
+      await supabaseAdmin()
+        .from("rgaios_company_chunks")
+        .delete()
+        .eq("organization_id", orgId)
+        .eq("source", "brand_profile");
+      await ingestCompanyChunk({
+        orgId,
+        source: "brand_profile",
+        sourceId: inserted.id,
+        text: content,
+        metadata: { kind: "brand_profile_markdown", version: nextVersion },
+      });
+    } catch (err) {
+      console.warn("[brand] corpus re-mirror failed:", (err as Error).message);
+    }
+
     return NextResponse.json({ profile: inserted });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
