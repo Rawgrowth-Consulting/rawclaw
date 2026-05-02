@@ -35,14 +35,20 @@ export async function GET(req: NextRequest) {
     const wantReveal = req.nextUrl.searchParams.get("reveal") === "1";
 
     // Health probe: look at the most recent chat_reply_failed row for
-    // this org. If the last 24h has an "expired or invalid" audit
-    // entry, the row exists but the token is rejected by Anthropic.
-    // Surfaces "Token expired - reconnect" on the card without burning
-    // a real /v1/messages call every page load.
+    // this org. Only counts failures that landed AFTER the current
+    // installed_at (so a reconnect immediately clears the stale flag
+    // - the old fail is "before this token was even issued").
     let stale = false;
     let staleSince: string | null = null;
     try {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const installedAtMs = (() => {
+        const raw = meta.installed_at ?? conn.connected_at;
+        const t = typeof raw === "number" ? raw : Date.parse(String(raw));
+        return Number.isFinite(t) ? t : 0;
+      })();
+      const since = new Date(
+        Math.max(installedAtMs, Date.now() - 24 * 60 * 60 * 1000),
+      ).toISOString();
       const { data: lastFail } = await supabaseAdmin()
         .from("rgaios_audit_log")
         .select("ts, detail")
