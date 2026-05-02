@@ -63,20 +63,31 @@ function PillarCard({
   title,
   subtitle,
   kpi,
+  accent = "#0cbf6a",
   children,
 }: {
   title: string;
   subtitle: string;
   kpi?: { value: string; delta?: string; positive?: boolean };
+  accent?: string;
   children: ReactNode;
 }) {
   return (
-    <Card className="border-border bg-card/50 backdrop-blur-sm transition-colors hover:border-primary/20">
-      <CardContent className="p-5">
-        <div className="mb-4 flex items-start justify-between gap-4">
+    <Card className="relative overflow-hidden border-border bg-card/40 backdrop-blur-sm transition-all hover:border-primary/30 hover:shadow-[0_0_32px_rgba(12,191,106,.06)]">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px"
+        style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }}
+      />
+      <CardContent className="p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-[13px] font-semibold uppercase tracking-[1.5px] text-muted-foreground">
+              <span
+                className="size-1.5 rounded-full"
+                style={{ background: accent }}
+                aria-hidden
+              />
+              <h3 className="text-[12px] font-semibold uppercase tracking-[1.8px] text-foreground">
                 {title}
               </h3>
               <span
@@ -86,17 +97,17 @@ function PillarCard({
                 Demo
               </span>
             </div>
-            <p className="mt-1 text-[12px] text-muted-foreground/70">{subtitle}</p>
+            <p className="mt-1.5 text-[12px] text-muted-foreground">{subtitle}</p>
           </div>
           {kpi && (
             <div className="text-right">
-              <div className="font-serif text-3xl leading-none text-foreground">
+              <div className="font-serif text-[34px] leading-none tracking-tight text-foreground">
                 {kpi.value}
               </div>
               {kpi.delta && (
                 <div
                   className={
-                    "mt-1 flex items-center justify-end gap-0.5 text-[11px] font-medium " +
+                    "mt-1.5 flex items-center justify-end gap-0.5 text-[11px] font-medium " +
                     (kpi.positive ? "text-primary" : "text-amber-300")
                   }
                 >

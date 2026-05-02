@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
 import { Palette } from "lucide-react";
 
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { PageShell } from "@/components/page-shell";
+import { BrandEditor } from "./BrandEditor";
+
+export const dynamic = "force-dynamic";
 
 /**
  * Read-only brand profile view. The authoritative copy lives in
@@ -40,52 +42,10 @@ export default async function BrandProfilePage() {
     >
       <div className="max-w-3xl">
         {profile?.content ? (
-          <article className="max-w-none">
-            <ReactMarkdown
-              components={{
-                h1: ({ children }) => (
-                  <h1 className="mb-4 mt-6 font-serif text-3xl tracking-tight text-foreground first:mt-0">
-                    {children}
-                  </h1>
-                ),
-                h2: ({ children }) => (
-                  <h2 className="mb-3 mt-8 font-serif text-xl tracking-tight text-foreground">
-                    {children}
-                  </h2>
-                ),
-                h3: ({ children }) => (
-                  <h3 className="mb-2 mt-6 text-[13px] font-semibold uppercase tracking-[1.5px] text-primary">
-                    {children}
-                  </h3>
-                ),
-                p: ({ children }) => (
-                  <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-                    {children}
-                  </p>
-                ),
-                ul: ({ children }) => (
-                  <ul className="mb-4 ml-5 list-disc space-y-1.5 text-sm text-muted-foreground marker:text-primary/60">
-                    {children}
-                  </ul>
-                ),
-                ol: ({ children }) => (
-                  <ol className="mb-4 ml-5 list-decimal space-y-1.5 text-sm text-muted-foreground marker:text-primary/60">
-                    {children}
-                  </ol>
-                ),
-                strong: ({ children }) => (
-                  <strong className="font-semibold text-foreground">{children}</strong>
-                ),
-                code: ({ children }) => (
-                  <code className="rounded bg-muted/40 px-1 py-0.5 font-mono text-[12px] text-primary">
-                    {children}
-                  </code>
-                ),
-              }}
-            >
-              {profile.content}
-            </ReactMarkdown>
-          </article>
+          <BrandEditor
+            initialContent={profile.content}
+            initialVersion={profile.version}
+          />
         ) : (
           <div className="rounded-lg border border-dashed border-border bg-card/30 p-10 text-center">
             <Palette className="mx-auto size-9 text-primary/70" strokeWidth={1.4} />
