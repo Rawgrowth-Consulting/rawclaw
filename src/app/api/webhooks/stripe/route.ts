@@ -281,6 +281,38 @@ export async function POST(req: NextRequest) {
         dashboard_url: dashboardUrl,
       })
       .eq("id", queueRowId);
+
+    // Send welcome email so the buyer gets their dashboard URL +
+    // temp password without operator handoff. Only fires when we
+    // have all three: dashboard URL, temp password (fresh org we
+    // just provisioned), and a recipient. Best-effort - email
+    // failure doesn't roll back provisioning.
+    if (dashboardUrl && lowerEmail) {
+      try {
+        const { data: queueRow } = await db
+          .from("rgaios_provisioning_queue")
+          .select("metadata")
+          .eq("id", queueRowId)
+          .maybeSingle();
+        const tempPassword =
+          (queueRow as { metadata: { temp_password?: string } } | null)
+            ?.metadata?.temp_password ?? "";
+        if (tempPassword) {
+          const { sendWelcomeEmail } = await import("@/lib/auth/email");
+          await sendWelcomeEmail({
+            to: lowerEmail,
+            dashboardUrl,
+            tempPassword,
+            organizationName:
+              ownerName ?? lowerEmail.split("@")[0] ?? "your workspace",
+          });
+        }
+      } catch (err) {
+        console.error(
+          `[stripe-webhook] welcome email failed for ${lowerEmail}: ${(err as Error).message}`,
+        );
+      }
+    }
   } else if (queueRowId && provisioningError) {
     await db
       .from("rgaios_provisioning_queue")

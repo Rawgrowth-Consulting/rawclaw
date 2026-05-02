@@ -178,3 +178,84 @@ export async function sendInviteEmail(params: {
     }),
   });
 }
+
+function welcomeEmailHtml(params: {
+  dashboardUrl: string;
+  tempPassword: string;
+  organizationName: string;
+  recipientEmail: string;
+}): string {
+  // eslint-disable-next-line rawgrowth-brand/banned-tailwind-defaults -- inline box-shadow in email HTML
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Welcome to Rawgrowth</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#060B08;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#060B08;padding:48px 16px;">
+      <tr><td align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="max-width:560px;width:100%;">
+        <tr><td align="center" style="padding-bottom:28px;">
+          <p style="margin:0 0 8px 0;font-size:11px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:#0CBF6A;">Your AI Org Is Ready</p>
+          <h1 style="margin:0;font-size:26px;font-weight:500;letter-spacing:-0.5px;color:rgba(255,255,255,0.92);">Rawgrowth</h1>
+        </td></tr>
+        <tr><td style="background-color:#0A1210;border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:40px;">
+          <h2 style="margin:0 0 14px 0;font-size:22px;font-weight:600;line-height:1.3;color:rgba(255,255,255,0.95);">Welcome to ${params.organizationName}</h2>
+          <p style="margin:0 0 20px 0;font-size:15px;line-height:1.6;color:rgba(255,255,255,0.65);">
+            Your workspace is provisioned and ready. The next step is the onboarding chat - it generates your brand profile, sets up your AI org chart (CEO Atlas + 5 dept managers + sub-agents), and wires their persistent memory.
+          </p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+            <tr><td align="center" style="padding:8px 0 16px 0;">
+              <a href="${params.dashboardUrl}" style="display:inline-block;background-color:#0CBF6A;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 36px;border-radius:10px;box-shadow:0 4px 14px rgba(12,191,106,0.25);">Open Your Dashboard &rarr;</a>
+            </td></tr>
+          </table>
+          <div style="background-color:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px;margin:8px 0 20px 0;">
+            <p style="margin:0 0 6px 0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:rgba(255,255,255,0.5);">Your sign-in</p>
+            <p style="margin:0 0 4px 0;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace;color:rgba(255,255,255,0.85);">${params.recipientEmail}</p>
+            <p style="margin:0;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace;color:#0CBF6A;">${params.tempPassword}</p>
+            <p style="margin:8px 0 0 0;font-size:11px;line-height:1.5;color:rgba(255,255,255,0.4);">Change this on first login at Settings &rarr; Security.</p>
+          </div>
+          <p style="margin:0 0 12px 0;font-size:13px;font-weight:600;color:rgba(255,255,255,0.85);">First 10 minutes:</p>
+          <ol style="margin:0 0 24px 0;padding-left:20px;font-size:13px;line-height:1.7;color:rgba(255,255,255,0.6);">
+            <li>Sign in with the credentials above</li>
+            <li>Walk through the onboarding chat (7 sections, ~10 min)</li>
+            <li>Approve your generated brand profile</li>
+            <li>Connect your Claude Max subscription at Connections</li>
+            <li>Talk to any agent under Agents &rarr; Chat tab</li>
+          </ol>
+          <div style="height:1px;background-color:rgba(255,255,255,0.06);margin:24px 0 16px 0;"></div>
+          <p style="margin:0;font-size:12px;line-height:1.6;color:rgba(255,255,255,0.4);">
+            Stuck? Reply to this email and we'll get you unstuck within a business day.
+          </p>
+        </td></tr>
+        <tr><td align="center" style="padding-top:28px;">
+          <p style="margin:0;font-size:11px;line-height:1.6;color:rgba(255,255,255,0.3);">Sent by Rawgrowth &middot; Your AI Department</p>
+        </td></tr>
+      </table></td></tr>
+    </table>
+  </body>
+</html>`;
+}
+
+export async function sendWelcomeEmail(params: {
+  to: string;
+  dashboardUrl: string;
+  tempPassword: string;
+  organizationName: string;
+}): Promise<void> {
+  const address = process.env.EMAIL_FROM ?? "noreply@rawgrowth.local";
+  const from = address.includes("<") ? address : `Rawgrowth <${address}>`;
+  await client().emails.send({
+    from,
+    to: params.to,
+    subject: `Your Rawgrowth workspace is ready (${params.organizationName})`,
+    html: welcomeEmailHtml({
+      dashboardUrl: params.dashboardUrl,
+      tempPassword: params.tempPassword,
+      organizationName: params.organizationName,
+      recipientEmail: params.to,
+    }),
+  });
+}
