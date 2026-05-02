@@ -5,6 +5,7 @@ import { DashboardStats } from "@/components/dashboard/stats";
 import { OrgChart } from "@/components/org-chart";
 import { AgentSheet } from "@/components/agent-sheet";
 import { getOrgContext } from "@/lib/auth/admin";
+import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { DEFAULT_DEPARTMENTS } from "@/lib/agents/dto";
 import { DepartmentAgentList } from "./DepartmentAgentList";
 
@@ -41,6 +42,21 @@ export default async function DepartmentDetailPage({
 
   const ctx = await getOrgContext();
   if (!ctx?.activeOrgId) redirect("/auth/signin");
+
+  // Per-dept ACL: a marketing-only invitee that types /departments/sales
+  // gets a 404 instead of a confusing empty page that leaks the slug
+  // existed.
+  if (ctx.userId) {
+    const allowed = await isDepartmentAllowed(
+      {
+        userId: ctx.userId,
+        organizationId: ctx.activeOrgId,
+        isAdmin: ctx.isAdmin,
+      },
+      slug,
+    );
+    if (!allowed) notFound();
+  }
 
   const title = capitalize(slug);
 

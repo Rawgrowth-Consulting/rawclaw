@@ -57,6 +57,9 @@ export function SidebarDepartmentsSection() {
   const { data } = useSWR<{ agents: Agent[] }>("/api/agents", jsonFetcher, {
     revalidateOnFocus: false,
   });
+  const { data: me } = useSWR<{
+    allowedDepartments: string[] | null;
+  }>("/api/me", jsonFetcher, { revalidateOnFocus: false });
 
   const counts: Record<string, number> = {};
   for (const slug of DEFAULT_DEPARTMENTS) counts[slug] = 0;
@@ -65,6 +68,14 @@ export function SidebarDepartmentsSection() {
       counts[a.department] += 1;
     }
   }
+
+  // null = no restriction. Restricted invitees only see their slugs.
+  const visibleSlugs =
+    me?.allowedDepartments === null || me?.allowedDepartments === undefined
+      ? DEFAULT_DEPARTMENTS
+      : DEFAULT_DEPARTMENTS.filter((s) =>
+          (me.allowedDepartments as string[]).includes(s),
+        );
 
   return (
     <>
@@ -100,7 +111,7 @@ export function SidebarDepartmentsSection() {
 
       {expanded && (
         <SidebarMenuSub>
-          {DEFAULT_DEPARTMENTS.map((slug) => {
+          {visibleSlugs.map((slug) => {
             const meta = DEPT_META[slug];
             const Icon = meta.icon;
             const href = `/departments/${slug}`;
