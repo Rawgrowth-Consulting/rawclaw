@@ -85,10 +85,12 @@ function AnimatedBar({
   // Each bar gets a proportional share of the remaining time
   const barDuration = animationDuration * 0.6; // 60% of total duration for the animation itself
 
-  // Calculate opacity for fade animation (avoid nested ternary)
-  const getFadeOpacity = () => {
+  // Calculate opacity for fade animation (avoid nested ternary).
+  // Default to 1 if fadedOpacity prop is undefined - motion warns
+  // "animate from undefined to 1" when this returns undefined.
+  const getFadeOpacity = (): number => {
     if (isFaded) {
-      return fadedOpacity;
+      return fadedOpacity ?? 0.3;
     }
     return isAnimated ? 1 : 0;
   };
