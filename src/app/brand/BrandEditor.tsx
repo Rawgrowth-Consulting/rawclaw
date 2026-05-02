@@ -134,7 +134,7 @@ export function BrandEditor({
         </div>
       ) : (
         <article className="max-w-none">
-          <ReactMarkdown components={MD_COMPONENTS}>{initialContent}</ReactMarkdown>
+          <ReactMarkdown components={MD_COMPONENTS}>{draft}</ReactMarkdown>
         </article>
       )}
     </div>
