@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 
 import { PageShell } from "@/components/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,82 +25,55 @@ async function getPillarFlags() {
   };
 }
 
-import { LineChart, Line } from "@/components/charts/line-chart";
-import { AreaChart, Area } from "@/components/charts/area-chart";
-import { BarChart } from "@/components/charts/bar-chart";
-import { Bar } from "@/components/charts/bar";
-import { FunnelChart } from "@/components/charts/funnel-chart";
-import { Grid } from "@/components/charts/grid";
-import { ChartTooltip } from "@/components/charts/tooltip";
-
-// Brand palette pulled from globals.css
 const COLOR_PRIMARY = "#0cbf6a";
-const COLOR_SECONDARY = "#34d399";
-const COLOR_AMBER = "#fbbf24";
-const COLOR_BLUE = "#60a5fa";
-const COLOR_MUTED = "rgba(255,255,255,0.2)";
-const COLOR_EXPENSE = "rgba(255,255,255,0.35)";
 
-// ────────────────────────── Mock data ──────────────────────────
+// ────────────────────────── Mock data (sample) ─────────────────────────
 
-// 12 weeks of marketing top-of-funnel data
-const marketingData = Array.from({ length: 12 }, (_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() - (11 - i) * 7);
-  return {
-    date: d.toISOString(),
-    traffic: 4200 + Math.round(Math.sin(i / 2) * 900 + i * 220 + Math.random() * 300),
-    leads: 180 + Math.round(Math.cos(i / 3) * 30 + i * 14 + Math.random() * 20),
-  };
-});
-
-// Sales funnel  -  pipeline stages
-const salesFunnelData = [
-  { label: "Leads", value: 2840, displayValue: "2,840" },
-  { label: "Qualified", value: 1120, displayValue: "1,120" },
-  { label: "Proposal", value: 420, displayValue: "420" },
-  { label: "Won", value: 148, displayValue: "148" },
+const marketingTrafficSpark = [4200, 4500, 4900, 5100, 5500, 5300, 5900, 6200, 6500, 7100, 7800, 8400];
+const salesFunnel = [
+  { label: "Leads", value: 2840, percent: 100 },
+  { label: "Qualified", value: 1120, percent: 39 },
+  { label: "Proposal", value: 420, percent: 15 },
+  { label: "Won", value: 148, percent: 5 },
+];
+const fulfilmentByRegion = [
+  { region: "North", orders: 205 },
+  { region: "South", orders: 174 },
+  { region: "East", orders: 234 },
+  { region: "West", orders: 182 },
+];
+const financeMonthly = [
+  { month: "Jul", revenue: 48, expenses: 30 },
+  { month: "Aug", revenue: 53, expenses: 33 },
+  { month: "Sep", revenue: 58, expenses: 35 },
+  { month: "Oct", revenue: 62, expenses: 36 },
+  { month: "Nov", revenue: 70, expenses: 41 },
+  { month: "Dec", revenue: 78, expenses: 44 },
+  { month: "Jan", revenue: 80, expenses: 46 },
+  { month: "Feb", revenue: 84, expenses: 48 },
+  { month: "Mar", revenue: 89, expenses: 51 },
+  { month: "Apr", revenue: 92, expenses: 52 },
+  { month: "May", revenue: 96, expenses: 55 },
+  { month: "Jun", revenue: 102, expenses: 58 },
 ];
 
-// Fulfilment  -  orders by region, stacked by status
-const fulfilmentData = [
-  { region: "North", pending: 12, inProgress: 28, shipped: 45, delivered: 120 },
-  { region: "South", pending: 18, inProgress: 22, shipped: 38, delivered: 96 },
-  { region: "East", pending: 8, inProgress: 34, shipped: 52, delivered: 140 },
-  { region: "West", pending: 14, inProgress: 19, shipped: 41, delivered: 108 },
-];
-
-// Finance  -  12 months of revenue vs expenses
-const financeData = Array.from({ length: 12 }, (_, i) => {
-  const d = new Date();
-  d.setMonth(d.getMonth() - (11 - i));
-  const base = 48_000 + i * 4_200;
-  return {
-    date: d.toISOString(),
-    revenue: base + Math.round(Math.sin(i / 2) * 6_000 + Math.random() * 3_500),
-    expenses: Math.round(base * 0.62 + Math.cos(i / 3) * 4_000 + Math.random() * 2_500),
-  };
-});
-
-// ────────────────────────── UI ──────────────────────────
+// ────────────────────────── Building blocks ────────────────────────────
 
 function PillarCard({
   title,
   subtitle,
   kpi,
-  legend,
   children,
 }: {
   title: string;
   subtitle: string;
   kpi?: { value: string; delta?: string; positive?: boolean };
-  legend?: Array<{ label: string; color: string }>;
   children: ReactNode;
 }) {
   return (
     <Card className="border-border bg-card/50 backdrop-blur-sm transition-colors hover:border-primary/20">
       <CardContent className="p-5">
-        <div className="mb-3 flex items-start justify-between gap-4">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-[13px] font-semibold uppercase tracking-[1.5px] text-muted-foreground">
@@ -107,50 +81,116 @@ function PillarCard({
               </h3>
               <span
                 className="rounded-full bg-primary/12 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-primary"
-                title="These charts use sample data until your integrations are connected"
+                title="Sample data until your integrations are connected"
               >
-                Demo data
+                Demo
               </span>
             </div>
             <p className="mt-1 text-[12px] text-muted-foreground/70">{subtitle}</p>
           </div>
           {kpi && (
             <div className="text-right">
-              <div className="font-serif text-2xl leading-none text-foreground">
+              <div className="font-serif text-3xl leading-none text-foreground">
                 {kpi.value}
               </div>
               {kpi.delta && (
                 <div
                   className={
-                    kpi.positive
-                      ? "mt-1 text-[11px] font-medium text-primary"
-                      : "mt-1 text-[11px] font-medium text-muted-foreground"
+                    "mt-1 flex items-center justify-end gap-0.5 text-[11px] font-medium " +
+                    (kpi.positive ? "text-primary" : "text-amber-300")
                   }
                 >
+                  {kpi.positive ? <ArrowUpRight className="size-3" /> : <ArrowDownRight className="size-3" />}
                   {kpi.delta}
                 </div>
               )}
             </div>
           )}
         </div>
-        {legend && legend.length > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-3">
-            {legend.map((l) => (
-              <div key={l.label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span
-                  className="size-2 rounded-full"
-                  style={{ backgroundColor: l.color }}
-                />
-                {l.label}
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="-mx-1">{children}</div>
+        {children}
       </CardContent>
     </Card>
   );
 }
+
+// Pure-SVG sparkline. Renders a smooth path + area fill.
+function Sparkline({ values, height = 60, color = COLOR_PRIMARY }: { values: number[]; height?: number; color?: string }) {
+  if (values.length < 2) return null;
+  const w = 320;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const step = w / (values.length - 1);
+  const points = values.map((v, i) => [i * step, height - ((v - min) / range) * (height - 8) - 4]);
+  const path = points.reduce(
+    (acc, [x, y], i) => acc + (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`),
+    "",
+  );
+  const area = `${path} L ${w} ${height} L 0 ${height} Z`;
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill="url(#sparkFill)" />
+      <path d={path} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Horizontal bar with explicit label + value. Each bar is sized
+// proportional to the max value in the dataset.
+function HBar({ label, value, max, suffix = "" }: { label: string; value: number; max: number; suffix?: string }) {
+  const pct = Math.max(2, (value / max) * 100);
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between text-[12px]">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-mono text-foreground">
+          {value.toLocaleString()}
+          {suffix}
+        </span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted/30">
+        <div
+          className="h-full rounded-full bg-primary"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Two-series bar (revenue vs expenses per period). Tiny + readable.
+function StackedMonthlyBars({ data }: { data: typeof financeMonthly }) {
+  const max = Math.max(...data.map((d) => d.revenue));
+  return (
+    <div className="grid grid-cols-12 gap-1.5">
+      {data.map((d) => (
+        <div key={d.month} className="flex flex-col items-center gap-1">
+          <div className="flex h-24 w-full items-end gap-0.5">
+            <div
+              className="flex-1 rounded-t-sm bg-primary"
+              style={{ height: `${(d.revenue / max) * 100}%` }}
+              title={`${d.month}: $${d.revenue}K revenue`}
+            />
+            <div
+              className="flex-1 rounded-t-sm bg-muted"
+              style={{ height: `${(d.expenses / max) * 100}%` }}
+              title={`${d.month}: $${d.expenses}K expenses`}
+            />
+          </div>
+          <span className="text-[10px] text-muted-foreground">{d.month}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ────────────────────────── Page ──────────────────────────────────────
 
 export default async function DashboardPage() {
   const pillars = await getPillarFlags();
@@ -194,113 +234,119 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {/* Core business pillars  -  2x2 */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {pillars.marketing && (
           <PillarCard
             title="Marketing"
-            subtitle="Traffic & leads  -  last 12 weeks"
+            subtitle="Traffic this quarter"
             kpi={{ value: "8.4K", delta: "+12.3% vs prev", positive: true }}
-            legend={[
-              { label: "Traffic", color: COLOR_PRIMARY },
-              { label: "Leads", color: COLOR_SECONDARY },
-            ]}
           >
-            <LineChart
-              data={marketingData}
-              xDataKey="date"
-              aspectRatio="2.2 / 1"
-              margin={{ top: 20, right: 20, bottom: 28, left: 36 }}
-            >
-              <Grid horizontal numTicksRows={4} />
-              <Line dataKey="traffic" stroke={COLOR_PRIMARY} strokeWidth={2.5} />
-              <Line dataKey="leads" stroke={COLOR_SECONDARY} strokeWidth={2} />
-              <ChartTooltip />
-            </LineChart>
+            <Sparkline values={marketingTrafficSpark} />
+            <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-md bg-muted/30 p-2.5">
+                <div className="font-serif text-lg text-foreground">312</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Leads / wk
+                </div>
+              </div>
+              <div className="rounded-md bg-muted/30 p-2.5">
+                <div className="font-serif text-lg text-foreground">$24</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  CAC
+                </div>
+              </div>
+              <div className="rounded-md bg-muted/30 p-2.5">
+                <div className="font-serif text-lg text-foreground">2.4%</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Conv
+                </div>
+              </div>
+            </div>
           </PillarCard>
         )}
 
         {pillars.sales && (
           <PillarCard
             title="Sales"
-            subtitle="Pipeline by stage  -  current quarter"
-            kpi={{ value: "5.2%", delta: "lead→won rate", positive: true }}
+            subtitle="Pipeline this quarter"
+            kpi={{ value: "5.2%", delta: "lead → won rate", positive: true }}
           >
-            <FunnelChart
-              data={salesFunnelData}
-              orientation="horizontal"
-              color={COLOR_PRIMARY}
-              layers={3}
-              showPercentage
-              showValues
-              showLabels
-              edges="curved"
-              className="mx-auto max-w-105"
-            />
+            <div className="space-y-3">
+              {salesFunnel.map((stage) => (
+                <div key={stage.label}>
+                  <div className="flex items-baseline justify-between text-[12px]">
+                    <span className="text-muted-foreground">{stage.label}</span>
+                    <span className="font-mono text-foreground">
+                      {stage.value.toLocaleString()}{" "}
+                      <span className="ml-1 text-[10px] text-muted-foreground">
+                        ({stage.percent}%)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted/30">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${stage.percent}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </PillarCard>
         )}
 
         {pillars.fulfilment && (
           <PillarCard
             title="Fulfilment"
-            subtitle="Orders by region & status"
-            kpi={{ value: "847", delta: "orders this week", positive: true }}
-            legend={[
-              { label: "Delivered", color: COLOR_PRIMARY },
-              { label: "Shipped", color: COLOR_BLUE },
-              { label: "In progress", color: COLOR_AMBER },
-              { label: "Pending", color: COLOR_MUTED },
-            ]}
+            subtitle="Orders by region this week"
+            kpi={{ value: "847", delta: "+5.1% vs prev", positive: true }}
           >
-            <BarChart
-              data={fulfilmentData}
-              xDataKey="region"
-              orientation="horizontal"
-              stacked
-              aspectRatio="2.2 / 1"
-              margin={{ top: 20, right: 20, bottom: 28, left: 60 }}
-            >
-              <Grid horizontal={false} vertical numTicksColumns={5} />
-              <Bar dataKey="delivered" fill={COLOR_PRIMARY} />
-              <Bar dataKey="shipped" fill={COLOR_BLUE} />
-              <Bar dataKey="inProgress" fill={COLOR_AMBER} />
-              <Bar dataKey="pending" fill={COLOR_MUTED} />
-              <ChartTooltip />
-            </BarChart>
+            <div className="space-y-3">
+              {fulfilmentByRegion.map((r) => (
+                <HBar
+                  key={r.region}
+                  label={r.region}
+                  value={r.orders}
+                  max={Math.max(...fulfilmentByRegion.map((x) => x.orders))}
+                  suffix=" orders"
+                />
+              ))}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-center">
+              <div className="rounded-md bg-muted/30 p-2.5">
+                <div className="font-serif text-lg text-foreground">94%</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  On-time
+                </div>
+              </div>
+              <div className="rounded-md bg-muted/30 p-2.5">
+                <div className="font-serif text-lg text-foreground">2.1d</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Avg cycle
+                </div>
+              </div>
+            </div>
           </PillarCard>
         )}
 
         {pillars.finance && (
           <PillarCard
             title="Finance"
-            subtitle="Revenue vs expenses  -  trailing 12 months"
+            subtitle="Revenue vs expenses, last 12 months ($K)"
             kpi={{ value: "$38.2K", delta: "net profit / mo", positive: true }}
-            legend={[
-              { label: "Revenue", color: COLOR_PRIMARY },
-              { label: "Expenses", color: COLOR_EXPENSE },
-            ]}
           >
-            <AreaChart
-              data={financeData}
-              xDataKey="date"
-              aspectRatio="2.2 / 1"
-              margin={{ top: 20, right: 20, bottom: 28, left: 52 }}
-            >
-              <Grid horizontal numTicksRows={4} />
-              <Area
-                dataKey="revenue"
-                fill={COLOR_PRIMARY}
-                stroke={COLOR_PRIMARY}
-                fillOpacity={0.35}
-              />
-              <Area
-                dataKey="expenses"
-                fill={COLOR_EXPENSE}
-                stroke={COLOR_EXPENSE}
-                fillOpacity={0.25}
-              />
-              <ChartTooltip />
-            </AreaChart>
+            <StackedMonthlyBars data={financeMonthly} />
+            <div className="mt-4 flex items-center justify-between text-[11px]">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <span className="size-2 rounded-sm bg-primary" /> Revenue
+              </div>
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <span className="size-2 rounded-sm bg-muted" /> Expenses
+              </div>
+              <div className="text-muted-foreground">
+                Margin: <span className="font-mono text-primary">42%</span>
+              </div>
+            </div>
           </PillarCard>
         )}
       </div>
