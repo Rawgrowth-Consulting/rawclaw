@@ -54,14 +54,17 @@ export async function ingestCompanyChunk(input: {
   const chunks = chunkText(trimmed);
   if (chunks.length === 0) return { chunkCount: 0, tokenCount: 0 };
 
-  const embeddings = await embedBatch(chunks.map((c) => c.text));
+  // Chunk shape from chunker.ts is {index, content} - NOT {text, tokenCount}.
+  // Earlier passes used the wrong field names and the insert silently
+  // landed null content + threw NOT NULL violations the caller swallowed.
+  const embeddings = await embedBatch(chunks.map((c) => c.content));
   const rows = chunks.map((c, idx) => ({
     organization_id: input.orgId,
     source: input.source,
     source_id: input.sourceId ?? null,
     chunk_index: idx,
-    content: c.text,
-    token_count: c.tokenCount,
+    content: c.content,
+    token_count: Math.round(c.content.length / 4),
     embedding: toPgVector(embeddings[idx]),
     metadata: input.metadata ?? {},
   }));
@@ -70,7 +73,7 @@ export async function ingestCompanyChunk(input: {
   if (error) {
     throw new Error(`ingestCompanyChunk: ${error.message}`);
   }
-  const tokenCount = chunks.reduce((sum, c) => sum + (c.tokenCount ?? 0), 0);
+  const tokenCount = rows.reduce((sum, r) => sum + r.token_count, 0);
   return { chunkCount: rows.length, tokenCount };
 }
 
@@ -109,12 +112,18 @@ export async function matchCompanyChunks(
   const trimmed = query.trim();
   if (!trimmed) return [];
   const embedding = await embedOne(trimmed);
-  const { data, error } = await supabaseAdmin().rpc("rgaios_match_company_chunks", {
-    p_org_id: orgId,
-    p_query_embedding: toPgVector(embedding),
-    p_match_count: Math.max(1, Math.min(k, 25)),
-    p_min_similarity: 0.0,
-  });
+  // RPC isn't in the generated Database types yet (added in migration
+  // 0042 after the codegen ran). Cast args + result to bypass the
+  // 'never' inference until the next type regen.
+  const { data, error } = await supabaseAdmin().rpc(
+    "rgaios_match_company_chunks" as never,
+    {
+      p_org_id: orgId,
+      p_query_embedding: toPgVector(embedding),
+      p_match_count: Math.max(1, Math.min(k, 25)),
+      p_min_similarity: 0.0,
+    } as never,
+  );
   if (error) {
     throw new Error(`matchCompanyChunks: ${error.message}`);
   }
@@ -126,8 +135,8 @@ export async function matchCompanyChunks(
     similarity: number;
     metadata: Record<string, unknown> | null;
   };
-  return (data ?? []).map(
-    (row: Row): CompanyChunkMatch => ({
+  return ((data ?? []) as Row[]).map(
+    (row): CompanyChunkMatch => ({
       id: row.id,
       source: row.source,
       sourceId: row.source_id,
