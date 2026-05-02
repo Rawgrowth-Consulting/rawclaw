@@ -780,14 +780,18 @@ async function completeOnboarding(
   userId: string,
   transcript: IncomingMessage[]
 ) {
-  // Flip client to active
+  // Flip client to active. The onboarding_completed flag is what the
+  // dashboard onboarding gate (src/app/page.tsx) checks - without it
+  // the user gets bounced back to /onboarding even though every section
+  // and the brand profile are done.
   const { error: clientErr } = await supabaseAdmin()
     .from("rgaios_organizations")
     .update({
       onboarding_step: 8,
+      onboarding_completed: true,
       status: "active",
       updated_at: new Date().toISOString(),
-    })
+    } as never)
     .eq("id", userId);
   if (clientErr) return { ok: false, error: clientErr.message };
 
