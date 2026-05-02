@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { markRoutineRunNow } from "@/lib/routines/queries";
-import { currentOrganizationId } from "@/lib/supabase/constants";
+import { getOrgContext } from "@/lib/auth/admin";
+import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { dispatchRun } from "@/lib/runs/dispatch";
 
 export const runtime = "nodejs";
@@ -20,7 +21,41 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const organizationId = await currentOrganizationId();
+    const ctx = await getOrgContext();
+    if (!ctx?.activeOrgId || !ctx.userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const organizationId = ctx.activeOrgId;
+
+    // ACL: marketing-only invitee can't fire a sales routine even if
+    // they guess its id.
+    const { data: routine } = await supabaseAdmin()
+      .from("rgaios_routines")
+      .select("assignee_agent_id, organization_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (!routine || routine.organization_id !== organizationId) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    if (routine.assignee_agent_id) {
+      const { data: agent } = await supabaseAdmin()
+        .from("rgaios_agents")
+        .select("department")
+        .eq("id", routine.assignee_agent_id)
+        .maybeSingle();
+      const dept = (agent as { department: string | null } | null)?.department ?? null;
+      const ok = await isDepartmentAllowed(
+        {
+          userId: ctx.userId,
+          organizationId,
+          isAdmin: ctx.isAdmin,
+        },
+        dept,
+      );
+      if (!ok) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
 
     const { data: run, error } = await supabaseAdmin()
       .from("rgaios_routine_runs")
