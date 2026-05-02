@@ -177,8 +177,29 @@ export async function POST(
     extraPreamble += personaLines.join("\n");
   }
 
+  // Brand profile - inject the latest approved markdown so every reply
+  // is grounded in the org's voice/positioning/offer details.
+  try {
+    const { data: brand } = await db
+      .from("rgaios_brand_profiles")
+      .select("content")
+      .eq("organization_id", orgId)
+      .eq("status", "approved")
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const content = (brand as { content?: string } | null)?.content?.trim();
+    if (content) {
+      extraPreamble +=
+        (extraPreamble ? "\n\n" : "") +
+        `Brand profile for this organisation (treat as authoritative on voice + positioning + offer):\n\n${content}`;
+    }
+  } catch {}
+
   try {
     const queryVector = await embedOne(last.content);
+
+    // Per-agent files (RAG over rgaios_agent_files chunks).
     const { data: rows } = await db.rpc("rgaios_match_agent_chunks", {
       p_agent_id: agentId,
       p_organization_id: orgId,
@@ -196,6 +217,28 @@ export async function POST(
       extraPreamble +=
         (extraPreamble ? "\n\n" : "") +
         `Relevant context retrieved from this agent's uploaded files (cite when you use them):\n\n${block}`;
+    }
+
+    // Company corpus (rgaios_company_chunks - intake + brand + scrape +
+    // sales calls + onboarding docs unioned). Topical chunks across the
+    // whole organisation.
+    const { data: companyRows } = await db.rpc("rgaios_match_company_chunks", {
+      p_org_id: orgId,
+      p_query_embedding: toPgVector(queryVector),
+      p_match_count: 5,
+      p_min_similarity: 0.0,
+    });
+    const companyChunks = (companyRows ?? []) as Array<{
+      source: string;
+      chunk_text: string;
+    }>;
+    if (companyChunks.length > 0) {
+      const block = companyChunks
+        .map((c, i) => `[${i + 1}] (${c.source}):\n${c.chunk_text}`)
+        .join("\n\n");
+      extraPreamble +=
+        (extraPreamble ? "\n\n" : "") +
+        `Company-wide context (intake / brand / scraped content / sales calls):\n\n${block}`;
     }
   } catch {
     // No embedder, no key, or RPC missing on this deploy. Continue.
