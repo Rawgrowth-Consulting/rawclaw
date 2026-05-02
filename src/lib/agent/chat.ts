@@ -91,14 +91,29 @@ async function loadDefaultPersona(
 async function loadAgentPersona(
   organizationId: string,
   agentId: string,
-): Promise<RawgrowthAgent | null> {
+): Promise<(RawgrowthAgent & { runtime?: string | null }) | null> {
   const { data } = await supabaseAdmin()
     .from("rgaios_agents")
-    .select("name, title, description")
+    .select("name, title, description, runtime")
     .eq("organization_id", organizationId)
     .eq("id", agentId)
     .maybeSingle();
-  return data;
+  return data as (RawgrowthAgent & { runtime?: string | null }) | null;
+}
+
+/**
+ * Pick the actual Anthropic model id to call. The Claude Code OAuth
+ * gate only accepts Claude models; if the agent's runtime is set to a
+ * non-Anthropic option (gpt/gemini), fall back to the default. Returns
+ * the resolved model + a flag for logging.
+ */
+function resolveAnthropicModel(agentRuntime?: string | null): string {
+  if (!agentRuntime) return MODEL;
+  // Allow any claude-* slug we recognize. Reject everything else (the
+  // chatReply path is hardcoded to Anthropic OAuth - no point routing
+  // to OpenAI from here).
+  if (/^claude-/.test(agentRuntime)) return agentRuntime;
+  return MODEL;
 }
 
 async function loadRecentHistory(
@@ -337,8 +352,9 @@ export async function chatReply(input: {
     { role: "user" as const, content: firstUserContent },
   ];
 
+  const personaRuntime = (persona as { runtime?: string | null } | null)?.runtime;
   const body: Record<string, unknown> = {
-    model: MODEL,
+    model: resolveAnthropicModel(personaRuntime),
     max_tokens: MAX_TOKENS,
     system: CLAUDE_CODE_PREFIX,
     messages,
