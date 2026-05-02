@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getOrgContext } from "@/lib/auth/admin";
+import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
 import { applyBrandFilter } from "@/lib/brand/apply-filter";
@@ -161,12 +162,25 @@ export async function POST(
   // Cross-tenant guard. Persona + RAG happen inside buildAgentChatPreamble.
   const { data: agent } = await db
     .from("rgaios_agents")
-    .select("id")
+    .select("id, department")
     .eq("id", agentId)
     .eq("organization_id", orgId)
     .maybeSingle();
   if (!agent) {
     return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+  }
+  // Per-dept ACL. Marketing-only invitee can't POST chat to a sales
+  // agent even if they guess the id.
+  const allowed = await isDepartmentAllowed(
+    {
+      userId,
+      organizationId: orgId,
+      isAdmin: ctx.isAdmin,
+    },
+    (agent as { department: string | null }).department,
+  );
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let body: { messages?: IncomingMessage[] };
