@@ -455,26 +455,39 @@ export async function POST(
 
         // 5b. Extract a single short memory from this exchange so future
         // chats remember decisions / facts / preferences. Heuristic v0:
-        // pull the user's question + first 200 chars of the reply, write
+        // pull the user's question + first sentence of the reply, write
         // a one-line "user asked X; agent decided Y" memory. Future:
         // call a small LLM to do this properly. Best-effort, non-fatal.
-        try {
-          const userBit = last.content.trim().slice(0, 140);
-          const replyBit = visibleText.trim().split(/[.!?\n]/)[0]?.slice(0, 200) ?? "";
-          const fact = `User asked: "${userBit}". I responded with: "${replyBit}".`;
-          await db.from("rgaios_audit_log").insert({
-            organization_id: orgId,
-            kind: "chat_memory",
-            actor_type: "agent",
-            actor_id: agentId,
-            detail: {
-              agent_id: agentId,
-              fact,
-              user_id: userId,
-            },
-          });
-        } catch (err) {
-          console.warn("[chat] memory extract failed:", (err as Error).message);
+        //
+        // Skip noisy exchanges - greetings, ack-only messages, and
+        // hard-fail replies aren't worth remembering and just bloat the
+        // preamble's Past Memories section. Thresholds picked from
+        // looking at the rawgrowth-mvp memory log: under 30 chars is
+        // basically always "thanks" / "ok" / "sim" / a typo.
+        const skipMemory =
+          !filtered.ok ||
+          last.content.trim().length < 30 ||
+          visibleText.trim().length < 30;
+        if (!skipMemory) {
+          try {
+            const userBit = last.content.trim().slice(0, 140);
+            const replyBit =
+              visibleText.trim().split(/[.!?\n]/)[0]?.slice(0, 200) ?? "";
+            const fact = `User asked: "${userBit}". I responded with: "${replyBit}".`;
+            await db.from("rgaios_audit_log").insert({
+              organization_id: orgId,
+              kind: "chat_memory",
+              actor_type: "agent",
+              actor_id: agentId,
+              detail: {
+                agent_id: agentId,
+                fact,
+                user_id: userId,
+              },
+            });
+          } catch (err) {
+            console.warn("[chat] memory extract failed:", (err as Error).message);
+          }
         }
 
         emit({ type: "done" });
