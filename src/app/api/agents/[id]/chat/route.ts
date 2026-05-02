@@ -272,6 +272,18 @@ export async function POST(
             content: result.error,
             metadata: { kind: "chat_reply_failed" },
           });
+          // Also log to audit_log so the connections page health probe
+          // can detect a stale Claude Max token without burning a real
+          // /v1/messages call on every page load.
+          try {
+            await db.from("rgaios_audit_log").insert({
+              organization_id: orgId,
+              kind: "chat_reply_failed",
+              actor_type: "agent",
+              actor_id: agentId,
+              detail: { error: result.error, agent_id: agentId },
+            } as never);
+          } catch {}
           emit({ type: "done" });
           controller.close();
           return;

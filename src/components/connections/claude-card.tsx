@@ -49,6 +49,8 @@ export function ClaudeConnectionCard() {
   const [revealing, setRevealing] = useState(false);
 
   const connected = data?.connected ?? false;
+  const stale = (data as { stale?: boolean } | undefined)?.stale ?? false;
+  const staleSince = (data as { stale_since?: string | null } | undefined)?.stale_since ?? null;
 
   const startOauth = async () => {
     setStarting(true);
@@ -186,26 +188,35 @@ export function ClaudeConnectionCard() {
                 <h3 className="text-[14px] font-semibold text-foreground">
                   Claude Max
                 </h3>
-                {connected ? (
-                  <Badge
-                    variant="secondary"
-                    className="bg-primary/15 text-[10px] text-primary"
-                  >
-                    Connected
-                  </Badge>
-                ) : (
+                {!connected ? (
                   <Badge
                     variant="secondary"
                     className="bg-amber-500/10 text-[10px] text-amber-400"
                   >
                     Not connected
                   </Badge>
+                ) : stale ? (
+                  <Badge
+                    variant="secondary"
+                    className="bg-red-500/15 text-[10px] text-red-300"
+                  >
+                    Token rejected - reconnect
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="secondary"
+                    className="bg-primary/15 text-[10px] text-primary"
+                  >
+                    Connected
+                  </Badge>
                 )}
               </div>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
-                {connected
-                  ? `Connected${data?.installed_at ? ` · ${new Date(data.installed_at).toLocaleDateString()}` : ""}`
-                  : "Powers your VPS-side agents (24/7 Telegram + scheduled routines)"}
+                {!connected
+                  ? "Powers your VPS-side agents (24/7 Telegram + scheduled routines)"
+                  : stale
+                    ? `Anthropic returned 401 ${staleSince ? `at ${new Date(staleSince).toLocaleString()}` : "recently"}. Disconnect + Connect again to refresh.`
+                    : `Connected${data?.installed_at ? ` · ${new Date(data.installed_at).toLocaleDateString()}` : ""}`}
               </p>
             </div>
           </div>

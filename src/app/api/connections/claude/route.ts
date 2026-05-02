@@ -34,8 +34,36 @@ export async function GET(req: NextRequest) {
     const plaintext = tryDecryptSecret(meta.access_token);
     const wantReveal = req.nextUrl.searchParams.get("reveal") === "1";
 
+    // Health probe: look at the most recent chat_reply_failed row for
+    // this org. If the last 24h has an "expired or invalid" audit
+    // entry, the row exists but the token is rejected by Anthropic.
+    // Surfaces "Token expired - reconnect" on the card without burning
+    // a real /v1/messages call every page load.
+    let stale = false;
+    let staleSince: string | null = null;
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: lastFail } = await supabaseAdmin()
+        .from("rgaios_audit_log")
+        .select("ts, detail")
+        .eq("organization_id", organizationId)
+        .eq("kind", "chat_reply_failed")
+        .gte("ts", since)
+        .order("ts", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const detail = (lastFail as { ts: string; detail: { error?: string } } | null)
+        ?.detail;
+      if (detail?.error?.toLowerCase().includes("claude max token")) {
+        stale = true;
+        staleSince = (lastFail as { ts: string }).ts;
+      }
+    } catch {}
+
     return NextResponse.json({
       connected: true,
+      stale,
+      stale_since: staleSince,
       installed_at: meta.installed_at ?? conn.connected_at,
       token_preview: plaintext
         ? `${plaintext.slice(0, TOKEN_PREFIX.length + 6)}…${plaintext.slice(-6)}`
