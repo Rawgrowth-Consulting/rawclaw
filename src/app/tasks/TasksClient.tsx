@@ -154,6 +154,13 @@ export function TasksClient() {
                       {t.runCount} run{t.runCount === 1 ? "" : "s"}
                     </div>
                   </div>
+                  <Link
+                    href={`/tasks/${t.routineId}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="rounded-[min(var(--radius-md),12px)] border border-border bg-card/40 px-2 py-1 text-[10px] uppercase tracking-widest text-primary hover:border-primary/50"
+                  >
+                    Open →
+                  </Link>
                   {open ? (
                     <ChevronDown className="size-4 text-muted-foreground" />
                   ) : (
