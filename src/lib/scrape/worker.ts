@@ -123,9 +123,9 @@ async function drainFacebookAds(
   const fbPage = social && typeof social.facebook_page === "string" ? social.facebook_page.trim() : "";
   if (!fbPage) return;
 
-  if (!isApifyEnabled()) {
+  if (!(await isApifyEnabled(organizationId))) {
     console.warn(
-      "[scrape] facebook_page set but APIFY_API_TOKEN missing  -  skipping FB ads scrape",
+      "[scrape] facebook_page set but no Apify token (per-org or env) - skipping FB ads scrape",
     );
     return;
   }
@@ -133,7 +133,7 @@ async function drainFacebookAds(
   const db = supabaseAdmin();
   let ads;
   try {
-    ads = await facebookAdsForPage(fbPage, 20);
+    ads = await facebookAdsForPage(fbPage, 20, organizationId);
   } catch (err) {
     console.warn(
       `[scrape] facebook ads scrape failed for org=${organizationId}: ${(err as Error)?.message ?? err}`,
@@ -190,9 +190,9 @@ async function drainYoutubeTop(
   const yt =
     social && typeof social.youtube === "string" ? social.youtube.trim() : "";
   if (!yt) return;
-  if (!isApifyEnabled()) {
+  if (!(await isApifyEnabled(organizationId))) {
     console.warn(
-      "[scrape] youtube channel set but APIFY_API_TOKEN missing - skipping YT top scrape",
+      "[scrape] youtube channel set but no Apify token (per-org or env) - skipping YT top scrape",
     );
     return;
   }
@@ -200,7 +200,7 @@ async function drainYoutubeTop(
   const db = supabaseAdmin();
   let videos;
   try {
-    videos = await youtubeTopVideos(yt, 15);
+    videos = await youtubeTopVideos(yt, 15, organizationId);
   } catch (err) {
     console.warn(
       `[scrape] youtube top scrape failed for org=${organizationId}: ${(err as Error)?.message ?? err}`,
@@ -259,9 +259,9 @@ async function drainInstagramTop(
       ? social.instagram.trim()
       : "";
   if (!ig) return;
-  if (!isApifyEnabled()) {
+  if (!(await isApifyEnabled(organizationId))) {
     console.warn(
-      "[scrape] instagram handle set but APIFY_API_TOKEN missing - skipping IG top scrape",
+      "[scrape] instagram handle set but no Apify token (per-org or env) - skipping IG top scrape",
     );
     return;
   }
@@ -269,7 +269,7 @@ async function drainInstagramTop(
   const db = supabaseAdmin();
   let posts;
   try {
-    posts = await instagramTopPosts(ig, 20);
+    posts = await instagramTopPosts(ig, 20, organizationId);
   } catch (err) {
     console.warn(
       `[scrape] instagram top scrape failed for org=${organizationId}: ${(err as Error)?.message ?? err}`,

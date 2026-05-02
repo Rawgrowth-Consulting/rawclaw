@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { ClaudeConnectionCard } from "@/components/connections/claude-card";
 import { SlackConnectionCard } from "@/components/connections/slack-card";
 import { WorkspaceToolsSection } from "@/components/connections/workspace-tools-section";
+import { ApiKeysCard } from "@/components/connections/api-keys-card";
 import { CreateClientSheet } from "@/components/admin/create-client-sheet";
 import { jsonFetcher } from "@/lib/swr";
 
@@ -121,6 +122,15 @@ export function ConnectionsView() {
           subtitle="OAuth into the SaaS your agents need to act on. Once connected, agents can call these tools from Telegram, Slack, or routines."
         />
         <WorkspaceToolsSection />
+      </section>
+
+      {/* 3b. Workspace API keys */}
+      <section>
+        <SectionHeading
+          title="Workspace API keys"
+          subtitle="Direct API tokens (no OAuth) for scrapers + optional embedders. Apify powers best-content lookup; OpenAI/Voyage are alternatives to the bundled fastembed."
+        />
+        <ApiKeysCard />
       </section>
 
       {/* 4. Messaging channels */}

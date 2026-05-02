@@ -1,46 +1,71 @@
 /**
  * Thin wrapper over apify-client SDK. We call public actors (FB Ads
  * Library, IG profile, YT channel, etc.) on-demand from the scrape
- * worker. Token lives in env  -  one workspace key shared across all
- * v3 VPSes since Apify charges per-run, not per-account.
+ * worker. Token resolution order:
+ *   1. per-org rgaios_connections row (provider_config_key='apify-key',
+ *      metadata.api_key encrypted) - lets each client BYOK from the
+ *      Connections page without redeploying.
+ *   2. APIFY_API_TOKEN env var - shared fallback for self-hosted
+ *      operators that don't want a per-client key.
  *
  * Plan refs: §8 (top-performing scrape) and §13 (best-ads scrape).
- *
- * Behavior:
- *   - Caller passes actor id ("apify/facebook-ads-scraper") + input.
- *   - We block until the run finishes, then return the dataset items.
- *   - Token missing  ->  return null (caller logs warn + skips).
- *   - Any actor error or timeout  ->  bubble up; caller decides.
  */
 import { ApifyClient } from "apify-client";
+import { supabaseAdmin } from "@/lib/supabase/server";
+import { tryDecryptSecret } from "@/lib/crypto";
 
-let cached: ApifyClient | null | undefined;
+const orgClientCache = new Map<string, ApifyClient | null>();
 
-function getClient(): ApifyClient | null {
-  if (cached !== undefined) return cached;
-  const token = process.env.APIFY_API_TOKEN;
-  if (!token) {
-    cached = null;
-    return null;
-  }
-  cached = new ApifyClient({ token });
-  return cached;
+async function getOrgToken(orgId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin()
+    .from("rgaios_connections")
+    .select("metadata")
+    .eq("organization_id", orgId)
+    .eq("provider_config_key", "apify-key")
+    .maybeSingle();
+  const meta = (data?.metadata ?? {}) as { api_key?: string };
+  return tryDecryptSecret(meta.api_key);
 }
 
-export function isApifyEnabled(): boolean {
+async function getClient(orgId?: string | null): Promise<ApifyClient | null> {
+  if (orgId) {
+    if (orgClientCache.has(orgId)) return orgClientCache.get(orgId) ?? null;
+    const orgToken = await getOrgToken(orgId);
+    if (orgToken) {
+      const c = new ApifyClient({ token: orgToken });
+      orgClientCache.set(orgId, c);
+      return c;
+    }
+    orgClientCache.set(orgId, null);
+  }
+  const envToken = process.env.APIFY_API_TOKEN;
+  return envToken ? new ApifyClient({ token: envToken }) : null;
+}
+
+export async function isApifyEnabled(orgId?: string | null): Promise<boolean> {
+  if (orgId) {
+    const t = await getOrgToken(orgId);
+    if (t) return true;
+  }
   return Boolean(process.env.APIFY_API_TOKEN);
+}
+
+export function clearApifyCache(orgId?: string): void {
+  if (orgId) orgClientCache.delete(orgId);
+  else orgClientCache.clear();
 }
 
 /**
  * Run an Apify actor synchronously and return the dataset items.
- * Returns null when APIFY_API_TOKEN is unset so callers can fall back
- * to the public-source fetcher path.
+ * Returns null when no token is configured for the org (or env fallback)
+ * so callers can fall back to the public-source fetcher path.
  */
 export async function runActor<T = unknown>(
   actorId: string,
   input: Record<string, unknown>,
+  orgId?: string | null,
 ): Promise<T[] | null> {
-  const client = getClient();
+  const client = await getClient(orgId);
   if (!client) return null;
   const run = await client.actor(actorId).call(input);
   if (!run?.defaultDatasetId) return [];

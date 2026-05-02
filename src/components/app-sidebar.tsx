@@ -17,6 +17,7 @@ import {
   CalendarDays,
   Sprout,
   ListChecks,
+  PhoneCall,
 } from "lucide-react";
 
 import {
@@ -57,6 +58,7 @@ const navSections: NavSection[] = [
       { label: "Brand", href: "/brand", icon: Palette },
       { label: "Departments", href: "/departments", icon: Building2 },
       { label: "Knowledge", href: "/knowledge", icon: BookOpen },
+      { label: "Sales calls", href: "/sales-calls", icon: PhoneCall },
       { label: "Onboarding", href: "/onboarding", icon: Sprout },
     ],
   },

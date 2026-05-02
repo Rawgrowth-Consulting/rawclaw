@@ -171,16 +171,21 @@ function asPlatforms(v: unknown): string[] {
 export async function facebookAdsForPage(
   pageUrl: string,
   limit = 20,
+  orgId?: string,
 ): Promise<FacebookAd[]> {
   const normalized = pageUrl.startsWith("http")
     ? pageUrl
     : `https://www.facebook.com/${pageUrl.replace(/^@/, "").replace(/^facebook\.com\//, "")}`;
 
-  const items = await runActor<ApifyFbAdItem>("apify/facebook-ads-scraper", {
-    urls: [{ url: normalized }],
-    count: limit,
-    "scrapePageAds.activeStatus": "all",
-  });
+  const items = await runActor<ApifyFbAdItem>(
+    "apify/facebook-ads-scraper",
+    {
+      urls: [{ url: normalized }],
+      count: limit,
+      "scrapePageAds.activeStatus": "all",
+    },
+    orgId,
+  );
   if (!items) return [];
 
   return items.slice(0, limit).map<FacebookAd>((item, idx) => {
@@ -260,6 +265,7 @@ function durationToSeconds(v: unknown): number | null {
 export async function youtubeTopVideos(
   channel: string,
   limit = 15,
+  orgId?: string,
 ): Promise<YouTubeVideo[]> {
   const normalized = channel.startsWith("http")
     ? channel
@@ -267,11 +273,15 @@ export async function youtubeTopVideos(
       ? `https://www.youtube.com/${channel}`
       : `https://www.youtube.com/@${channel}`;
 
-  const items = await runActor<ApifyYtItem>("streamers/youtube-scraper", {
-    startUrls: [{ url: normalized }],
-    maxResults: limit * 4,
-    sortVideosBy: "POPULAR",
-  });
+  const items = await runActor<ApifyYtItem>(
+    "streamers/youtube-scraper",
+    {
+      startUrls: [{ url: normalized }],
+      maxResults: limit * 4,
+      sortVideosBy: "POPULAR",
+    },
+    orgId,
+  );
   if (!items) return [];
 
   const ranked = [...items]
@@ -330,16 +340,21 @@ type ApifyIgItem = {
 export async function instagramTopPosts(
   handle: string,
   limit = 20,
+  orgId?: string,
 ): Promise<InstagramPost[]> {
   const normalized = handle
     .replace(/^@/, "")
     .replace(/^https?:\/\/(www\.)?instagram\.com\//, "")
     .replace(/\/$/, "");
 
-  const items = await runActor<ApifyIgItem>("apify/instagram-profile-scraper", {
-    usernames: [normalized],
-    resultsLimit: limit * 4,
-  });
+  const items = await runActor<ApifyIgItem>(
+    "apify/instagram-profile-scraper",
+    {
+      usernames: [normalized],
+      resultsLimit: limit * 4,
+    },
+    orgId,
+  );
   if (!items) return [];
 
   const ranked = [...items]
