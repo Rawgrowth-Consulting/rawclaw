@@ -234,6 +234,46 @@ export async function POST(
     extraPreamble += personaLines.join("\n");
   }
 
+  // Org place - tell the agent who they report to and who reports to
+  // them. Lets dept heads coordinate cross-team work without inventing
+  // org structure.
+  try {
+    const { data: agentRow2 } = await db
+      .from("rgaios_agents")
+      .select("reports_to, department")
+      .eq("id", agentId)
+      .maybeSingle();
+    const reportsToId = (agentRow2 as { reports_to: string | null } | null)?.reports_to;
+    let parentLabel: string | null = null;
+    if (reportsToId) {
+      const { data: parent } = await db
+        .from("rgaios_agents")
+        .select("name, role")
+        .eq("id", reportsToId)
+        .maybeSingle();
+      const p = parent as { name: string; role: string } | null;
+      if (p) parentLabel = `${p.name} (${p.role})`;
+    }
+    const { data: directs } = await db
+      .from("rgaios_agents")
+      .select("name, role")
+      .eq("organization_id", orgId)
+      .eq("reports_to", agentId);
+    const directList = (directs ?? []) as Array<{ name: string; role: string }>;
+    const lines: string[] = [];
+    if (parentLabel) lines.push(`You report to: ${parentLabel}.`);
+    if (directList.length > 0) {
+      lines.push(
+        `You have ${directList.length} direct report${directList.length === 1 ? "" : "s"}: ${directList.map((d) => `${d.name} (${d.role})`).join(", ")}.`,
+      );
+    }
+    if (lines.length > 0) {
+      extraPreamble +=
+        (extraPreamble ? "\n\n" : "") +
+        `Your place in the org (use this when coordinating cross-team work):\n${lines.join("\n")}`;
+    }
+  } catch {}
+
   // Persistent agent memories - load the last 15 chat_memory entries
   // from the audit log so this agent "remembers" decisions, facts, and
   // user preferences across new chats. The extraction step at the end

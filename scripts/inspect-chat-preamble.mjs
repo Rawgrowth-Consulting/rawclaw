@@ -48,6 +48,20 @@ const personaPrompt = (agent.system_prompt?.trim() || agent.description?.trim() 
 if (personaPrompt) personaLines.push(`Persona: ${personaPrompt}`);
 section("1. PERSONA (role + title + system_prompt)", personaLines.join("\n"));
 
+// 1b. Org place
+const { rows: parent } = await c.query(
+  `select p.name, p.role from rgaios_agents a left join rgaios_agents p on p.id = a.reports_to where a.id = $1`,
+  [agent.id],
+);
+const { rows: directs } = await c.query(
+  `select name, role from rgaios_agents where organization_id = $1 and reports_to = $2`,
+  [org.id, agent.id],
+);
+const orgPlaceLines = [];
+if (parent[0]?.name) orgPlaceLines.push(`Reports to: ${parent[0].name} (${parent[0].role})`);
+if (directs.length > 0) orgPlaceLines.push(`Direct reports: ${directs.map(d => d.name).join(", ")}`);
+section("1b. ORG PLACE", orgPlaceLines.join("\n"));
+
 // 2. Memories
 const { rows: memories } = await c.query(
   `select detail from rgaios_audit_log
