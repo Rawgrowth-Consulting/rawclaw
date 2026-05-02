@@ -194,3 +194,68 @@ export async function exchangeCodeForToken(input: {
     };
   }
 }
+
+/**
+ * Refresh an expired Claude Max access_token using the stored
+ * refresh_token. Same OAuth client + token endpoint as the initial
+ * exchange, just grant_type=refresh_token. Used by loadClaudeMaxToken
+ * to silently rotate tokens before they hit Anthropic with a 401.
+ */
+export async function refreshClaudeMaxAccessToken(
+  refreshToken: string,
+): Promise<
+  | {
+      ok: true;
+      access_token: string;
+      refresh_token?: string;
+      expires_in?: number;
+    }
+  | { ok: false; error: string; status?: number }
+> {
+  if (!refreshToken) return { ok: false, error: "refresh_token is empty" };
+
+  let res: Response;
+  try {
+    res = await fetch(CLAUDE_OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: CLAUDE_OAUTH_CLIENT_ID,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    return { ok: false, error: `network: ${(err as Error).message}` };
+  }
+
+  const text = await res.text();
+  if (!res.ok) {
+    return { ok: false, status: res.status, error: text.slice(0, 400) };
+  }
+  try {
+    const parsed = JSON.parse(text) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    if (!parsed.access_token) {
+      return {
+        ok: false,
+        error: `refresh returned no access_token: ${text.slice(0, 200)}`,
+      };
+    }
+    return {
+      ok: true,
+      access_token: parsed.access_token,
+      refresh_token: parsed.refresh_token,
+      expires_in: parsed.expires_in,
+    };
+  } catch {
+    return {
+      ok: false,
+      error: `refresh returned non-JSON: ${text.slice(0, 200)}`,
+    };
+  }
+}

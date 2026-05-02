@@ -56,6 +56,68 @@ async function loadClaudeMaxToken(
   return tryDecryptSecret(meta.access_token);
 }
 
+/**
+ * On Anthropic 401, attempt to silently refresh the access_token
+ * using the stored refresh_token. Returns the new access_token on
+ * success or null if refresh fails (no refresh_token, refresh
+ * endpoint rejected, etc).
+ */
+async function tryRefreshClaudeMaxToken(
+  organizationId: string,
+): Promise<string | null> {
+  const { encryptSecret } = await import("@/lib/crypto");
+  const { refreshClaudeMaxAccessToken } = await import("@/lib/agent/oauth");
+  const { data } = await supabaseAdmin()
+    .from("rgaios_connections")
+    .select("metadata")
+    .eq("organization_id", organizationId)
+    .eq("provider_config_key", "claude-max")
+    .maybeSingle();
+  if (!data) return null;
+  const meta = (data.metadata ?? {}) as {
+    access_token?: string;
+    refresh_token?: string;
+  };
+  const currentRefresh = tryDecryptSecret(meta.refresh_token);
+  if (!currentRefresh) return null;
+
+  const r = await refreshClaudeMaxAccessToken(currentRefresh);
+  if (!r.ok) {
+    console.warn(
+      `[chat] Claude Max refresh failed: ${r.error.slice(0, 200)}`,
+    );
+    return null;
+  }
+  // Persist new tokens. refresh_token may rotate; if Anthropic
+  // returns a fresh one, store it - else keep the previous one.
+  const installedAt = new Date().toISOString();
+  await supabaseAdmin()
+    .from("rgaios_connections")
+    .update({
+      metadata: {
+        ...meta,
+        access_token: encryptSecret(r.access_token),
+        refresh_token: r.refresh_token
+          ? encryptSecret(r.refresh_token)
+          : (meta.refresh_token ?? ""),
+        expires_in: r.expires_in ?? null,
+        installed_at: installedAt,
+      },
+    } as never)
+    .eq("organization_id", organizationId)
+    .eq("provider_config_key", "claude-max");
+  await supabaseAdmin()
+    .from("rgaios_audit_log")
+    .insert({
+      organization_id: organizationId,
+      kind: "claude_max_token_refreshed",
+      actor_type: "system",
+      actor_id: "auto-refresh",
+      detail: { expires_in: r.expires_in ?? null },
+    } as never);
+  return r.access_token;
+}
+
 async function loadOrgMcpToken(
   organizationId: string,
 ): Promise<string | null> {
@@ -360,12 +422,11 @@ export async function chatReply(input: {
     messages,
   };
 
-  let res: Response;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
+  async function callAnthropic(token: string): Promise<Response> {
+    return fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        authorization: `Bearer ${claudeToken}`,
+        authorization: `Bearer ${token}`,
         "anthropic-version": "2023-06-01",
         // `oauth-2025-04-20` is the gate that lets /v1/messages accept
         // sk-ant-oat01-* tokens. NOTE: stacking `mcp-client-2025-04-04`
@@ -382,6 +443,11 @@ export async function chatReply(input: {
       // generous ceiling for tool-using replies.
       signal: AbortSignal.timeout(60_000),
     });
+  }
+
+  let res: Response;
+  try {
+    res = await callAnthropic(claudeToken);
   } catch (err) {
     return {
       ok: false,
@@ -389,13 +455,26 @@ export async function chatReply(input: {
     };
   }
 
+  // 401: try silent refresh + retry once. Most chat sessions hit
+  // this when the access_token's ~hour TTL ran out mid-conversation.
+  if (res.status === 401) {
+    const fresh = await tryRefreshClaudeMaxToken(organizationId);
+    if (fresh) {
+      try {
+        res = await callAnthropic(fresh);
+      } catch (err) {
+        return {
+          ok: false,
+          error: `Anthropic call failed after refresh: ${(err as Error).message}`,
+        };
+      }
+    }
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    // 401 from Anthropic almost always means the Claude Max OAuth token
-    // expired - access tokens are short-lived (~hours) and we don't yet
-    // refresh them server-side. Surface a friendly reconnect prompt
-    // instead of the raw "Anthropic 401: {...}" so the operator knows
-    // exactly what to do without having to read JSON.
+    // Still 401 after refresh attempt = refresh_token also dead (or
+    // never stored). Operator must re-OAuth manually.
     if (res.status === 401) {
       return {
         ok: false,
