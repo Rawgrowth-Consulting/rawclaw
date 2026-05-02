@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { getOrgContext } from "@/lib/auth/admin";
+import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { listConnectionsForOrg } from "@/lib/connections/queries";
 import { SKILLS_CATALOG } from "@/lib/skills/catalog";
@@ -25,6 +26,22 @@ export default async function AgentDetailPage({
     .eq("organization_id", orgId)
     .maybeSingle();
   if (!agent) notFound();
+
+  // ACL: marketing-only invitee that types /agents/<sales-agent-id>
+  // sees a 404 instead of leaking the agent. Admins + unrestricted
+  // members pass through.
+  if (ctx.userId) {
+    const dept = (agent as { department: string | null }).department;
+    const allowed = await isDepartmentAllowed(
+      {
+        userId: ctx.userId,
+        organizationId: orgId,
+        isAdmin: ctx.isAdmin,
+      },
+      dept,
+    );
+    if (!allowed) notFound();
+  }
 
   // Memory: last 20 entries from audit_log keyed by detail->>'agent_id'.
   const { data: memory } = await db
