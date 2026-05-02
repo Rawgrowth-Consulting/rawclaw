@@ -8,6 +8,7 @@ import {
   isDigitalOceanEnabled,
   buildCloudInit,
 } from "@/lib/provision/digitalocean";
+import { upsertA, isCloudflareEnabled } from "@/lib/provision/cloudflare";
 import { sendWelcomeEmail } from "@/lib/auth/email";
 
 export const runtime = "nodejs";
@@ -188,6 +189,26 @@ export async function GET(req: NextRequest) {
           });
           continue;
         }
+
+        // DNS: point fullDomain at the droplet IP via Cloudflare so
+        // Caddy on the droplet can issue ACME certs on first request.
+        // Skip silently if CLOUDFLARE_API_TOKEN unset (operator manages
+        // DNS by hand or via wildcard).
+        if (isCloudflareEnabled()) {
+          const baseDomain =
+            process.env.PROVISION_BASE_DOMAIN ?? "rawgrowth.app";
+          const dns = await upsertA({
+            fullDomain: meta.domain,
+            ipv4: info.ipv4,
+            zoneApex: baseDomain,
+          });
+          if (!dns.ok) {
+            console.warn(
+              `[provision-tick] DNS upsert failed for ${meta.domain}: ${dns.error}`,
+            );
+          }
+        }
+
         const dashboardUrl = `https://${meta.domain}/auth/signin`;
         await db
           .from("rgaios_provisioning_queue")
