@@ -16,7 +16,7 @@ import { tryDecryptSecret } from "@/lib/crypto";
  */
 
 const MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS = 1024;
+const DEFAULT_MAX_TOKENS = 1024;
 const RECENT_HISTORY = 6;
 
 type AgentChatResult =
@@ -360,6 +360,12 @@ export async function chatReply(input: {
    * appear as raw text and look broken.
    */
   noHandoff?: boolean;
+  /**
+   * Optional: override Anthropic max_tokens. Default 1024 (chat reply
+   * length). Mini-SaaS generator + other code-generation paths set this
+   * higher (8192) so the model has room for a full HTML doc + assets.
+   */
+  maxTokens?: number;
 }): Promise<AgentChatResult> {
   const {
     organizationId,
@@ -370,6 +376,7 @@ export async function chatReply(input: {
     historyOverride,
     extraPreamble,
     noHandoff,
+    maxTokens,
   } = input;
 
   const claudeToken = await loadClaudeMaxToken(organizationId);
@@ -417,7 +424,7 @@ export async function chatReply(input: {
   const personaRuntime = (persona as { runtime?: string | null } | null)?.runtime;
   const body: Record<string, unknown> = {
     model: resolveAnthropicModel(personaRuntime),
-    max_tokens: MAX_TOKENS,
+    max_tokens: maxTokens ?? DEFAULT_MAX_TOKENS,
     system: CLAUDE_CODE_PREFIX,
     messages,
   };

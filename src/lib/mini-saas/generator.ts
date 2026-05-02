@@ -41,6 +41,10 @@ export async function generateMiniSaas(input: {
     historyOverride: [],
     extraPreamble: ENGINEERING_BRIEF,
     noHandoff: true,
+    // HTML docs need way more headroom than the default 1024-token
+    // chat budget. 16k = ~12k char output, plenty for even a fairly
+    // detailed single-page app with inline CSS + JS.
+    maxTokens: 16_000,
   });
   if (!res.ok) {
     throw new Error(res.error);
