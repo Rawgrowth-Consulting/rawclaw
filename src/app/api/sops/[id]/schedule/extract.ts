@@ -70,13 +70,20 @@ export async function extractSopSchedule(
   if (!sopMarkdown.trim()) {
     return FALLBACK;
   }
-  const res = await chatComplete({
-    system: SOP_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: sopMarkdown }],
-    temperature: 0,
-  });
-
-  return parseSopExtraction(res.text);
+  try {
+    const res = await chatComplete({
+      system: SOP_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: sopMarkdown }],
+      temperature: 0,
+    });
+    return parseSopExtraction(res.text);
+  } catch (err) {
+    // No LLM provider configured / transient outage. Return the daily
+    // 9am fallback so the modal still pre-fills and the operator can
+    // hand-edit the cron + agent. Logged for ops visibility.
+    console.warn("[sop-extract] chatComplete failed:", (err as Error).message);
+    return FALLBACK;
+  }
 }
 
 /**

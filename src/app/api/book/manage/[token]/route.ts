@@ -34,14 +34,13 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ token: string
   }
 }
 
-export async function DELETE(req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
+export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await ctx.params;
     if (!isValidTokenShape(token)) {
       return NextResponse.json({ error: "invalid_token" }, { status: 400 });
     }
-    const appUrl = process.env.APP_URL ?? new URL(req.url).origin;
-    const booking = await cancelBookingByToken(token, appUrl);
+    const booking = await cancelBookingByToken(token);
     return NextResponse.json({ booking: { status: booking.status } });
   } catch (err) {
     if (err instanceof BookingError) {

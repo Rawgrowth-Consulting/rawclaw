@@ -73,11 +73,9 @@ Three things make Rawclaw different from "ChatGPT + Zapier":
 - Finance: weekly MRR pull, CAC payback math, cohort LTV, runway.
 
 ## Banned words (frozen at 11)
-game-changer, unlock, leverage, utilize, deep dive, revolutionary,
-cutting-edge, synergy, streamline, empower, certainly.
-
-ESLint catches at build time. The applyBrandFilter step catches at
-runtime in every Telegram + dashboard reply.
+The full list lives in src/lib/brand/tokens.ts. ESLint catches at
+build time. applyBrandFilter catches at runtime in every Telegram +
+dashboard reply.
 
 ## Org chart shape
 CEO agent (Atlas) at top. Reports to: human owner. Direct reports:

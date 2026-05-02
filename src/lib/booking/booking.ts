@@ -121,7 +121,7 @@ export async function createBookingForOrg(input: CreateBookingInput): Promise<Bo
   return booking;
 }
 
-export async function cancelBookingByToken(token: string, _appUrl: string): Promise<BookingRow> {
+export async function cancelBookingByToken(token: string): Promise<BookingRow> {
   const original = await getBookingByToken(token);
   if (!original) throw new BookingError("not_found", "Booking not found");
   if (original.status !== "confirmed") throw new BookingError("not_found", "Booking not active");
