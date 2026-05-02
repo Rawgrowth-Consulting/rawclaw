@@ -50,15 +50,16 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json(
-    {
-      ready,
-      gates: {
-        onboardingDone,
-        brandProfileApproved,
-        scrapeDone,
-      },
+  // Always return 200 - "not ready yet" is a valid state, not an
+  // authorization failure. The 403 we used to send made the dashboard
+  // shell think the user was forbidden from /api/dashboard/gate when in
+  // fact they just had to wait for the scrape queue to drain.
+  return NextResponse.json({
+    ready,
+    gates: {
+      onboardingDone,
+      brandProfileApproved,
+      scrapeDone,
     },
-    { status: ready ? 200 : 403 },
-  );
+  });
 }
