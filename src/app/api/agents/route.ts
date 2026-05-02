@@ -3,13 +3,31 @@ import { createAgent, listAgentsForOrg } from "@/lib/agents/queries";
 import { DEFAULT_AGENT_RUNTIME } from "@/lib/agents/constants";
 import { currentOrganizationId } from "@/lib/supabase/constants";
 import { autoTrainAgent } from "@/lib/agents/auto-train";
+import { getOrgContext } from "@/lib/auth/admin";
+import {
+  getAllowedDepartments,
+  filterAgentsByDept,
+} from "@/lib/auth/dept-acl";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const agents = await listAgentsForOrg((await currentOrganizationId()));
-    return NextResponse.json({ agents });
+    const ctx = await getOrgContext();
+    if (!ctx?.activeOrgId || !ctx.userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const agents = await listAgentsForOrg(ctx.activeOrgId);
+    // Per-dept ACL: non-admin invitees with allowed_departments set only
+    // see agents in those depts. Admins + members with no restriction
+    // see everything (allowed=null).
+    const allowed = await getAllowedDepartments({
+      userId: ctx.userId,
+      organizationId: ctx.activeOrgId,
+      isAdmin: ctx.isAdmin,
+    });
+    const scoped = filterAgentsByDept(agents, allowed);
+    return NextResponse.json({ agents: scoped });
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message },
