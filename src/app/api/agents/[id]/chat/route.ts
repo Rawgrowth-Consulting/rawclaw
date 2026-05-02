@@ -6,6 +6,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
 import { applyBrandFilter } from "@/lib/brand/apply-filter";
 import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { extractAndCreateTasks } from "@/lib/agent/tasks";
 
 export const runtime = "nodejs";
 
@@ -285,9 +286,48 @@ export async function POST(
           surface: SURFACE,
         });
 
-        const visibleText = filtered.ok ? filtered.text : HARD_FAIL_MESSAGE;
+        const filteredText = filtered.ok ? filtered.text : HARD_FAIL_MESSAGE;
+
+        // Extract <task> blocks before sending to the user. Strips the
+        // raw XML, creates rgaios_routines + pending runs for each
+        // assignee. Skipped on hard-fail (the brand-voice sentinel
+        // doesn't carry real reply content). Best-effort - failures
+        // log but don't break the chat.
+        let visibleText = filteredText;
+        let createdTasks: Array<{
+          routineId: string;
+          runId: string | null;
+          title: string;
+          assigneeAgentId: string;
+          assigneeName: string;
+        }> = [];
+        if (filtered.ok) {
+          try {
+            const ext = await extractAndCreateTasks({
+              orgId,
+              speakerAgentId: agentId,
+              reply: filteredText,
+            });
+            visibleText = ext.visibleReply || filteredText;
+            createdTasks = ext.tasks;
+          } catch (err) {
+            console.warn(
+              "[chat] task extraction failed:",
+              (err as Error).message,
+            );
+          }
+        }
+
         const persistMetadata = filtered.ok
-          ? { regenerated: filtered.regenerated }
+          ? {
+              regenerated: filtered.regenerated,
+              tasks_created: createdTasks.map((t) => ({
+                routine_id: t.routineId,
+                run_id: t.runId,
+                assignee_agent_id: t.assigneeAgentId,
+                title: t.title,
+              })),
+            }
           : {
               kind: "brand_voice_hard_fail",
               hits: filtered.hits,
@@ -295,6 +335,9 @@ export async function POST(
             };
 
         emit({ type: "text", delta: visibleText });
+        if (createdTasks.length > 0) {
+          emit({ type: "tasks_created", tasks: createdTasks });
+        }
 
         // 5. Persist the assistant reply (or operator-warning sentinel).
         await db.from("rgaios_agent_chat_messages").insert({

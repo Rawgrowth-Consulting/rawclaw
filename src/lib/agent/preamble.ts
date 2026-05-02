@@ -186,5 +186,35 @@ export async function buildAgentChatPreamble(input: {
     // No embedder, no key, or RPC missing. Continue without RAG.
   }
 
+  // Task-creation directive. The chat route extracts <task> blocks
+  // post-reply and creates rgaios_routines + rgaios_routine_runs rows.
+  // This is the only way the agent can persist work-to-do from a
+  // conversation today (no MCP tools on the dashboard chat surface).
+  preamble +=
+    (preamble ? "\n\n" : "") +
+    [
+      "═══ TASK CREATION ═══",
+      "",
+      "When the user assigns you (or someone you can delegate to) work that needs to land in the Tasks tab, end your reply with one or more <task> blocks. The system parses them, creates the routine + a pending run, and they show up immediately in the assignee's Tasks tab.",
+      "",
+      "Format (exact):",
+      "",
+      `<task assignee="self">`,
+      "Title: short imperative line (max 80 chars)",
+      "Description: one or two sentences with the goal + concrete deliverable",
+      "</task>",
+      "",
+      "assignee values:",
+      `  • "self"       → assigns to you (most common)`,
+      `  • "<role>"     → assigns to the agent with that role in your org (e.g. "marketer", "sdr", "ceo", "ops")`,
+      `  • "<name>"     → assigns by exact agent name`,
+      "",
+      "If you are a department head (CEO Atlas, Marketing Manager, etc) and the user asks for cross-team work, prefer assignee=\"<role>\" so the right person picks it up. The Org Place block above tells you who reports to you.",
+      "",
+      "DO NOT emit a <task> block for purely conversational replies (questions, brainstorming, opinions). Only when there's a concrete piece of work to track.",
+      "",
+      "You may emit MULTIPLE <task> blocks in one reply (one per discrete task). Keep the visible part of your reply short - the user reads it as a confirmation, not as a re-statement of what's in the task.",
+    ].join("\n");
+
   return preamble;
 }

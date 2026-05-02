@@ -334,6 +334,22 @@ export default function AgentChatTab({
             });
           } else if (event.type === "error") {
             setError(event.message || "Stream error");
+          } else if (event.type === "tasks_created" && Array.isArray(event.tasks)) {
+            // Surface the just-created tasks as inline assistant chips
+            // so the operator sees them land. The Tasks tab itself
+            // re-fetches on next mount; for live feedback in chat we
+            // append a system bubble.
+            const lines = (event.tasks as Array<{
+              title: string;
+              assigneeName: string;
+            }>).map((t) => `→ ${t.title} (${t.assigneeName})`).join("\n");
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "system",
+                content: `Created ${event.tasks.length} task${event.tasks.length === 1 ? "" : "s"}:\n${lines}`,
+              },
+            ]);
           }
           // event.type === "done" is implicit; the reader exits when
           // the server closes the stream.
