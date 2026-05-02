@@ -18,6 +18,7 @@ import {
   Sprout,
   ListChecks,
   PhoneCall,
+  Code2,
 } from "lucide-react";
 
 import {
@@ -67,6 +68,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Agents", href: "/agents", icon: Bot },
       { label: "Tasks", href: "/tasks", icon: ListChecks },
+      { label: "Mini SaaS", href: "/mini-saas", icon: Code2 },
       { label: "Routines", href: "/routines", icon: Repeat },
       { label: "Booking", href: "/booking", icon: CalendarDays },
       { label: "Activity", href: "/activity", icon: Activity },

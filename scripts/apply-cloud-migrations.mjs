@@ -32,6 +32,7 @@ const files = [
   "0042_v_company_corpus.sql",
   "0043_provisioning_queue.sql",
   "0044_kalendly.sql",
+  "0046_mini_saas.sql",
 ];
 
 const client = new pg.Client({ connectionString: url });
