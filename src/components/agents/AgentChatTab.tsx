@@ -228,7 +228,19 @@ export default function AgentChatTab({
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/agents/${agentId}/chat`)
-      .then((r) => (r.ok ? r.json() : { messages: [] }))
+      .then(async (r) => {
+        if (r.ok) {
+          return r.json().catch(() => ({ messages: [] }));
+        }
+        if (!cancelled) {
+          setError(
+            r.status === 404
+              ? "This agent is in a different workspace. Switch org from the sidebar."
+              : `Chat history fetch failed (${r.status})`,
+          );
+        }
+        return { messages: [] };
+      })
       .then((data: { messages?: HistoryRow[] }) => {
         if (cancelled) return;
         const rows = Array.isArray(data.messages) ? data.messages : [];
@@ -476,8 +488,21 @@ export default function AgentChatTab({
                 setHistoryLoading(true);
                 try {
                   const r = await fetch(`/api/agents/${agentId}/chat?include=archived`);
-                  const j = await r.json();
+                  if (!r.ok) {
+                    setHistoryRows([]);
+                    setError(
+                      r.status === 404
+                        ? "Agent not found in this org. Switch back to the right workspace from the sidebar."
+                        : `History fetch failed (${r.status})`,
+                    );
+                    return;
+                  }
+                  const j = (await r.json().catch(() => ({}))) as {
+                    messages?: HistoryRow[];
+                  };
                   setHistoryRows(j.messages ?? []);
+                } catch (err) {
+                  setError((err as Error).message);
                 } finally {
                   setHistoryLoading(false);
                 }
