@@ -289,23 +289,13 @@ export async function POST(
           return;
         }
 
-        // 4. Brand-voice filter. Audit row is written inside applyBrandFilter
-        // for both regenerated and hard-fail outcomes - no extra writes
-        // needed here.
-        const filtered = await applyBrandFilter(result.reply, {
-          organizationId: orgId,
-          agentId,
-          surface: SURFACE,
-        });
-
-        const filteredText = filtered.ok ? filtered.text : HARD_FAIL_MESSAGE;
-
-        // Extract <task> blocks before sending to the user. Strips the
-        // raw XML, creates rgaios_routines + pending runs for each
-        // assignee. Skipped on hard-fail (the brand-voice sentinel
-        // doesn't carry real reply content). Best-effort - failures
-        // log but don't break the chat.
-        let visibleText = filteredText;
+        // 4a. Extract <task> blocks BEFORE the brand-voice filter. The
+        // task description often quotes Rawgrowth's own banned-words
+        // list verbatim (Atlas writes "Zero banned words: game-changer,
+        // unlock, leverage..."), which trips the filter on the entire
+        // reply even though the customer-visible text is clean. Pulling
+        // tasks out first means filter only sees the surrounding prose.
+        let preFilterText = result.reply;
         let createdTasks: Array<{
           routineId: string;
           runId: string | null;
@@ -313,22 +303,31 @@ export async function POST(
           assigneeAgentId: string;
           assigneeName: string;
         }> = [];
-        if (filtered.ok) {
-          try {
-            const ext = await extractAndCreateTasks({
-              orgId,
-              speakerAgentId: agentId,
-              reply: filteredText,
-            });
-            visibleText = ext.visibleReply || filteredText;
-            createdTasks = ext.tasks;
-          } catch (err) {
-            console.warn(
-              "[chat] task extraction failed:",
-              (err as Error).message,
-            );
-          }
+        try {
+          const ext = await extractAndCreateTasks({
+            orgId,
+            speakerAgentId: agentId,
+            reply: result.reply,
+          });
+          preFilterText = ext.visibleReply || result.reply;
+          createdTasks = ext.tasks;
+        } catch (err) {
+          console.warn(
+            "[chat] task extraction failed:",
+            (err as Error).message,
+          );
         }
+
+        // 4b. Brand-voice filter on the visible text only. Audit row is
+        // written inside applyBrandFilter for both regenerated and
+        // hard-fail outcomes - no extra writes needed here.
+        const filtered = await applyBrandFilter(preFilterText, {
+          organizationId: orgId,
+          agentId,
+          surface: SURFACE,
+        });
+
+        const visibleText = filtered.ok ? filtered.text : HARD_FAIL_MESSAGE;
 
         const persistMetadata = filtered.ok
           ? {
