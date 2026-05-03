@@ -1,0 +1,16 @@
+.next
+local_cache
+node_modules
+.git
+.env
+.env.local
+.env.production
+.env.development
+*.log
+/tmp
+docker-compose*.yml
+Dockerfile*
+docker/
+scripts/test-*
+scripts/smoke-*
+docs/
