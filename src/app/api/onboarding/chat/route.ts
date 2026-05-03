@@ -1103,7 +1103,36 @@ export async function POST(req: NextRequest) {
       content: m.content,
     }));
     const systemBlock = SYSTEM_PROMPT + contextPrompt;
-    const provider = resolveProvider("ONBOARDING_LLM_PROVIDER");
+
+    // Provider preference: env override wins. Otherwise auto-pick:
+    //   - if Claude Max OAuth is connected for this org -> claude-max-oauth
+    //     (no OPENAI_API_KEY needed, fastest path on Vercel hobby)
+    //   - else fall back to whatever resolveProvider returns (defaults openai)
+    const envOverride = process.env.ONBOARDING_LLM_PROVIDER;
+    let provider = envOverride
+      ? resolveProvider("ONBOARDING_LLM_PROVIDER")
+      : resolveProvider();
+    let claudeMaxOauthToken: string | undefined;
+    if (!envOverride) {
+      // Try Claude Max first
+      try {
+        const { tryDecryptSecret } = await import("@/lib/crypto");
+        const { data: conn } = await supabaseAdmin()
+          .from("rgaios_connections")
+          .select("metadata")
+          .eq("organization_id", user.id)
+          .eq("provider_config_key", "claude-max")
+          .maybeSingle();
+        const meta = (conn?.metadata ?? {}) as { access_token?: string };
+        const tok = tryDecryptSecret(meta.access_token);
+        if (tok) {
+          provider = "claude-max-oauth";
+          claudeMaxOauthToken = tok;
+        }
+      } catch {}
+    }
+    const oauthModel = "claude-sonnet-4-6";
+    const openaiModel = "gpt-4o";
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -1122,12 +1151,14 @@ export async function POST(req: NextRequest) {
             let streamedAny = false;
             const step = await chatComplete({
               provider,
-              model: "gpt-4o",
+              model: provider === "claude-max-oauth" ? oauthModel : openaiModel,
               system: systemBlock,
               messages,
               tools: TOOLS,
               temperature: 0.3,
               maxSteps: 1,
+              claudeMaxOauthToken,
+              organizationId: user.id,
               onTextDelta: (delta) => {
                 streamedAny = true;
                 emit({ type: "text", delta });

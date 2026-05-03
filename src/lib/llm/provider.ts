@@ -43,7 +43,11 @@ import {
  * with the tool results appended to messages.
  */
 
-export type ChatProviderId = "openai" | "anthropic-api" | "anthropic-cli";
+export type ChatProviderId =
+  | "openai"
+  | "anthropic-api"
+  | "anthropic-cli"
+  | "claude-max-oauth";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -93,6 +97,18 @@ export type ChatRequest = {
    * Passed only to the openai backend; the others use their defaults.
    */
   temperature?: number;
+  /**
+   * Per-org Claude Max OAuth access token. Required when provider is
+   * "claude-max-oauth". Caller is responsible for fetching it from
+   * rgaios_connections (provider_config_key='claude-max') + decrypting.
+   */
+  claudeMaxOauthToken?: string;
+  /**
+   * Per-org id for the claude-max-oauth backend so it can write a
+   * chat_reply_failed audit row + auto-refresh the token on 401. Same
+   * org the token belongs to.
+   */
+  organizationId?: string;
 };
 
 export type ChatResponse = {
@@ -117,7 +133,12 @@ export function resolveProvider(callSiteEnvVar?: string): ChatProviderId {
   )
     .toLowerCase()
     .trim();
-  if (raw === "openai" || raw === "anthropic-api" || raw === "anthropic-cli") {
+  if (
+    raw === "openai" ||
+    raw === "anthropic-api" ||
+    raw === "anthropic-cli" ||
+    raw === "claude-max-oauth"
+  ) {
     return raw;
   }
   console.warn(
@@ -150,7 +171,110 @@ export async function chatComplete(req: ChatRequest): Promise<ChatResponse> {
       return runAnthropicApi(req);
     case "anthropic-cli":
       return runAnthropicCli(req);
+    case "claude-max-oauth":
+      return runClaudeMaxOauth(req);
   }
+}
+
+// ─── claude-max-oauth ──────────────────────────────────────────────
+
+const CLAUDE_CODE_PREFIX_FOR_OAUTH =
+  "You are Claude Code, Anthropic's official CLI for Claude.";
+const CLAUDE_MAX_OAUTH_MODEL = "claude-sonnet-4-6";
+
+type AnthropicMessagesContent =
+  | { type: "text"; text: string }
+  | {
+      type: "tool_use";
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+    };
+
+type AnthropicMessagesResp = {
+  content: AnthropicMessagesContent[];
+  stop_reason: string;
+};
+
+/**
+ * Calls Anthropic /v1/messages directly using the per-org Claude Max
+ * OAuth token. Translates OpenAI tool shape -> Anthropic native tools.
+ *
+ * Single round-trip: returns whatever Claude said + any tool_use blocks.
+ * Caller iterates (same contract as runOpenAI / runAnthropicApi).
+ *
+ * The OAuth gate requires:
+ *   anthropic-beta: oauth-2025-04-20
+ *   system: must START with the Claude Code identity line
+ *
+ * Adding extra system content is fine - we prepend the identity line
+ * if the caller's system doesn't already start with it.
+ */
+async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
+  const token = req.claudeMaxOauthToken;
+  if (!token) {
+    throw new Error(
+      "claude-max-oauth requires claudeMaxOauthToken in ChatRequest",
+    );
+  }
+
+  const system = req.system.startsWith(CLAUDE_CODE_PREFIX_FOR_OAUTH)
+    ? req.system
+    : `${CLAUDE_CODE_PREFIX_FOR_OAUTH}\n\n${req.system}`;
+
+  const tools = req.tools?.map((t) => ({
+    name: t.function.name,
+    description: t.function.description ?? "",
+    input_schema: (t.function.parameters as Record<string, unknown>) ?? {
+      type: "object",
+      properties: {},
+    },
+  }));
+
+  const body: Record<string, unknown> = {
+    model: req.model ?? CLAUDE_MAX_OAUTH_MODEL,
+    max_tokens: 4096,
+    system,
+    messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+    ...(tools && tools.length > 0 ? { tools } : {}),
+  };
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "anthropic-version": "2023-06-01",
+      "anthropic-beta": "oauth-2025-04-20",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal: req.abortSignal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`claude-max-oauth ${res.status}: ${text.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as AnthropicMessagesResp;
+  const textParts: string[] = [];
+  const toolCalls: ChatToolCall[] = [];
+  for (const c of data.content) {
+    if (c.type === "text" && typeof c.text === "string") {
+      textParts.push(c.text);
+    } else if (c.type === "tool_use") {
+      toolCalls.push({
+        id: c.id,
+        name: c.name,
+        input: c.input ?? {},
+      });
+    }
+  }
+  const text = textParts.join("\n\n").trim();
+  // Stream-style hook: feed the full text once (caller's onTextDelta is
+  // for incremental tokens; OAuth path doesn't stream, so emit it whole).
+  if (text && req.onTextDelta) req.onTextDelta(text);
+  return { text, toolCalls };
 }
 
 // ─── openai ────────────────────────────────────────────────────────
