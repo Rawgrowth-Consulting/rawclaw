@@ -5,6 +5,7 @@ import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { PageShell } from "@/components/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { DashboardStats } from "@/components/dashboard/stats";
+import { InsightsPanel } from "@/components/insights/insights-panel";
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { getPillarData } from "@/lib/dashboard/pillar-data";
@@ -332,6 +333,10 @@ export default async function DashboardPage() {
       description="Your AI company at a glance  -  goals, agents, tickets, spend."
     >
       <DashboardStats />
+
+      <div className="mt-6">
+        <InsightsPanel />
+      </div>
 
       {!anyPillarOn && (
         <Card className="border-border border-dashed bg-card/30">

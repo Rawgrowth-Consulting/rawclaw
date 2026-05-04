@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { PageShell } from "@/components/page-shell";
 import { DashboardStats } from "@/components/dashboard/stats";
+import { InsightsPanel } from "@/components/insights/insights-panel";
 import { OrgChart } from "@/components/org-chart";
 import { AgentSheet } from "@/components/agent-sheet";
 import { getOrgContext } from "@/lib/auth/admin";
@@ -73,7 +74,11 @@ export default async function DepartmentDetailPage({
     >
       <DashboardStats department={slug} />
 
-      <div className="mb-6">
+      <div className="mt-6">
+        <InsightsPanel department={slug} />
+      </div>
+
+      <div className="mt-6 mb-6">
         <OrgChart departmentSlug={slug} />
       </div>
 
