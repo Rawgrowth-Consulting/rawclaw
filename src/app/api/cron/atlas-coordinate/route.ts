@@ -47,6 +47,10 @@ export async function GET(req: NextRequest) {
       const orgId = o.id;
 
       // Skip if a coordinate msg was written in the last 14 minutes.
+      // Race protection (cron + lazy SWR trigger): the unique index
+      // rgaios_atlas_coord_dedup_idx (migration 0060) catches the
+      // last-millisecond races; this read still gates 99% of dupes
+      // before we burn cycles building a payload.
       const { data: lastMsg } = await db
         .from("rgaios_agent_chat_messages")
         .select("id, created_at")
@@ -148,7 +152,7 @@ export async function GET(req: NextRequest) {
           pendingInsights,
           orgName: o.name,
         });
-        await db.from("rgaios_agent_chat_messages").insert({
+        const idleInsert = await db.from("rgaios_agent_chat_messages").insert({
           organization_id: orgId,
           agent_id: ceoId,
           user_id: null,
@@ -166,12 +170,20 @@ export async function GET(req: NextRequest) {
             },
           },
         } as never);
-        results.push({
-          org: orgId,
-          name: o.name,
-          emitted: true,
-          mode: "idle_nudge",
-        });
+        if (idleInsert.error?.code === "23505") {
+          results.push({
+            org: orgId,
+            name: o.name,
+            skipped: "race_dedup",
+          });
+        } else {
+          results.push({
+            org: orgId,
+            name: o.name,
+            emitted: true,
+            mode: "idle_nudge",
+          });
+        }
         continue;
       }
 
@@ -213,7 +225,7 @@ export async function GET(req: NextRequest) {
       );
 
       const content = lines.join("\n");
-      await db.from("rgaios_agent_chat_messages").insert({
+      const ticketInsert = await db.from("rgaios_agent_chat_messages").insert({
         organization_id: orgId,
         agent_id: ceoId,
         user_id: null,
@@ -231,6 +243,10 @@ export async function GET(req: NextRequest) {
         },
       } as never);
 
+      if (ticketInsert.error?.code === "23505") {
+        results.push({ org: orgId, name: o.name, skipped: "race_dedup" });
+        continue;
+      }
       results.push({
         org: orgId,
         name: o.name,
