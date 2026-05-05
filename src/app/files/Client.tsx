@@ -131,6 +131,30 @@ function iconForMime(mime: string, filename: string) {
   return FileText;
 }
 
+function FileMimeIcon({
+  mime,
+  filename,
+  className = "size-4",
+}: {
+  mime: string;
+  filename: string;
+  className?: string;
+}) {
+  const m = (mime || "").toLowerCase();
+  const n = (filename || "").toLowerCase();
+  if (m.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg)$/i.test(n))
+    return <ImageIcon className={className} />;
+  if (
+    m === "text/csv" ||
+    /\.(csv|xlsx?|tsv)$/i.test(n) ||
+    m.includes("spreadsheet")
+  )
+    return <FileSpreadsheet className={className} />;
+  if (m === "application/pdf" || n.endsWith(".pdf"))
+    return <FileType2 className={className} />;
+  return <FileText className={className} />;
+}
+
 function fmtSize(bytes: number | null) {
   if (!bytes && bytes !== 0) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -348,12 +372,11 @@ function FileCard({
   file: FileRow;
   onDelete: () => void;
 }) {
-  const Icon = iconForMime(file.mime_type, file.title);
   return (
     <div className="group flex items-stretch rounded-xl border border-border bg-card/50 transition-colors hover:border-primary/30 hover:bg-card">
       <div className="flex flex-1 items-center gap-3 p-3 text-left">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-primary/10 text-primary">
-          <Icon className="size-4" />
+          <FileMimeIcon mime={file.mime_type} filename={file.title} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold text-foreground">
