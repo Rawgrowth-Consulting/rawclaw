@@ -18,6 +18,17 @@
 
 const HETZNER_API_BASE = "https://api.hetzner.cloud/v1";
 
+// Tenant guard. Pedro 2026-05-05: the Hetzner project is shared with
+// Chris West and other Rawgrowth members (Marti, Adam, Wylie, Jackson,
+// etc) who already have ~5 servers in there. We MUST never touch any
+// server that we did not create. Every server we provision carries this
+// label; every read / mutate path filters by it; delete refuses without
+// it. NAME_PREFIX is a second-line defence so even a label mishap can't
+// silently destroy someone else's box.
+const RAWCLAW_LABEL_KEY = "rawclaw";
+const RAWCLAW_LABEL_VALUE = "true";
+const NAME_PREFIX = "rawclaw-";
+
 type Headers = { Authorization: string; "Content-Type": string };
 
 function authHeaders(): Headers | null {
@@ -68,6 +79,7 @@ type HetznerServerPayload = {
   id: number;
   name: string;
   status: HetznerServerStatus;
+  labels?: Record<string, string> | null;
   public_net?: {
     ipv4?: { ip?: string | null } | null;
   } | null;
@@ -77,6 +89,13 @@ function extractIp(server: HetznerServerPayload): string | null {
   return server.public_net?.ipv4?.ip ?? null;
 }
 
+function isRawclawOwned(server: HetznerServerPayload): boolean {
+  // Belt + braces: label match OR the rawclaw- name prefix.
+  if (server.labels?.[RAWCLAW_LABEL_KEY] === RAWCLAW_LABEL_VALUE) return true;
+  if (server.name.startsWith(NAME_PREFIX)) return true;
+  return false;
+}
+
 export async function createHetznerServer(input: HetznerServerInput): Promise<{
   id: number;
   name: string;
@@ -84,14 +103,25 @@ export async function createHetznerServer(input: HetznerServerInput): Promise<{
   const headers = authHeaders();
   if (!headers) throw new Error("HETZNER_API_TOKEN not set");
 
+  // Force the rawclaw- prefix and the rawclaw=true label on every
+  // server we create. The shared Hetzner project has other operators'
+  // boxes; both guards make foreign-server confusion impossible.
+  const safeName = input.name.startsWith(NAME_PREFIX)
+    ? input.name
+    : `${NAME_PREFIX}${input.name}`;
+  const labels = {
+    ...(input.labels ?? {}),
+    [RAWCLAW_LABEL_KEY]: RAWCLAW_LABEL_VALUE,
+  };
+
   const body = {
-    name: input.name,
+    name: safeName,
     image: input.image ?? "ubuntu-22.04",
     server_type: input.server_type ?? "cx22",
     location: input.location ?? "nbg1",
     ssh_keys: input.ssh_keys ?? [],
     user_data: input.user_data,
-    labels: input.labels ?? { rawclaw: "true" },
+    labels,
     start_after_create: true,
   };
 
@@ -119,12 +149,45 @@ export async function getHetznerServer(id: number): Promise<HetznerServerInfo> {
   }
   const data = (await res.json()) as { server?: HetznerServerPayload };
   if (!data.server) throw new Error("Hetzner getServer returned no server");
+  if (!isRawclawOwned(data.server)) {
+    throw new Error(
+      `Hetzner getServer refused: server ${id} (${data.server.name}) is not rawclaw-owned`,
+    );
+  }
   return {
     id: data.server.id,
     name: data.server.name,
     status: data.server.status,
     ipv4: extractIp(data.server),
   };
+}
+
+/**
+ * List ONLY servers we own. Filters Hetzner's GET /servers by the
+ * rawclaw=true label so Pedro's audit UI never sees Chris's / Marti's
+ * boxes mixed in.
+ */
+export async function listRawclawServers(): Promise<HetznerServerInfo[]> {
+  const headers = authHeaders();
+  if (!headers) throw new Error("HETZNER_API_TOKEN not set");
+  const params = new URLSearchParams({
+    label_selector: `${RAWCLAW_LABEL_KEY}=${RAWCLAW_LABEL_VALUE}`,
+  });
+  const res = await fetch(
+    `${HETZNER_API_BASE}/servers?${params.toString()}`,
+    { headers },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Hetzner listServers ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const data = (await res.json()) as { servers?: HetznerServerPayload[] };
+  return (data.servers ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    status: s.status,
+    ipv4: extractIp(s),
+  }));
 }
 
 /**
