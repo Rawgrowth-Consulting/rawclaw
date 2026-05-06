@@ -1,8 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { currentOrganizationId } from "@/lib/supabase/constants";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
+
+const VALID_RUN_STATUSES = new Set([
+  "pending",
+  "running",
+  "awaiting_approval",
+  "succeeded",
+  "failed",
+]);
 
 /**
  * GET /api/runs
@@ -18,12 +27,20 @@ export async function GET(req: NextRequest) {
   try {
     const organizationId = await currentOrganizationId();
     const url = new URL(req.url);
-    const limit = Math.min(
-      Number(url.searchParams.get("limit") ?? 50) || 50,
-      200,
+    // Clamp to [1, 200]. Without the lower bound a "limit=-10" query
+    // string makes Postgres throw "LIMIT must not be negative".
+    const limit = Math.max(
+      1,
+      Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200),
     );
     const status = url.searchParams.get("status");
     const routineId = url.searchParams.get("routine_id");
+    if (status && !VALID_RUN_STATUSES.has(status)) {
+      return NextResponse.json({ error: "invalid status" }, { status: 400 });
+    }
+    if (routineId && !isUuid(routineId)) {
+      return NextResponse.json({ error: "invalid routine_id" }, { status: 400 });
+    }
 
     const db = supabaseAdmin();
 
