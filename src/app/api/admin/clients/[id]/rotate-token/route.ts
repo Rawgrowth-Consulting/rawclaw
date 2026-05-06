@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { rotateMcpToken } from "@/lib/clients/queries";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,9 @@ export async function POST(
   }
   try {
     const { id } = await params;
+    if (!isUuid(id)) {
+      return NextResponse.json({ error: "invalid id" }, { status: 400 });
+    }
     const token = await rotateMcpToken(id);
     return NextResponse.json({ mcp_token: token });
   } catch (err) {

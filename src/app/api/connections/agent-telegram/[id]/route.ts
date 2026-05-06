@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { currentOrganizationId } from "@/lib/supabase/constants";
 import { tryDecryptSecret } from "@/lib/crypto";
 import { deleteWebhook } from "@/lib/telegram/client";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  }
   const organizationId = await currentOrganizationId();
   const db = supabaseAdmin();
 

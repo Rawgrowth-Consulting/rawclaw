@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/crypto";
 import { getMe, setWebhook } from "@/lib/telegram/client";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -42,6 +43,9 @@ export async function POST(
   { params }: { params: Promise<{ agentId: string }> },
 ) {
   const { agentId } = await params;
+  if (!isUuid(agentId)) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  }
 
   const ctx = await getOrgContext();
   if (!ctx?.activeOrgId) {
@@ -185,6 +189,9 @@ export async function DELETE(
   { params }: { params: Promise<{ agentId: string }> },
 ) {
   const { agentId } = await params;
+  if (!isUuid(agentId)) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  }
   const ctx = await getOrgContext();
   if (!ctx?.activeOrgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
