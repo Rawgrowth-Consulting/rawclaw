@@ -148,22 +148,41 @@ echo
 # ─── 3. Write .env on the VPS ────────────────────────────────
 bold "▸ Writing .env"
 ESCAPED_ORG="$(printf '%s' "$ORG" | sed 's/"/\\"/g')"
+# Pre-compute secrets so DATABASE_URL can interpolate POSTGRES_PASSWORD.
+POSTGRES_PASSWORD_VAL="$(openssl rand -hex 32)"
+JWT_SECRET_VAL="$(openssl rand -hex 32)"
+NEXTAUTH_SECRET_VAL="$(openssl rand -hex 32)"
+CRON_SECRET_VAL="$(openssl rand -hex 32)"
 $SSH "cat > ${TARGET}/.env" <<EOF
 DEPLOY_MODE=self_hosted
 
 POSTGRES_DB=rawgrowth
 POSTGRES_USER=postgres
-POSTGRES_PASSWORD=$(openssl rand -hex 32)
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD_VAL}
 
-JWT_SECRET=$(openssl rand -hex 32)
+# DATABASE_URL targets the docker-compose 'postgres' service hostname.
+# Used by alembic migrations + supabase-js server-side queries that
+# bypass postgrest. Required at build time so docker-compose stops
+# warning about blank substitution; the entrypoint also re-mints
+# this from POSTGRES_* if anything drifts.
+DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD_VAL}@postgres:5432/rawgrowth
+
+JWT_SECRET=${JWT_SECRET_VAL}
 SUPABASE_SERVICE_ROLE_KEY=
 
+# Self-hosted doesn't talk to Supabase Cloud - the in-cluster
+# postgrest container exposes the same REST shape via Caddy. Leave
+# the cloud anon key blank; setting these only silences the
+# docker-compose substitution warning on build.
+NEXT_PUBLIC_SUPABASE_URL=https://${DOMAIN}
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+
 # Secret the VPS-local minute tick sends when calling /api/cron/schedule-tick.
-CRON_SECRET=$(openssl rand -hex 32)
+CRON_SECRET=${CRON_SECRET_VAL}
 
 NEXTAUTH_URL=https://${DOMAIN}
 NEXT_PUBLIC_APP_URL=https://${DOMAIN}
-NEXTAUTH_SECRET=$(openssl rand -hex 32)
+NEXTAUTH_SECRET=${NEXTAUTH_SECRET_VAL}
 CADDY_SITE_ADDRESS=${DOMAIN}
 
 RESEND_API_KEY=${RESEND_API_KEY:-}
