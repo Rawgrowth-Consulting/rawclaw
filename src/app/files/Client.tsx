@@ -299,6 +299,10 @@ export function FilesClient({
 
         {/* Drop zone */}
         <div
+          role="button"
+          tabIndex={0}
+          aria-label={`Upload files to ${activeDef.label}`}
+          data-testid="files-dropzone"
           onDragEnter={(e) => {
             e.preventDefault();
             setDragActive(true);
@@ -310,8 +314,17 @@ export function FilesClient({
           onDragLeave={() => setDragActive(false)}
           onDrop={onDrop}
           onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            // Drop zone needs keyboard parity with mouse: Enter or Space
+            // opens the native file picker. Without this it was an
+            // onClick-only div - mouse-only and screen-reader hostile.
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
           className={
-            "flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center transition-colors " +
+            "flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-10 text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary " +
             (dragActive
               ? "border-primary/50 bg-primary/5"
               : "border-border bg-card/30 hover:border-primary/30 hover:bg-card/50")
