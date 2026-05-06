@@ -55,6 +55,34 @@ async function bootstrapSelfHostedRoles(client: Client) {
         grant all on functions to service_role;
     end $$;
   `);
+
+  // Supabase RLS policies reference auth.jwt() / auth.uid(); on hosted
+  // Supabase those live in the 'auth' schema. Self-hosted postgres has
+  // neither, so RLS migrations fail with "schema 'auth' does not exist".
+  // Stub them to read PostgREST's request.jwt.claims GUC. service_role
+  // bypasses RLS anyway so server-side queries don't depend on this.
+  await client.query(`
+    create schema if not exists auth;
+    grant usage on schema auth to anon, service_role, authenticator;
+
+    create or replace function auth.jwt() returns jsonb
+    language sql stable as $$
+      select coalesce(
+        nullif(current_setting('request.jwt.claims', true), '')::jsonb,
+        '{}'::jsonb
+      )
+    $$;
+
+    create or replace function auth.uid() returns uuid
+    language sql stable as $$
+      select nullif(auth.jwt() ->> 'sub', '')::uuid
+    $$;
+
+    create or replace function auth.role() returns text
+    language sql stable as $$
+      select coalesce(auth.jwt() ->> 'role', 'anon')
+    $$;
+  `);
 }
 
 async function reloadPostgrestSchema(client: Client) {
