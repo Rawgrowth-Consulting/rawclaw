@@ -1,0 +1,85 @@
+{
+  "personas": [
+    {
+      "id": "agency-owner",
+      "label": "Agency owner $2M ARR",
+      "answers": {
+        "section_1": { "channel": "telegram", "handle": "@chrisacme" },
+        "company_basics": { "name": "Acme Marketing Co", "website": "acmemarketing.co", "founded": "2019", "team": 8 },
+        "social": { "ig": "@acme_marketing", "li": "company/acme-marketing" },
+        "origin_story": "2019 Google Ads freelance shop. Niched into fitness studio chains after 2 referral wins.",
+        "business_model": { "offer": "DFY retainers for fitness studio chains", "pricing": "$8k/mo, $50-100k LTV" },
+        "icp": { "who": "Fitness studio owners $1-10M, 2-8 locations", "pain": "Referral-only, no pipeline, member churn" },
+        "marketing": { "ch": ["meta_ads", "li_outbound"], "spend": "$25k/mo", "cac": "$1200" },
+        "sales": { "leads_mo": 40, "close": "15%", "cycle_d": 21 },
+        "fulfilment": { "team": 5, "tools": ["clickup", "loom"] },
+        "finance": { "arr": "$2M", "margin": "55%", "terms": "net_30 + 50%" },
+        "ops": { "team": 8, "comms": "slack" },
+        "experiments": "Podcast guesting fitness shows: 2 deals/3mo. LI outbound beat Meta 2x on CAC.",
+        "decisions": "Founder > $5k. CFO contracts.",
+        "calls": ["weekly_sync", "monthly_qbr"],
+        "free_text": "Replace SDR + JR AM + bookkeeping. Care most about CAC and churn."
+      },
+      "after_onboarding_test_questions": [
+        "Atlas, CAC $1200 close 15%. Cut CAC without losing volume?",
+        "Marketing, 3 LI openers to studio owners 3+ locations.",
+        "Finance, margin if we hire 2 delivery leads at $80k?",
+        "Atlas, coord Mktg+Sales on 30-day test to push close to 20%."
+      ]
+    },
+    {
+      "id": "ecommerce-founder",
+      "label": "Ecom $5M GMV",
+      "answers": {
+        "section_1": { "channel": "telegram", "handle": "@maya_northbrew" },
+        "company_basics": { "name": "Northbrew Coffee", "website": "northbrew.co", "founded": "2021", "team": 6 },
+        "social": { "ig": "@northbrew", "tt": "@northbrewcoffee" },
+        "origin_story": "Founder roasted in Brooklyn garage, 500 bags via IG. $5M GMV yr 3.",
+        "business_model": { "offer": "DTC coffee subs + bags", "pricing": "AOV $46, LTV $180", "delivery": "48h roast-to-door" },
+        "icp": { "who": "US home-brew 28-45, $80k+ HHI", "pain": "Grocery flat, want fresh roast no friction" },
+        "marketing": { "ch": ["meta", "tt", "klaviyo"], "spend": "$120k/mo", "cac": "$38", "roas": "1.9" },
+        "sales": { "orders_mo": 9000, "sub_share": "42%", "repeat_90d": "31%" },
+        "fulfilment": { "wh": "Brooklyn 3PL", "lead_d": 45, "stockouts_q1": 3, "tools": ["shopify"] },
+        "finance": { "gmv": "$5M", "gm": "48%", "cm": "12%" },
+        "ops": { "team": 6, "comms": "slack" },
+        "experiments": "TT UGC beat Meta CAC 30% in Mar. Grinder bundle returns spiked, killed.",
+        "decisions": "Founder > $10k. Ops < $5k.",
+        "calls": ["weekly_growth", "biweekly_supply"],
+        "free_text": "Supply whiplash, ROAS slipping. Need social tests, inv watch, Klaviyo flows."
+      },
+      "after_onboarding_test_questions": [
+        "Atlas, ROAS 2.4 to 1.9 in 30d. Mktg+Fin: cause + 3 fixes.",
+        "Fulf, 45d lead, 3 Q1 stockouts: reorder for 95% stock?",
+        "Finance, if CAC hits $50, sub share to hold CM 12%?",
+        "Atlas, 14d test to lift 90d repeat 31% to 38%."
+      ]
+    },
+    {
+      "id": "saas-founder",
+      "label": "SaaS $800k ARR",
+      "answers": {
+        "section_1": { "channel": "telegram", "handle": "@devon_pipeflow" },
+        "company_basics": { "name": "Pipeflow", "website": "pipeflow.io", "founded": "2022", "team": 5 },
+        "social": { "li": "company/pipeflow", "tw": "@pipeflowhq" },
+        "origin_story": "Two ex-ops eng burnt out on pipeline alerts at Series B. 40 paying in 18mo.",
+        "business_model": { "offer": "Pipeline observability mid-market", "pricing": "$1.6k ACV", "delivery": "self-serve 14d" },
+        "icp": { "who": "Data eng leads, 200-1000 emp SaaS, Snowflake+dbt", "pain": "Pipelines break silent, on-call burnout" },
+        "marketing": { "ch": ["seo", "li", "slack"], "spend": "$8k/mo", "cac": "$2400" },
+        "sales": { "trials_mo": 90, "t2p": "11%", "demos_wk": 6, "cycle_d": 35 },
+        "fulfilment": { "onb": "founder", "tools": ["intercom"] },
+        "finance": { "arr": "$800k", "gm": "78%", "nrr": "92%", "churn_mo": "3.2%" },
+        "ops": { "team": 5, "comms": "slack" },
+        "experiments": "SEO compare vs Monte Carlo drove 40% Q1 trials. Cold outbound 2%, paused.",
+        "decisions": "Founder approves hires + pricing. Co-founder roadmap.",
+        "calls": ["weekly_pipeline", "monthly_churn"],
+        "free_text": "Founder does every demo. 3.2% churn killing growth. Need SDR + health + outreach."
+      },
+      "after_onboarding_test_questions": [
+        "Atlas, churn 3.2%/mo. Sales+Fulf on risk scoring in 7d.",
+        "Sales, qual script so founder takes only > 50% close calls.",
+        "Finance, at 92% NRR and 11% t2p, trials for $2M ARR?",
+        "Atlas, 30d test to lift t2p 11% to 16%."
+      ]
+    }
+  ]
+}

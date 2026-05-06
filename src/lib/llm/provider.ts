@@ -244,39 +244,62 @@ async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
     ...(tools && tools.length > 0 ? { tools } : {}),
   };
 
-  const t0 = Date.now();
-  // Hard 45s budget so a hung request surfaces a real error to the
-  // caller instead of silently chewing the function timeout.
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), 45_000);
+  // 429 retry-with-backoff: when Pedro's Claude Max pool is saturated by
+  // concurrent local CLI sessions the API returns rate_limit_error
+  // immediately. Retry up to 3 times with exponential backoff so the
+  // operator's onboarding doesn't fall over the moment another claude
+  // session burns a slot.
+  const RETRIES = 3;
   let res;
-  try {
-    res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "oauth-2025-04-20",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: req.abortSignal ?? ac.signal,
-    });
-  } catch (e) {
+  let lastErr = "";
+  let attempt = 0;
+  for (attempt = 0; attempt < RETRIES; attempt++) {
+    const t0 = Date.now();
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 45_000);
+    try {
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "oauth-2025-04-20",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal: req.abortSignal ?? ac.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      const elapsed = Date.now() - t0;
+      lastErr = e instanceof Error ? e.message : String(e);
+      console.error(`[claude-max-oauth] fetch threw attempt=${attempt + 1}/${RETRIES} after ${elapsed}ms: ${lastErr}`);
+      // Network-level fail: don't retry past 1 attempt, throw quickly.
+      throw new Error(`claude-max-oauth fetch failed after ${elapsed}ms: ${lastErr}`);
+    }
     clearTimeout(timer);
-    const elapsed = Date.now() - t0;
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error(`[claude-max-oauth] FETCH THREW after ${elapsed}ms: ${msg}`);
-    throw new Error(`claude-max-oauth fetch failed after ${elapsed}ms: ${msg}`);
-  }
-  clearTimeout(timer);
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
+    if (res.ok) break;
+
+    // Only retry 429 + 5xx. 4xx other than 429 (e.g. 401 stale token,
+    // 400 bad request) are permanent for this attempt.
+    if (res.status !== 429 && res.status < 500) break;
+
+    if (attempt < RETRIES - 1) {
+      const wait = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 500);
+      const peek = await res.text().catch(() => "");
+      console.warn(`[claude-max-oauth] ${res.status} attempt ${attempt + 1}/${RETRIES}, retrying in ${wait}ms. Body: ${peek.slice(0, 200)}`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+
+  if (!res || !res.ok) {
+    const text = res ? await res.text().catch(() => "") : lastErr;
+    const status = res?.status ?? 0;
     console.error(
-      `[claude-max-oauth] non-200 ${res.status} after ${Date.now() - t0}ms: ${text.slice(0, 500)}`,
+      `[claude-max-oauth] FINAL FAIL ${status} after ${attempt} attempts: ${text.slice(0, 500)}`,
     );
-    throw new Error(`claude-max-oauth ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`claude-max-oauth ${status}: ${text.slice(0, 300)}`);
   }
 
   const data = (await res.json()) as AnthropicMessagesResp;
