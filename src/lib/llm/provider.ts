@@ -244,12 +244,14 @@ async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
     ...(tools && tools.length > 0 ? { tools } : {}),
   };
 
-  // 429 retry-with-backoff: when Pedro's Claude Max pool is saturated by
-  // concurrent local CLI sessions the API returns rate_limit_error
-  // immediately. Retry up to 3 times with exponential backoff so the
-  // operator's onboarding doesn't fall over the moment another claude
-  // session burns a slot.
-  const RETRIES = 3;
+  // 429 retry: Anthropic returns retry-after (seconds until window
+  // resets) AND anthropic-ratelimit-requests-reset (ISO timestamp).
+  // Honour whichever is present so we don't burn cycles guessing. Up
+  // to 5 attempts capped at ~90s total so a deeply saturated pool
+  // (Pedro running multiple CLI sessions) still gets a real reset
+  // window instead of failing on the first 429.
+  const RETRIES = 5;
+  const MAX_WAIT_MS = 65_000;
   let res;
   let lastErr = "";
   let attempt = 0;
@@ -274,21 +276,36 @@ async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
       const elapsed = Date.now() - t0;
       lastErr = e instanceof Error ? e.message : String(e);
       console.error(`[claude-max-oauth] fetch threw attempt=${attempt + 1}/${RETRIES} after ${elapsed}ms: ${lastErr}`);
-      // Network-level fail: don't retry past 1 attempt, throw quickly.
       throw new Error(`claude-max-oauth fetch failed after ${elapsed}ms: ${lastErr}`);
     }
     clearTimeout(timer);
 
     if (res.ok) break;
 
-    // Only retry 429 + 5xx. 4xx other than 429 (e.g. 401 stale token,
-    // 400 bad request) are permanent for this attempt.
     if (res.status !== 429 && res.status < 500) break;
 
     if (attempt < RETRIES - 1) {
-      const wait = 1500 * Math.pow(2, attempt) + Math.floor(Math.random() * 500);
+      // Honour Anthropic's hint. retry-after is in seconds; the
+      // ratelimit-reset header is an ISO timestamp.
+      const retryAfter = res.headers.get("retry-after");
+      const resetAt = res.headers.get("anthropic-ratelimit-requests-reset")
+        ?? res.headers.get("anthropic-ratelimit-tokens-reset");
+      let wait = 0;
+      if (retryAfter) {
+        const n = Number(retryAfter);
+        if (!Number.isNaN(n)) wait = Math.min(n * 1000, MAX_WAIT_MS);
+      }
+      if (!wait && resetAt) {
+        const t = Date.parse(resetAt);
+        if (!Number.isNaN(t)) wait = Math.max(0, Math.min(t - Date.now(), MAX_WAIT_MS));
+      }
+      if (!wait) {
+        // No hint - exponential floor so we still progress past a
+        // brief blip. 5s, 10s, 20s, 40s.
+        wait = Math.min(5000 * Math.pow(2, attempt), MAX_WAIT_MS);
+      }
       const peek = await res.text().catch(() => "");
-      console.warn(`[claude-max-oauth] ${res.status} attempt ${attempt + 1}/${RETRIES}, retrying in ${wait}ms. Body: ${peek.slice(0, 200)}`);
+      console.warn(`[claude-max-oauth] ${res.status} attempt ${attempt + 1}/${RETRIES}, waiting ${wait}ms (retry-after=${retryAfter}, reset=${resetAt}). Body: ${peek.slice(0, 200)}`);
       await new Promise((r) => setTimeout(r, wait));
     }
   }

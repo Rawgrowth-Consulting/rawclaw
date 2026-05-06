@@ -66,8 +66,13 @@ if (existsSync(PERSONAS_PATH)) {
 function flattenPersona(p) {
   const out = {};
   if (p.answers?.section_1) {
+    // Keep this terse - the LLM-driven extractor sometimes treats a
+    // verbose answer as a new question. "telegram, my handle is X"
+    // confused Atlas in a prior walk; just "telegram" + 2nd msg with
+    // handle works.
     const s = p.answers.section_1;
-    out.section_1_messaging = `${s.messaging_channel} ${s.messaging_handle ?? ""}`.trim();
+    out.section_1_messaging = String(s.messaging_channel ?? s.channel ?? "telegram").toLowerCase();
+    out.section_1_handle = String(s.messaging_handle ?? s.handle ?? "@pedrotest");
   }
   if (p.answers?.company_basics) {
     const b = p.answers.company_basics;

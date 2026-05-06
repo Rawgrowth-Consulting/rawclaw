@@ -53,11 +53,11 @@ export const config: VercelConfig = {
     },
   ],
   functions: {
-    "src/app/api/agents/[id]/chat/route.ts": { maxDuration: 60 },
+    "src/app/api/agents/[id]/chat/route.ts": { maxDuration: 180 },
     "src/app/api/mini-saas/route.ts": { maxDuration: 120 },
     "src/app/api/mini-saas/[id]/route.ts": { maxDuration: 120 },
     "src/app/api/onboarding/sales-calls/upload/route.ts": { maxDuration: 300 },
-    "src/app/api/onboarding/chat/route.ts": { maxDuration: 60 },
+    "src/app/api/onboarding/chat/route.ts": { maxDuration: 180 },
     "src/app/api/cron/schedule-tick/route.ts": { maxDuration: 60 },
     "src/app/api/cron/provision-tick/route.ts": { maxDuration: 300 },
     "src/app/api/cron/insights-tick/route.ts": { maxDuration: 300 },
