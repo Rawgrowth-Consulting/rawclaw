@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { Bell, MessageCircleQuestion, Sparkles, X } from "lucide-react";
@@ -26,6 +26,18 @@ function fmtTs(iso: string): string {
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
+
+  // Esc closes the dropdown. Without this, keyboard users had no way
+  // to dismiss it short of clicking the backdrop or X.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(ev: KeyboardEvent) {
+      if (ev.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   const { data } = useSWR<{ notifications: Notification[] }>(
     "/api/notifications/agents",
     jsonFetcher,
@@ -61,7 +73,11 @@ export function NotificationBell() {
             className="fixed inset-0 z-40 cursor-default"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 top-9 z-50 w-[360px] overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
+          <div
+            role="menu"
+            aria-label="Agent messages"
+            data-testid="notif-bell-dropdown"
+            className="absolute right-0 top-9 z-50 w-[360px] overflow-hidden rounded-lg border border-border bg-card shadow-2xl">
             <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
               <h4 className="text-[11px] font-semibold uppercase tracking-[1.5px] text-muted-foreground">
                 Agent messages ({count})
