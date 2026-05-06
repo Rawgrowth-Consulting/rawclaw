@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { createClient } from "@/lib/clients/queries";
+import { failClosedIfProd } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -137,18 +138,9 @@ export async function POST(req: NextRequest) {
       // never accept, but record nothing else.
       return NextResponse.json({ ok: false, reason: "bad signature" });
     }
-  } else if (process.env.NODE_ENV === "production") {
-    // Prod with no STRIPE_WEBHOOK_SECRET = anyone can POST a fake
-    // checkout.session.completed and trigger createClient(). Refuse
-    // rather than spawn orgs from unverified bodies.
-    console.error(
-      "[stripe-webhook] STRIPE_WEBHOOK_SECRET unset in production - refusing",
-    );
-    return NextResponse.json(
-      { ok: false, reason: "webhook secret not configured" },
-      { status: 500 },
-    );
   } else {
+    const denied = failClosedIfProd("STRIPE_WEBHOOK_SECRET");
+    if (denied) return denied;
     console.warn(
       "[stripe-webhook] STRIPE_WEBHOOK_SECRET unset - trusting body without signature check (non-prod)",
     );

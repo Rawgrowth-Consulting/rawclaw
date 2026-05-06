@@ -278,13 +278,14 @@ export async function POST(
       { status: 400 },
     );
   }
+  // Cap the user turn at 20kb (matches the mini-saas / invites caps).
+  // A multi-megabyte body would balloon the supabase row, the LLM
+  // preamble, and the brand-filter regex pass.
+  const lastContent = last.content.slice(0, 20_000);
 
-  // 1. Persist the user message. Bail loudly if the insert fails - the
-  // supabase client returns errors as a plain object instead of throwing,
-  // so without an explicit check a transient DB blip would silently drop
-  // the message, the route would still call chatReply (burning an LLM
-  // call), and a reload would show an empty thread. Surface a 500 so the
-  // client can show an error and the user can retry.
+  // 1. Persist. supabase returns errors as values - without the check
+  // the user message silently drops, chatReply still burns an LLM call,
+  // and a reload shows an empty thread.
   const userInsert = await db
     .from("rgaios_agent_chat_messages")
     .insert({
@@ -292,7 +293,7 @@ export async function POST(
       agent_id: agentId,
       user_id: userId,
       role: "user",
-      content: last.content,
+      content: lastContent,
     });
   if (userInsert.error) {
     console.error("[chat] user insert failed:", userInsert.error.message);
@@ -324,7 +325,7 @@ export async function POST(
     orgId,
     agentId,
     orgName: ctx.activeOrgName,
-    queryText: last.content,
+    queryText: lastContent,
   });
 
   const encoder = new TextEncoder();
@@ -345,7 +346,7 @@ export async function POST(
           organizationId: orgId,
           organizationName: ctx.activeOrgName,
           chatId: 0,
-          userMessage: last.content,
+          userMessage: lastContent,
           publicAppUrl: process.env.NEXT_PUBLIC_APP_URL ?? "",
           agentId,
           historyOverride: history,
@@ -517,11 +518,11 @@ export async function POST(
         // basically always "thanks" / "ok" / "sim" / a typo.
         const skipMemory =
           !filtered.ok ||
-          last.content.trim().length < 30 ||
+          lastContent.trim().length < 30 ||
           visibleText.trim().length < 30;
         if (!skipMemory) {
           try {
-            const userBit = last.content.trim().slice(0, 140);
+            const userBit = lastContent.trim().slice(0, 140);
             const replyBit =
               visibleText.trim().split(/[.!?\n]/)[0]?.slice(0, 200) ?? "";
             const fact = `User asked: "${userBit}". I responded with: "${replyBit}".`;

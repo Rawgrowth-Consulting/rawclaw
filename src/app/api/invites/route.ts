@@ -3,6 +3,7 @@ import { getOrgContext } from "@/lib/auth/admin";
 import { createInvite } from "@/lib/members/queries";
 import { sendInviteEmail } from "@/lib/auth/email";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { isEmail } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -26,10 +27,7 @@ export async function POST(req: NextRequest) {
   if (!email) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
   }
-  // Minimal RFC 5321 sanity: local@domain.tld. Sufficient to reject
-  // typos like "foo" or "user@" before we waste a sendInviteEmail call
-  // on what would land in a bounce queue anyway.
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (!isEmail(email)) {
     return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
   }
 

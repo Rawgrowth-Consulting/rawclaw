@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { upsertConnection, deleteConnection } from "@/lib/connections/queries";
 import { nango } from "@/lib/nango/server";
+import { failClosedIfProd } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 
@@ -23,13 +24,10 @@ export const runtime = "nodejs";
 function verifySignature(rawBody: string, signatureHeader: string | null) {
   const secret = process.env.NANGO_WEBHOOK_SECRET;
   if (!secret) {
-    // Same fail-closed-in-prod pattern as stripe webhook (011a590) +
-    // cron auth helper (af1c965). Without the secret a misconfigured
-    // prod lets anyone POST a fake nango auth event and trigger
-    // upsertConnection() for any org_id of their choosing - effectively
-    // forging a "your <provider> is connected" row.
-    if (process.env.NODE_ENV === "production") return false;
-    return true; // dev / staging without secret configured
+    // failClosedIfProd returns a 500 in prod / null in dev. Treat
+    // a non-null response as "refuse this request" via boolean false;
+    // caller maps to 401.
+    return failClosedIfProd("NANGO_WEBHOOK_SECRET") === null;
   }
   if (!signatureHeader) return false;
   const expected = crypto
