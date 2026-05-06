@@ -7,6 +7,7 @@ import {
   findBestAgent,
   loadSopContent,
 } from "@/app/api/sops/[id]/schedule/extract";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -44,6 +45,9 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const { id } = await params;
+    if (!isUuid(id)) {
+      return NextResponse.json({ error: "invalid id" }, { status: 400 });
+    }
     const orgId = ctx.activeOrgId;
 
     const body = (await req.json().catch(() => ({}))) as {

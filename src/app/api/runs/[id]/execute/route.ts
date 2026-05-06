@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { dispatchRun } from "@/lib/runs/dispatch";
 import { getRun } from "@/lib/runs/queries";
 import { getOrgContext } from "@/lib/auth/admin";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -24,6 +25,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  }
   const run = await getRun(id);
   if (!run) return NextResponse.json({ error: "not found" }, { status: 404 });
 

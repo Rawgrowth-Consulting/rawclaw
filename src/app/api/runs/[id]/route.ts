@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { currentOrganizationId } from "@/lib/supabase/constants";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,9 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    if (!isUuid(id)) {
+      return NextResponse.json({ error: "invalid id" }, { status: 400 });
+    }
     const organizationId = await currentOrganizationId();
     const db = supabaseAdmin();
 
