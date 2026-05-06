@@ -176,6 +176,20 @@ export async function GET(req: NextRequest) {
             name: o.name,
             skipped: "race_dedup",
           });
+        } else if (idleInsert.error) {
+          // Non-dedup failure - log so we don't silently miss a beat in
+          // the proactive cadence. Atlas going quiet is the kind of
+          // regression nobody notices for hours.
+          console.error(
+            `[atlas-coordinate] idle insert failed for org ${orgId}:`,
+            idleInsert.error.message,
+          );
+          results.push({
+            org: orgId,
+            name: o.name,
+            error: idleInsert.error.message,
+            mode: "idle_nudge",
+          });
         } else {
           results.push({
             org: orgId,
@@ -245,6 +259,18 @@ export async function GET(req: NextRequest) {
 
       if (ticketInsert.error?.code === "23505") {
         results.push({ org: orgId, name: o.name, skipped: "race_dedup" });
+        continue;
+      }
+      if (ticketInsert.error) {
+        console.error(
+          `[atlas-coordinate] ticket insert failed for org ${orgId}:`,
+          ticketInsert.error.message,
+        );
+        results.push({
+          org: orgId,
+          name: o.name,
+          error: ticketInsert.error.message,
+        });
         continue;
       }
       results.push({

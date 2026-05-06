@@ -476,14 +476,26 @@ export async function POST(
         }
 
         // 5. Persist the assistant reply (or operator-warning sentinel).
-        await db.from("rgaios_agent_chat_messages").insert({
-          organization_id: orgId,
-          agent_id: agentId,
-          user_id: null,
-          role: "assistant",
-          content: visibleText,
-          metadata: persistMetadata,
-        });
+        // Log the cause of any failure so we don't silently lose a reply
+        // the operator just saw stream into the page. The client already
+        // has the visible text so we don't fail the request - just
+        // surface the issue in server logs for follow-up.
+        const assistantInsert = await db
+          .from("rgaios_agent_chat_messages")
+          .insert({
+            organization_id: orgId,
+            agent_id: agentId,
+            user_id: null,
+            role: "assistant",
+            content: visibleText,
+            metadata: persistMetadata,
+          });
+        if (assistantInsert.error) {
+          console.error(
+            "[chat] assistant insert failed:",
+            assistantInsert.error.message,
+          );
+        }
 
         // 5b. Extract a single short memory from this exchange so future
         // chats remember decisions / facts / preferences. Heuristic v0:
