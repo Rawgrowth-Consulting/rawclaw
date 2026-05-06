@@ -295,7 +295,11 @@ export async function executeChatTask(input: {
 
   const completedAt = new Date().toISOString();
   if (result.ok) {
-    await db
+    // Log if the success update fails - leaving the run in pending
+    // means the next schedule-tick may re-claim it and the chat tab
+    // shows a stuck task. Caller doesn't currently react but at least
+    // we get a server log for follow-up.
+    const upd = await db
       .from("rgaios_routine_runs")
       .update({
         status: "succeeded",
@@ -303,6 +307,12 @@ export async function executeChatTask(input: {
         output: { reply: result.reply, executed_inline: true },
       } as never)
       .eq("id", input.runId);
+    if (upd.error) {
+      console.error(
+        `[tasks] succeeded-update failed for run ${input.runId}:`,
+        upd.error.message,
+      );
+    }
 
     // Mirror the output as an assistant chat message so the assignee's
     // Chat tab shows the work that just happened (operator can scroll
@@ -335,7 +345,7 @@ export async function executeChatTask(input: {
       } as never);
     } catch {}
   } else {
-    await db
+    const updFail = await db
       .from("rgaios_routine_runs")
       .update({
         status: "failed",
@@ -343,5 +353,11 @@ export async function executeChatTask(input: {
         error: result.error,
       } as never)
       .eq("id", input.runId);
+    if (updFail.error) {
+      console.error(
+        `[tasks] failed-update failed for run ${input.runId}:`,
+        updFail.error.message,
+      );
+    }
   }
 }
