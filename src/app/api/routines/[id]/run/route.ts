@@ -4,7 +4,7 @@ import { markRoutineRunNow } from "@/lib/routines/queries";
 import { getOrgContext } from "@/lib/auth/admin";
 import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { dispatchRun } from "@/lib/runs/dispatch";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -22,9 +22,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const ctx = await getOrgContext();
     if (!ctx?.activeOrgId || !ctx.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

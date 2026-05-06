@@ -3,18 +3,16 @@
 import useSWR from "swr";
 import { jsonFetcher } from "@/lib/swr";
 
+export { RUN_STATUSES, type RunStatus } from "./constants";
+import type { RunStatus } from "./constants";
+
 export type RunSummary = {
   id: string;
   organization_id: string;
   routine_id: string;
   trigger_id: string | null;
   source: string;
-  status:
-    | "pending"
-    | "running"
-    | "awaiting_approval"
-    | "succeeded"
-    | "failed";
+  status: RunStatus;
   input_payload: Record<string, unknown> | null;
   output: Record<string, unknown> | null;
   error: string | null;

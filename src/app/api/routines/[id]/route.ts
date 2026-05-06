@@ -6,7 +6,7 @@ import {
 } from "@/lib/routines/queries";
 import { currentOrganizationId } from "@/lib/supabase/constants";
 import type { RoutineTrigger } from "@/lib/routines/constants";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -16,9 +16,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const body = await req.json();
 
     // Small convenience: if caller only wants to flip status, accept
@@ -59,9 +58,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     await deleteRoutine((await currentOrganizationId()), id);
     return NextResponse.json({ ok: true });
   } catch (err) {

@@ -6,16 +6,15 @@ import {
   upsertEventType,
 } from "@/lib/booking/queries";
 import { eventTypeFormSchema } from "@/lib/booking/validation";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
 export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const orgId = await currentOrganizationId();
     const evt = await getEventTypeById(orgId, id);
     if (!evt) return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -28,9 +27,8 @@ export async function GET(_: NextRequest, ctx: { params: Promise<{ id: string }>
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const orgId = await currentOrganizationId();
     const body = await req.json();
     const parsed = eventTypeFormSchema.safeParse(body);
@@ -47,9 +45,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 export async function DELETE(_: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const orgId = await currentOrganizationId();
     await deleteEventType(orgId, id);
     return NextResponse.json({ ok: true });

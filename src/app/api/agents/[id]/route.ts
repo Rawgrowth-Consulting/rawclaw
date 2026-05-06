@@ -6,7 +6,7 @@ import {
 } from "@/lib/agents/queries";
 import { currentOrganizationId } from "@/lib/supabase/constants";
 import { wouldCreateCycle } from "@/lib/tree";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -16,9 +16,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const orgId = await currentOrganizationId();
     // Tolerate empty / malformed JSON bodies. The router can race against an
     // aborted client (page navigation cancels the in-flight PATCH), in which
@@ -115,9 +114,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     await deleteAgent(await currentOrganizationId(), id);
     return NextResponse.json({ ok: true });
   } catch (err) {

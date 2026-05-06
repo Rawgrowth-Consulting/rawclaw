@@ -7,7 +7,7 @@ import {
 } from "@/lib/knowledge/queries";
 import { currentOrganizationId } from "@/lib/supabase/constants";
 import { deleteCompanyChunksFor } from "@/lib/knowledge/company-corpus";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -17,9 +17,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const organizationId = (await currentOrganizationId());
     const row = await getKnowledgeFile(organizationId, id);
     if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -41,9 +40,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const orgId = await currentOrganizationId();
     await deleteKnowledgeFile(orgId, id);
     // Clean up the corpus chunks too. company_chunks has no FK back to
@@ -73,9 +71,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const body = (await req.json()) as { tags?: string[] };
     if (!Array.isArray(body.tags)) {
       return NextResponse.json({ error: "tags[] required" }, { status: 400 });

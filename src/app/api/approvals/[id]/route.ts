@@ -3,7 +3,7 @@ import { getOrgContext } from "@/lib/auth/admin";
 import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { decideApproval } from "@/lib/approvals/queries";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -17,9 +17,8 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  if (!isUuid(id)) {
-    return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  }
+  const bad = badUuidResponse(id);
+  if (bad) return bad;
   const body = (await req.json().catch(() => ({}))) as {
     decision?: "approved" | "rejected";
   };

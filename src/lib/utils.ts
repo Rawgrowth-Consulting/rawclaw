@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { NextResponse } from "next/server";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,4 +15,23 @@ const UUID_RE =
 
 export function isUuid(v: unknown): v is string {
   return typeof v === "string" && UUID_RE.test(v);
+}
+
+/**
+ * Returns null when v is a UUID, or a 400 JSON response otherwise.
+ * Use at the top of any /api/[id] route:
+ *
+ *   const bad = badUuidResponse(id);
+ *   if (bad) return bad;
+ *
+ * Centralises the 17 inline copies of the same 3-line guard.
+ */
+export function badUuidResponse(v: unknown): NextResponse | null {
+  if (isUuid(v)) return null;
+  return NextResponse.json({ error: "invalid id" }, { status: 400 });
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export function isEmail(v: unknown): v is string {
+  return typeof v === "string" && EMAIL_RE.test(v);
 }

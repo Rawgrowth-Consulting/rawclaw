@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -19,9 +19,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  if (!isUuid(id)) {
-    return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  }
+  const bad = badUuidResponse(id);
+  if (bad) return bad;
   const ctx = await getOrgContext();
   if (!ctx?.userId || !ctx.activeOrgId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

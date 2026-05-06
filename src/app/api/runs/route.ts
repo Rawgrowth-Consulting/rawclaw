@@ -1,17 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { currentOrganizationId } from "@/lib/supabase/constants";
+import { RUN_STATUSES, type RunStatus } from "@/lib/runs/constants";
 import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
-const VALID_RUN_STATUSES = new Set([
-  "pending",
-  "running",
-  "awaiting_approval",
-  "succeeded",
-  "failed",
-]);
+const VALID_RUN_STATUSES = new Set<string>(RUN_STATUSES);
 
 /**
  * GET /api/runs
@@ -51,10 +46,7 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(limit);
     if (status) {
-      q = q.eq(
-        "status",
-        status as "pending" | "running" | "awaiting_approval" | "succeeded" | "failed",
-      );
+      q = q.eq("status", status as RunStatus);
     }
     if (routineId) q = q.eq("routine_id", routineId);
 

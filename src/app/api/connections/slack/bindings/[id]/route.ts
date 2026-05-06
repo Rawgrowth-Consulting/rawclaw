@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { currentOrganizationId } from "@/lib/supabase/constants";
 import { deleteBinding, updateBinding } from "@/lib/slack/bindings";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -11,9 +11,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const organizationId = await currentOrganizationId();
     const patch = (await req.json()) as Record<string, unknown>;
     const binding = await updateBinding(id, organizationId, patch);
@@ -32,9 +31,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    if (!isUuid(id)) {
-      return NextResponse.json({ error: "invalid id" }, { status: 400 });
-    }
+    const bad = badUuidResponse(id);
+    if (bad) return bad;
     const organizationId = await currentOrganizationId();
     await deleteBinding(id, organizationId);
     return NextResponse.json({ ok: true });

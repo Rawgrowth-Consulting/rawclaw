@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -19,9 +19,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!isUuid(id)) {
-    return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  }
+  const bad = badUuidResponse(id);
+  if (bad) return bad;
   const body = (await req.json().catch(() => ({}))) as { status?: string };
   const status = body.status;
   if (status !== "acknowledged" && status !== "dismissed") {

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { generateMiniSaas } from "@/lib/mini-saas/generator";
-import { isUuid } from "@/lib/utils";
+import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -16,9 +16,8 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!isUuid(id)) {
-    return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  }
+  const bad = badUuidResponse(id);
+  if (bad) return bad;
   const { data } = await supabaseAdmin()
     .from("rgaios_mini_saas")
     .select(
@@ -44,9 +43,8 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!isUuid(id)) {
-    return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  }
+  const bad = badUuidResponse(id);
+  if (bad) return bad;
   const body = (await req.json().catch(() => ({}))) as { prompt?: string };
   const newPrompt = body.prompt?.trim();
 
@@ -107,9 +105,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const { id } = await params;
-  if (!isUuid(id)) {
-    return NextResponse.json({ error: "invalid id" }, { status: 400 });
-  }
+  const bad = badUuidResponse(id);
+  if (bad) return bad;
   const { error } = await supabaseAdmin()
     .from("rgaios_mini_saas")
     .delete()
