@@ -1131,6 +1131,53 @@ export async function POST(req: NextRequest) {
         }
       } catch {}
     }
+
+    // Local refresh helper. Mirrors tryRefreshClaudeMaxToken in
+    // src/lib/agent/chat.ts so onboarding chat survives the same
+    // expired-access-token case Atlas chat already handles.
+    async function refreshClaudeMaxToken(orgId: string): Promise<string | null> {
+      try {
+        const { encryptSecret, tryDecryptSecret } = await import("@/lib/crypto");
+        const { refreshClaudeMaxAccessToken } = await import("@/lib/agent/oauth");
+        const { data } = await supabaseAdmin()
+          .from("rgaios_connections")
+          .select("metadata")
+          .eq("organization_id", orgId)
+          .eq("provider_config_key", "claude-max")
+          .maybeSingle();
+        if (!data) return null;
+        const meta = (data.metadata ?? {}) as {
+          access_token?: string;
+          refresh_token?: string;
+        };
+        const currentRefresh = tryDecryptSecret(meta.refresh_token);
+        if (!currentRefresh) return null;
+        const r = await refreshClaudeMaxAccessToken(currentRefresh);
+        if (!r.ok) {
+          console.warn(`[onboarding-chat] refresh failed: ${r.error.slice(0, 200)}`);
+          return null;
+        }
+        await supabaseAdmin()
+          .from("rgaios_connections")
+          .update({
+            metadata: {
+              ...meta,
+              access_token: encryptSecret(r.access_token),
+              refresh_token: r.refresh_token
+                ? encryptSecret(r.refresh_token)
+                : (meta.refresh_token ?? ""),
+              expires_in: r.expires_in ?? null,
+              installed_at: new Date().toISOString(),
+            },
+          } as never)
+          .eq("organization_id", orgId)
+          .eq("provider_config_key", "claude-max");
+        return r.access_token;
+      } catch (e) {
+        console.warn(`[onboarding-chat] refresh threw: ${(e as Error).message}`);
+        return null;
+      }
+    }
     const oauthModel = "claude-sonnet-4-6";
     const openaiModel = "gpt-4o";
     const gatewayModel = "anthropic/claude-sonnet-4.6";
@@ -1188,8 +1235,8 @@ export async function POST(req: NextRequest) {
             }, 1000);
 
             let step;
-            try {
-              step = await chatComplete({
+            const callChat = async () =>
+              chatComplete({
                 provider,
                 model:
                   provider === "claude-max-oauth"
@@ -1209,6 +1256,28 @@ export async function POST(req: NextRequest) {
                   emit({ type: "text", delta });
                 },
               });
+            try {
+              try {
+                step = await callChat();
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e);
+                // Silent refresh on 401 - mirrors Atlas chat behaviour.
+                // The CLI on Pedro's host rotates the access token without
+                // updating the DB row, so the stored access_token expires
+                // even though refresh_token still works.
+                if (provider === "claude-max-oauth" && msg.includes("401")) {
+                  console.warn(`[onboarding-chat] 401 from claude-max, attempting refresh`);
+                  const fresh = await refreshClaudeMaxToken(user.id);
+                  if (fresh) {
+                    claudeMaxOauthToken = fresh;
+                    step = await callChat();
+                  } else {
+                    throw e;
+                  }
+                } else {
+                  throw e;
+                }
+              }
             } catch (err) {
               clearInterval(heartbeat);
               const raw = err instanceof Error ? err.message : String(err);
