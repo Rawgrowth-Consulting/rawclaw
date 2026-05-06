@@ -37,7 +37,10 @@ export async function GET(req: NextRequest) {
 
   for (const orgId of orgIds) {
     try {
-      // Call the per-org sync route - it handles the actual GraphQL pull
+      // Call the per-org sync route - it handles the actual GraphQL pull.
+      // 60s timeout: Fireflies' GraphQL can be slow on large transcripts but
+      // a single hung org must NOT consume the cron's 300s budget and starve
+      // every other org. AbortSignal.timeout fires onto the upstream fetch.
       const r = await fetch(
         `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/sales-calls/fireflies/poll`,
         {
@@ -47,6 +50,7 @@ export async function GET(req: NextRequest) {
             authorization: `Bearer ${expected ?? ""}`,
             "x-org-id": orgId,
           },
+          signal: AbortSignal.timeout(60_000),
         },
       );
       const body = (await r.json().catch(() => ({}))) as {

@@ -22,10 +22,15 @@ async function call<T>(
   method: string,
   body?: Record<string, unknown>,
 ): Promise<T> {
+  // 15s ceiling per Telegram API call. The drain server fans out
+  // multiple of these per webhook (typing indicator + edit message
+  // + send), so unbounded stalls would compound and miss Telegram's
+  // 60s webhook delivery deadline.
   const res = await fetch(`${API_ROOT}/bot${token}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: body ? JSON.stringify(body) : "{}",
+    signal: AbortSignal.timeout(15_000),
   });
   const json = (await res.json()) as TgResponse<T>;
   if (!json.ok) {
