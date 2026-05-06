@@ -184,6 +184,7 @@ export function AgentPanelClient({
   directReports = [],
   reportsToAgent = null,
   connectors = [],
+  initialChatMessages = [],
 }: {
   agent: Agent;
   memory: MemoryEntry[];
@@ -194,6 +195,7 @@ export function AgentPanelClient({
   directReports?: DirectReport[];
   reportsToAgent?: ParentAgent | null;
   connectors?: ConnectorLite[];
+  initialChatMessages?: Array<{ role: string; content: string }>;
 }) {
   // Honor `?tab=<name>` so the post-hire toast deep-link
   // (`/agents/<id>?tab=files`) lands the operator on Files tab.
@@ -421,6 +423,7 @@ export function AgentPanelClient({
               agentName={agent.name}
               agentRole={agent.role}
               agentTitle={agent.title}
+              initialMessages={initialChatMessages}
             />
           </div>
         )}

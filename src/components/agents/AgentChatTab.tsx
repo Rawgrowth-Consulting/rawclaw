@@ -37,6 +37,11 @@ interface AgentChatTabProps {
   agentName?: string;
   agentRole?: string | null;
   agentTitle?: string;
+  // SSR-loaded thread so the panel renders existing messages on first
+  // paint instead of waiting on a useEffect fetch. Eliminates the
+  // hydration race where Playwright reads bodyText before the client
+  // GET completes under load.
+  initialMessages?: Array<{ role: string; content: string }>;
 }
 
 // Lucide icons keyed by the string the AGENT_ROLES catalog stores.
@@ -199,13 +204,22 @@ export default function AgentChatTab({
   agentName,
   agentRole,
   agentTitle,
+  initialMessages = [],
 }: AgentChatTabProps) {
   const router = useRouter();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    initialMessages
+      .filter(
+        (m): m is { role: ChatMessage["role"]; content: string } =>
+          (m.role === "user" || m.role === "assistant" || m.role === "system") &&
+          typeof m.content === "string",
+      )
+      .map((m) => ({ role: m.role, content: m.content })),
+  );
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState("");
-  const [hydrated, setHydrated] = useState(false);
+  const [hydrated, setHydrated] = useState(initialMessages.length > 0);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);

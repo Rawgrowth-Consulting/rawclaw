@@ -155,6 +155,22 @@ export default async function AgentDetailPage({
     }
   }
 
+  // Pre-load chat history on the server so AgentChatTab renders the
+  // thread on first paint. Avoids a flash-of-empty-thread + the
+  // hydration-race where automated tests read bodyText before the
+  // client useEffect GET resolves under load.
+  const { data: chatRows } = await db
+    .from("rgaios_agent_chat_messages")
+    .select("role, content, metadata, created_at")
+    .eq("organization_id", orgId)
+    .eq("agent_id", id)
+    .or("metadata->>archived.is.null,metadata->>archived.eq.false")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const initialChatMessages = (chatRows ?? [])
+    .map((r) => r as unknown as { role: string; content: string })
+    .reverse();
+
   const orgConnections = await listConnectionsForOrg(orgId);
   const connectors = orgConnections
     .filter((c) => c.status === "connected")
@@ -176,6 +192,7 @@ export default async function AgentDetailPage({
       directReports={directReports}
       reportsToAgent={reportsToAgent}
       connectors={connectors}
+      initialChatMessages={initialChatMessages}
     />
   );
 }
