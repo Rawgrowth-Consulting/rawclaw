@@ -3,6 +3,13 @@
 # In local dev the compose file points this at :80 on localhost.
 
 {$CADDY_SITE_ADDRESS:localhost} {
+  # tls internal = self-signed cert (no Let's Encrypt round-trip).
+  # Use when Cloudflare proxy fronts the host in Full SSL mode:
+  # Cloudflare terminates TLS at the edge and re-encrypts to the
+  # origin without verifying the origin chain. Avoids LE rate limits
+  # when a hostname cycles through repeated deploys.
+  tls internal
+
   encode gzip
 
   # App — all HTTP traffic
