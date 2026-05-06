@@ -24,21 +24,47 @@ export async function POST(req: NextRequest) {
   }
 
   const body = (await req.json().catch(() => ({}))) as {
-    source?: string;
-    label?: string;
-    text?: string;
-    metadata?: Record<string, unknown>;
+    source?: unknown;
+    label?: unknown;
+    text?: unknown;
+    metadata?: unknown;
   };
 
-  const text = body.text?.trim();
-  if (!text || text.length < 10) {
+  // Strict type checks - the chunker downstream casts to string and
+  // tokenises; passing a non-string trips a 500 with empty body.
+  if (typeof body.text !== "string") {
+    return NextResponse.json(
+      { error: "text is required (string, 10+ chars)" },
+      { status: 400 },
+    );
+  }
+  const text = body.text.trim();
+  if (text.length < 10) {
     return NextResponse.json(
       { error: "text is required (10+ chars)" },
       { status: 400 },
     );
   }
-  const source = body.source ?? "manual_entry";
-  const label = body.label?.trim() ?? "manual entry";
+  // Cap input at 1 MB so the embedder can't be made to OOM by a giant
+  // body (Pedro: explicit 1 MB cap from the brief).
+  if (text.length > 1_000_000) {
+    return NextResponse.json(
+      { error: "text exceeds 1 MB limit" },
+      { status: 413 },
+    );
+  }
+  const source =
+    typeof body.source === "string" && body.source.trim()
+      ? body.source.trim().slice(0, 64)
+      : "manual_entry";
+  const label =
+    typeof body.label === "string" && body.label.trim()
+      ? body.label.trim().slice(0, 200)
+      : "manual entry";
+  const metadata =
+    body.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+      ? (body.metadata as Record<string, unknown>)
+      : {};
 
   const result = await ingestCompanyChunk({
     orgId: ctx.activeOrgId,
@@ -49,7 +75,7 @@ export async function POST(req: NextRequest) {
       label,
       entered_by: ctx.userId ?? "unknown",
       entered_at: new Date().toISOString(),
-      ...(body.metadata ?? {}),
+      ...metadata,
     },
   });
 

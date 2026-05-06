@@ -29,8 +29,9 @@ export async function GET() {
     const scoped = filterAgentsByDept(agents, allowed);
     return NextResponse.json({ agents: scoped });
   } catch (err) {
+    console.error("[agents GET] error", (err as Error).message);
     return NextResponse.json(
-      { error: (err as Error).message },
+      { error: "internal error" },
       { status: 500 },
     );
   }
@@ -38,26 +39,42 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const orgId = await currentOrganizationId();
-    const roleLabel = typeof body.role === "string" ? body.role.trim() : "";
+    const roleLabel = typeof body.role === "string" ? (body.role as string).trim() : "";
+
+    // Reject empty / whitespace-only name early so we don't pollute the
+    // org with placeholder agents named "".
+    const name = String(body.name ?? "").trim();
+    if (!name) {
+      return NextResponse.json(
+        { error: "name is required" },
+        { status: 400 },
+      );
+    }
+    if (name.length > 200) {
+      return NextResponse.json(
+        { error: "name too long (max 200 chars)" },
+        { status: 400 },
+      );
+    }
 
     const agent = await createAgent(orgId, {
-      name: String(body.name ?? "").trim(),
-      title: String(body.title ?? "").trim(),
+      name,
+      title: String(body.title ?? "").trim().slice(0, 200),
       role: body.role,
       reportsTo: body.reportsTo ?? null,
-      description: String(body.description ?? "").trim(),
+      description: String(body.description ?? "").trim().slice(0, 5000),
       runtime: body.runtime ?? DEFAULT_AGENT_RUNTIME,
       budgetMonthlyUsd: Number(body.budgetMonthlyUsd ?? 500),
       writePolicy:
         body.writePolicy &&
         typeof body.writePolicy === "object" &&
         !Array.isArray(body.writePolicy)
-          ? body.writePolicy
+          ? (body.writePolicy as Record<string, unknown>)
           : undefined,
-      department: body.department ?? null,
-      isDepartmentHead: body.isDepartmentHead ?? false,
+      department: (body.department as string | null | undefined) ?? null,
+      isDepartmentHead: Boolean(body.isDepartmentHead ?? false),
     });
 
     // Plan §3 + §4. Apply role template (system_prompt + skills + starter
@@ -70,8 +87,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ agent, trained }, { status: 201 });
   } catch (err) {
+    console.error("[agents POST] error", (err as Error).message);
     return NextResponse.json(
-      { error: (err as Error).message },
+      { error: "internal error" },
       { status: 500 },
     );
   }

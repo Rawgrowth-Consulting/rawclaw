@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,9 @@ export async function POST(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { id } = await params;
+  if (!isUuid(id)) {
+    return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  }
   const orgId = ctx.activeOrgId;
   const db = supabaseAdmin();
 
