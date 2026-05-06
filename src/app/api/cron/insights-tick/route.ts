@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { sweepAllDepts } from "@/lib/insights/generator";
+import { requireCronAuth } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -25,13 +26,8 @@ export const maxDuration = 300;
 const DEFAULT_INTERVAL_H = 6;
 
 export async function GET(req: NextRequest) {
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${expected}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const denied = requireCronAuth(req);
+  if (denied) return denied;
 
   const intervalH =
     Number(process.env.INSIGHTS_CHECK_INTERVAL_HOURS) || DEFAULT_INTERVAL_H;

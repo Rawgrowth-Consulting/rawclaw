@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { requireCronAuth } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -15,13 +16,11 @@ export const maxDuration = 300;
  * Auth: Bearer ${CRON_SECRET}.
  */
 export async function GET(req: NextRequest) {
+  const denied = requireCronAuth(req);
+  if (denied) return denied;
+  // The per-org fan-out below forwards this same secret to
+  // /api/sales-calls/fireflies/poll, which gates on CRON_SECRET too.
   const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${expected}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
 
   // Find orgs with Fireflies keys
   const { data: conns } = await supabaseAdmin()

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { tryDecryptSecret } from "@/lib/crypto";
+import { requireCronAuth } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 
@@ -18,13 +19,8 @@ export const runtime = "nodejs";
  * cookie required), but still validates the bearer here.
  */
 export async function GET(req: NextRequest) {
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${expected}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const denied = requireCronAuth(req);
+  if (denied) return denied;
 
   const { data, error } = await supabaseAdmin()
     .from("rgaios_connections")

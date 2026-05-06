@@ -15,6 +15,7 @@ import {
 } from "@/lib/provision/hetzner";
 import { upsertA, isCloudflareEnabled } from "@/lib/provision/cloudflare";
 import { sendWelcomeEmail } from "@/lib/auth/email";
+import { requireCronAuth } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -37,13 +38,8 @@ export const maxDuration = 300;
 const PROCESS_LIMIT = 5;
 
 export async function GET(req: NextRequest) {
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${expected}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const denied = requireCronAuth(req);
+  if (denied) return denied;
 
   // Provider preference: Hetzner if its token is set, else DigitalOcean.
   // Hetzner takes precedence so an operator flipping HETZNER_API_TOKEN on

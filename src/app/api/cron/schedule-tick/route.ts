@@ -3,6 +3,7 @@ import { CronExpressionParser } from "cron-parser";
 
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { dispatchRun } from "@/lib/runs/dispatch";
+import { requireCronAuth } from "@/lib/cron/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -24,13 +25,8 @@ export const maxDuration = 300;
 const STALE_PENDING_MS = 10 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${expected}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const denied = requireCronAuth(req);
+  if (denied) return denied;
 
   // The self-hosted tick tells us whether its local claude executor is
   // actually alive. If not, we skip firing new schedule runs entirely so
