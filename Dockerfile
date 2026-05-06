@@ -9,6 +9,12 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
+# patch-package runs in postinstall and patches fastembed's broken
+# `import tar from "tar"` (tar v7 dropped default export). Without
+# the patches/ dir present at install time, patch-package logs
+# "No patch files found" and the build later fails on the unpatched
+# fastembed source.
+COPY patches ./patches
 RUN npm ci
 
 FROM node:20-alpine AS builder
