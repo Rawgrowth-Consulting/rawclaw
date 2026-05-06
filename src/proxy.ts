@@ -25,12 +25,69 @@ const PUBLIC_API_PREFIXES = [
   "/api/book",             // public booking endpoints (slot fetch + create + manage)
 ];
 
+// CSRF defense-in-depth (on top of SameSite=Lax session cookies):
+// every state-changing request to /api/* must have an Origin or Referer
+// header that matches the request host. Browsers always set Origin on
+// cross-origin POST so an attacker page can't silently issue a
+// session-authenticated POST. Same-origin XHR works as before.
+const STATE_CHANGING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const CSRF_EXEMPT_PREFIXES = [
+  "/api/auth", // NextAuth has its own csrfToken
+  "/api/mcp", // bearer auth, no cookie session
+  "/api/health",
+  "/api/nango/webhook",
+  "/api/webhooks",
+  "/api/cron",
+  "/api/connections/slack/oauth/callback",
+  "/api/book", // public booking
+  "/api/invites/accept",
+];
+
+function originLooksSafe(req: Request, host: string): boolean {
+  const origin = req.headers.get("origin");
+  const referer = req.headers.get("referer");
+  if (!origin && !referer) {
+    // Same-origin XHR from old browsers / curl tests may omit both;
+    // be permissive only when neither is set (no cross-site signal).
+    return true;
+  }
+  const candidates = [origin, referer].filter(
+    (v): v is string => typeof v === "string" && v.length > 0,
+  );
+  for (const c of candidates) {
+    try {
+      const u = new URL(c);
+      if (u.host !== host) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
   const isPublic =
     PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
     PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
+  // CSRF: enforce origin match on cookie-authed state-changing /api/*.
+  if (
+    pathname.startsWith("/api/") &&
+    STATE_CHANGING.has(req.method) &&
+    !CSRF_EXEMPT_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    )
+  ) {
+    const host = req.headers.get("host") ?? req.nextUrl.host;
+    if (!originLooksSafe(req, host)) {
+      return NextResponse.json(
+        { error: "csrf: origin mismatch" },
+        { status: 403 },
+      );
+    }
+  }
 
   if (isPublic) return NextResponse.next();
 
