@@ -13,8 +13,10 @@ export const maxDuration = 60;
  *
  * Flow:
  *   1. Verify the Stripe signature using STRIPE_WEBHOOK_SECRET (HMAC-SHA256).
- *      If the secret is unset, log a warning and trust the body. This keeps
- *      local dev / staging painless while letting prod gate on the secret.
+ *      Secret unset + non-prod: log a warning, trust the body (dev /
+ *      staging convenience). Secret unset + NODE_ENV=production: refuse
+ *      with 500 - a misconfigured prod can't be allowed to spawn orgs
+ *      from unverified bodies.
  *   2. Handle `checkout.session.completed` and `customer.subscription.created`:
  *        - Upsert a row in rgaios_provisioning_queue keyed on owner email.
  *        - Best-effort: mirror the existing /api/admin/clients POST flow
