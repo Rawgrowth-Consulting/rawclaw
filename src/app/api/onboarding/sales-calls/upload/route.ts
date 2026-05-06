@@ -40,6 +40,13 @@ const TRANSCRIBE_BUDGET_MS = 290_000; // ~5 min, fits the 300s route cap.
  * sales-calls bucket was missed. Without this guard the route 500s
  * with "Bucket not found" on every upload until ops adds the bucket
  * manually. The guard is idempotent: createBucket no-ops if present.
+ *
+ * Two failure modes we tolerate gracefully:
+ *   1. "already exists" - benign, bucket got created by a parallel call.
+ *   2. "exceeded the maximum allowed size" - the Supabase project has a
+ *      global per-bucket file size cap below 200 MB (free tier). We retry
+ *      createBucket without `fileSizeLimit` so the bucket exists; uploads
+ *      that exceed the project's own cap will surface their own error.
  */
 let _bucketEnsured = false;
 async function ensureBucket(
@@ -55,11 +62,20 @@ async function ensureBucket(
     public: false,
     fileSizeLimit: MAX_BYTES,
   });
-  if (error && !/already exists/i.test(error.message)) {
-    return { ok: false, error: error.message };
+  if (!error || /already exists/i.test(error.message)) {
+    _bucketEnsured = true;
+    return { ok: true };
   }
-  _bucketEnsured = true;
-  return { ok: true };
+  // Retry without fileSizeLimit when the project-global cap rejects ours.
+  if (/exceeded the maximum allowed size/i.test(error.message)) {
+    const retry = await db.storage.createBucket(BUCKET, { public: false });
+    if (!retry.error || /already exists/i.test(retry.error.message)) {
+      _bucketEnsured = true;
+      return { ok: true };
+    }
+    return { ok: false, error: retry.error.message };
+  }
+  return { ok: false, error: error.message };
 }
 
 const ALLOWED_AUDIO_MIMES = new Set([
