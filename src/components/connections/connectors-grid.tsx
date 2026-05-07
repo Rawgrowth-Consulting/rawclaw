@@ -38,12 +38,16 @@ export function ConnectorsGrid() {
 
   /**
    * A non-native catalog entry is "connected" when a row exists in
-   * rgaios_connections matching its key (the Composio bridge will write
-   * that row using the same provider_config_key).
+   * rgaios_connections with status='connected' for either the bare key
+   * or the composio-prefixed key. The Composio POST handler writes
+   * provider_config_key=`composio:${key}`; older rows (and any future
+   * Composio bridge rewrite) may store the bare key. We accept both so
+   * the badge stays correct across migrations.
    */
   const connectedKeys = useMemo(() => {
     const set = new Set<string>();
     for (const c of connections) {
+      if (c.status !== "connected") continue;
       set.add(c.provider_config_key);
     }
     return set;
@@ -53,7 +57,10 @@ export function ConnectorsGrid() {
     if (entry.hasNativeIntegration) {
       return isConnected(entry.key);
     }
-    return connectedKeys.has(entry.key);
+    return (
+      connectedKeys.has(entry.key) ||
+      connectedKeys.has(`composio:${entry.key}`)
+    );
   };
 
   const filtered = useMemo(() => {
@@ -93,9 +100,17 @@ export function ConnectorsGrid() {
       const json = (await res.json().catch(() => ({}))) as {
         error?: string;
         message?: string;
+        redirectUrl?: string;
       };
       if (!res.ok) {
         throw new Error(json.error ?? "Failed to record interest");
+      }
+      // Real Composio path returns a redirectUrl - send the operator to
+      // the OAuth screen. Otherwise stay on /connections (interest log).
+      if (json.redirectUrl) {
+        toast.success(`${entry.name} - opening OAuth`);
+        window.location.href = json.redirectUrl;
+        return;
       }
       toast.success(json.message ?? `${entry.name} - request recorded`);
     } catch (err) {
