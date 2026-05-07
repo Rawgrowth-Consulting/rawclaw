@@ -352,12 +352,14 @@ export default function OnboardingChat({
   // Chat-surface drag-drop. Dropped files upload to brand-docs (type='other')
   // and surface as an uploaded_file bubble; we then post a canned user line
   // so the AI sees the filename and can react in-conversation.
-  async function uploadChatFile(file: File) {
-    if (streaming) return;
-    setError("");
+  // Upload one file. Returns the canned "I uploaded a file: ..." line on
+  // success so the caller can batch a single user message to the AI when
+  // multiple files are dropped at once. Returns null on failure (the
+  // bubble is flipped to the error state in-line).
+  async function uploadChatFile(file: File): Promise<string | null> {
     if (file.size > MAX_UPLOAD_BYTES) {
       setError(`"${file.name}" is over 25 MB - drop a smaller file.`);
-      return;
+      return null;
     }
     const id =
       (globalThis.crypto?.randomUUID?.() as string) || `up_${Date.now()}_${Math.random()}`;
@@ -393,9 +395,7 @@ export default function OnboardingChat({
         )
       );
 
-      // Tell the AI a file landed so it can incorporate it into onboarding.
-      const canned = `I uploaded a file: ${file.name} (${formatBytes(file.size)}). It's saved at ${url || "[uploaded to brand-docs]"}.`;
-      sendMessage(canned);
+      return `I uploaded a file: ${file.name} (${formatBytes(file.size)}). It's saved at ${url || "[uploaded to brand-docs]"}.`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Upload failed";
       setMessages((prev) =>
@@ -406,14 +406,29 @@ export default function OnboardingChat({
         )
       );
       setError(message);
+      return null;
     }
   }
 
   async function uploadFiles(files: FileList | File[]) {
+    if (streaming) return;
+    setError("");
     const arr = Array.from(files);
+    // Upload sequentially to keep bubble order + share a single error
+    // surface. We DO NOT gate each upload on `streaming` - the previous
+    // implementation called sendMessage() inside uploadChatFile, which
+    // flipped streaming=true and made the early `if (streaming) return`
+    // silently drop every file after the first. Now we collect canned
+    // lines and send ONE combined message to the AI at the end.
+    const cannedLines: string[] = [];
     for (const f of arr) {
-      // Sequential to keep order + share a single error surface.
-      await uploadChatFile(f);
+      const line = await uploadChatFile(f);
+      if (line) cannedLines.push(line);
+    }
+    if (cannedLines.length > 0) {
+      // Tell the AI everything that landed in one user turn so it can
+      // fold the docs into onboarding extraction.
+      sendMessage(cannedLines.join("\n"));
     }
   }
 
