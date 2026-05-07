@@ -358,12 +358,12 @@ function EmptyStateInstructions({
         )}
       </div>
       <a
-        href="https://docs.nango.dev/integrate/guides/authorize-an-api"
+        href="https://docs.composio.dev/getting-started/quickstart"
         target="_blank"
         rel="noreferrer"
         className="inline-flex items-center gap-1 self-start text-[11px] text-primary hover:underline"
       >
-        Nango Connect docs <ArrowUpRight className="size-3" />
+        Composio docs <ArrowUpRight className="size-3" />
       </a>
     </div>
   );

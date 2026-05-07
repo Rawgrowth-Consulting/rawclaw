@@ -45,7 +45,7 @@ export type CatalogEntry = {
  * card (Telegram bot, Slack OAuth, Stripe key, etc).
  *
  * Keys here MUST match a key in CONNECTOR_CATALOG below AND be wired in
- * src/lib/nango/providers.ts (or have a bespoke route under
+ * src/lib/connections/providers.ts (or have a bespoke route under
  * /api/connections/<id>).
  */
 export const NATIVE_INTEGRATION_IDS = new Set<string>([

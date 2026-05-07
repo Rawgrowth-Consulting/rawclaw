@@ -9,7 +9,11 @@ export const runtime = "nodejs";
 /**
  * DELETE /api/connections/[providerConfigKey]
  * Revokes the connection at the upstream provider, then removes our row.
- * Handles two strategies: Nango (default) and Telegram (bot-token + webhook).
+ * Three strategies:
+ *   - composio:<id> => DELETE Composio connectedAccounts (OAuth revoke)
+ *   - telegram      => deleteWebhook on the bot token
+ *   - bespoke (stripe / supabase PAT / etc) => local row delete is the
+ *     authoritative teardown; the secret never left this VPS.
  */
 export async function DELETE(
   _req: NextRequest,
