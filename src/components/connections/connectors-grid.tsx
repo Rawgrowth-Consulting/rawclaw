@@ -109,7 +109,7 @@ export function ConnectorsGrid() {
       // the OAuth screen. Otherwise stay on /connections (interest log).
       if (json.redirectUrl) {
         toast.success(`${entry.name} - opening OAuth`);
-        window.location.href = json.redirectUrl;
+        window.location.assign(json.redirectUrl);
         return;
       }
       toast.success(json.message ?? `${entry.name} - request recorded`);
