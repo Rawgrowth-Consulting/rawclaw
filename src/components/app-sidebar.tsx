@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Database,
   Inbox,
+  ClipboardList,
 } from "lucide-react";
 
 import {
@@ -61,6 +62,7 @@ const navSections: NavSection[] = [
       { label: "Data entry", href: "/data", icon: Database },
       { label: "Departments", href: "/departments", icon: Building2 },
       { label: "Sales calls", href: "/sales-calls", icon: PhoneCall },
+      { label: "Audit call", href: "/audit-call", icon: ClipboardList },
       { label: "Onboarding", href: "/onboarding", icon: Sprout },
     ],
   },
