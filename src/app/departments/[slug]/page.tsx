@@ -10,6 +10,7 @@ import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { DEFAULT_DEPARTMENTS } from "@/lib/agents/dto";
 import { DepartmentAgentList } from "./DepartmentAgentList";
 import { CrmWidget } from "@/components/departments/CrmWidget";
+import { DeptWidgets } from "@/components/departments/DeptWidgets";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,12 @@ export default async function DepartmentDetailPage({
           <CrmWidget department={slug} />
         </div>
       ) : null}
+
+      {/* Per-pillar context widgets (marketing/fulfilment/finance/
+          development). Sales is covered by CrmWidget above. The
+          component returns null for slugs with no widgets, so no extra
+          guard needed here. */}
+      {slug !== "sales" ? <DeptWidgets slug={slug} /> : null}
 
       <div className="mt-6">
         <InsightsPanel department={slug} />
