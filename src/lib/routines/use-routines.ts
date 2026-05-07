@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import useSWR from "swr";
+import { toast } from "sonner";
 import { jsonFetcher } from "@/lib/swr";
 import type { Routine, RoutineCreateInput, RoutineUpdateInput } from "./dto";
 
@@ -64,7 +65,14 @@ export function useRoutines() {
 
   const removeRoutine = useCallback(
     async (id: string) => {
-      await fetch(`${ROUTINES_KEY}/${id}`, { method: "DELETE" });
+      const res = await fetch(`${ROUTINES_KEY}/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const { error } = (await res
+          .json()
+          .catch(() => ({}))) as { error?: string };
+        toast.error(error ?? `Delete failed (HTTP ${res.status})`);
+        return;
+      }
       await mutate(
         (prev) => ({
           routines: (prev?.routines ?? []).filter((r) => r.id !== id),
@@ -87,7 +95,18 @@ export function useRoutines() {
 
   const runNow = useCallback(
     async (id: string) => {
-      await fetch(`${ROUTINES_KEY}/${id}/run`, { method: "POST" });
+      // Surface API errors (no assignee, dept ACL, 404) to the user.
+      // Without this, clicking "Run now" was a silent no-op when the
+      // routine wasn't runnable - led to "is this thing on?" reports.
+      const res = await fetch(`${ROUTINES_KEY}/${id}/run`, { method: "POST" });
+      if (!res.ok) {
+        const { error } = (await res
+          .json()
+          .catch(() => ({}))) as { error?: string };
+        toast.error(error ?? `Run failed (HTTP ${res.status})`);
+        return;
+      }
+      toast.success("Routine queued");
       await mutate(
         (prev) => ({
           routines: (prev?.routines ?? []).map((r) =>
