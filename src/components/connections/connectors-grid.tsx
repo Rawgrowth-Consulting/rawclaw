@@ -8,9 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { IntegrationConnectionSheet } from "@/components/integration-connection-sheet";
 import { useConnections } from "@/lib/connections/use-connections";
-import { providerConfigKeyFor } from "@/lib/nango/providers";
 import {
   CATALOG_CATEGORIES,
   CONNECTOR_CATALOG,
@@ -19,21 +17,19 @@ import {
 } from "@/lib/connections/catalog";
 
 /**
- * Composio-style searchable grid of every connector this workspace can
- * eventually plug in. Native integrations open their existing OAuth /
- * key flow; everything else POSTs to /api/connections/composio so we
- * can record interest until the Composio bridge is live.
+ * Searchable connector grid. Pedro removed Nango on 2026-05-07 so
+ * every catalog entry now POSTs to /api/connections/composio. Bespoke
+ * providers (Telegram bot tokens, Stripe API keys, Supabase PATs)
+ * still surface dedicated cards elsewhere on /connections; the grid
+ * delegates to Composio for everything else.
  */
 
 type CategoryFilter = (typeof CATALOG_CATEGORIES)[number];
 
 export function ConnectorsGrid() {
-  const { connections, isConnected } = useConnections();
+  const { connections } = useConnections();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("All");
-  const [openIntegrationId, setOpenIntegrationId] = useState<string | null>(
-    null,
-  );
   const [requesting, setRequesting] = useState<string | null>(null);
 
   /**
@@ -54,9 +50,6 @@ export function ConnectorsGrid() {
   }, [connections]);
 
   const isCardConnected = (entry: CatalogEntry): boolean => {
-    if (entry.hasNativeIntegration) {
-      return isConnected(entry.key);
-    }
     return (
       connectedKeys.has(entry.key) ||
       connectedKeys.has(`composio:${entry.key}`)
@@ -77,19 +70,20 @@ export function ConnectorsGrid() {
   }, [query, category]);
 
   const handleConnect = async (entry: CatalogEntry) => {
-    if (entry.hasNativeIntegration) {
-      // Existing integrations route through the Nango Connect sheet
-      // (or, for Telegram / Slack OAuth / Stripe / Supabase PAT, the
-      // sheet branches internally on connectStrategy + methods).
-      const supportedByNango = providerConfigKeyFor(entry.key) !== null;
-      if (supportedByNango) {
-        setOpenIntegrationId(entry.key);
-      } else {
-        toast.message("Open the dedicated card on this page to connect.");
-      }
+    // Bespoke connectors (Telegram, Stripe key, Supabase PAT) live on
+    // dedicated cards elsewhere on /connections - bounce the operator
+    // there instead of running through the Composio OAuth path that
+    // doesn't apply to them.
+    if (
+      entry.key === "telegram" ||
+      entry.key === "stripe" ||
+      entry.key === "supabase"
+    ) {
+      toast.message(
+        `Use the dedicated ${entry.name} card on this page to connect.`,
+      );
       return;
     }
-    // Coming via Composio - log interest server-side.
     setRequesting(entry.key);
     try {
       const res = await fetch("/api/connections/composio", {
@@ -178,14 +172,6 @@ export function ConnectorsGrid() {
           No apps match. Try a different category or clear the search.
         </div>
       )}
-
-      <IntegrationConnectionSheet
-        integrationId={openIntegrationId}
-        open={openIntegrationId !== null}
-        onOpenChange={(o) => {
-          if (!o) setOpenIntegrationId(null);
-        }}
-      />
     </div>
   );
 }

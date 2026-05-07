@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import useSWR from "swr";
 import { jsonFetcher } from "@/lib/swr";
-import { providerConfigKeyFor } from "@/lib/nango/providers";
+import { providerConfigKeyFor } from "@/lib/connections/providers";
 
 export type ConnectionRow = {
   id: string;

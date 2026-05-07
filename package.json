@@ -31,8 +31,6 @@
     "@anush008/tokenizers-linux-x64-gnu": "^0.6.0",
     "@base-ui/react": "^1.4.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@nangohq/frontend": "^0.70.1",
-    "@nangohq/node": "^0.70.1",
     "@number-flow/react": "^0.6.0",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-tabs": "^1.1.13",

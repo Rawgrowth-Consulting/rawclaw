@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { listTools } from "@/lib/mcp/registry";
 import { listConnectionsForOrg } from "@/lib/connections/queries";
-import { providerConfigKeyFor } from "@/lib/nango/providers";
+import { providerConfigKeyFor } from "@/lib/connections/providers";
 import { getIntegration } from "@/lib/integrations-catalog";
 
 // Force tool registration on cold start.

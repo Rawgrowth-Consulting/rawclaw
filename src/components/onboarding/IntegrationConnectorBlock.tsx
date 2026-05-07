@@ -277,15 +277,13 @@ export function IntegrationConnectorBlock({
 }
 
 /**
- * Per-provider OAuth start. Slack already has a dedicated start route
- * that returns `{ url }`; HubSpot / Drive / Gmail go through Nango's
- * Connect Session UI but we surface a one-shot popup so the chat block
- * stays a simple "open URL, poll for status" loop.
- *
- * For Nango-backed providers we fetch a Connect Session token and route
- * the user to the hosted Connect UI URL. The Nango webhook + the
- * `/api/connections/finalize` callback land the row in
- * rgaios_connections, which is what the polling status endpoint reads.
+ * Per-provider OAuth start. Slack keeps its bespoke start route
+ * (returns `{ url }` for the slack.com authorize page). Every other
+ * Composio-backed provider POSTs /api/connections/composio which
+ * persists a pending row + returns Composio's hosted OAuth redirect
+ * URL. The polling /api/onboarding/integration-status endpoint reads
+ * the same rgaios_connections row, so the inline block stays a simple
+ * "open URL, poll for connected" loop.
  */
 async function resolveOAuthUrl(provider: Provider): Promise<string | null> {
   if (provider === "slack") {
@@ -297,30 +295,17 @@ async function resolveOAuthUrl(provider: Provider): Promise<string | null> {
     return data.url;
   }
 
-  // HubSpot / Drive / Gmail go through Nango's hosted Connect UI. The
-  // session endpoint hands back a token that the @nangohq/frontend SDK
-  // would normally consume, but for the onboarding inline flow we route
-  // the user to Nango's hosted page directly so we don't have to mount
-  // the full Connect modal mid-chat.
-  const r = await fetch("/api/nango/session", {
+  const r = await fetch("/api/connections/composio", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ integrationId: provider }),
+    body: JSON.stringify({ key: provider }),
   });
   const data = (await r.json()) as {
-    token?: string;
-    providerConfigKey?: string;
+    redirectUrl?: string;
     error?: string;
   };
-  if (!r.ok || !data.token) {
-    throw new Error(data.error ?? "Could not start Nango session");
+  if (!r.ok || !data.redirectUrl) {
+    throw new Error(data.error ?? "Could not start Composio OAuth");
   }
-  // Nango's hosted Connect UI base. Custom NANGO_HOST self-hosters set
-  // NEXT_PUBLIC_NANGO_CONNECT_URL; otherwise we fall back to the Cloud
-  // default. The token is the only piece of per-session state in the
-  // URL  -  Nango knows the integration via the session record itself.
-  const base =
-    process.env.NEXT_PUBLIC_NANGO_CONNECT_URL ??
-    "https://connect.nango.dev/auth";
-  return `${base}?session_token=${encodeURIComponent(data.token)}`;
+  return data.redirectUrl;
 }

@@ -78,9 +78,7 @@ services:
       AUTH_TRUST_HOST: "true"
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@rawgrowth.local}
-      NANGO_SECRET_KEY: ${NANGO_SECRET_KEY:-}
-      NANGO_PUBLIC_KEY: ${NANGO_PUBLIC_KEY:-}
-      NANGO_WEBHOOK_SECRET: ${NANGO_WEBHOOK_SECRET:-}
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
       # OpenAI key — currently used by /lib/agent/voice-transcribe.ts to
       # turn Telegram voice notes into text via Whisper. Optional: if
       # missing, voice notes degrade to a "voice transcription needs

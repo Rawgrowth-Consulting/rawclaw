@@ -25,11 +25,12 @@ export type IntegrationEventDef = {
 };
 
 /**
- * How an integration is wired up under the hood. Most go through Nango;
- * Telegram uses a dedicated bot-token flow because Nango doesn't handle
- * Bot API auth natively.
+ * How an integration is wired up under the hood. Most go through
+ * Composio's executeAction; Telegram uses a dedicated bot-token flow
+ * (Composio doesn't speak Bot API). Supabase uses a personal access
+ * token rather than OAuth.
  */
-export type ConnectStrategy = "nango" | "telegram-bot" | "supabase-pat";
+export type ConnectStrategy = "composio" | "telegram-bot" | "supabase-pat";
 
 export type IntegrationEntry = {
   id: string;
@@ -41,7 +42,7 @@ export type IntegrationEntry = {
   brand: string;
   /** Auth methods this provider supports, in display order. */
   methods: AuthMethod[];
-  /** Runtime wiring. Defaults to "nango". */
+  /** Runtime wiring. Defaults to "composio". */
   connectStrategy?: ConnectStrategy;
   apiKey?: {
     placeholder: string;

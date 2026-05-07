@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getOrgContext } from "@/lib/auth/admin";
 import { getConnection } from "@/lib/connections/queries";
-import { providerConfigKeyFor } from "@/lib/nango/providers";
+import { providerConfigKeyFor } from "@/lib/connections/providers";
 
 export const runtime = "nodejs";
 

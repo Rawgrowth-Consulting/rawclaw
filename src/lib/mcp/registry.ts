@@ -1,5 +1,5 @@
 import { getConnection } from "@/lib/connections/queries";
-import { providerConfigKeyFor } from "@/lib/nango/providers";
+import { providerConfigKeyFor } from "@/lib/connections/providers";
 import type { McpTool, ToolContext, ToolResult } from "./types";
 
 /**
@@ -51,7 +51,7 @@ export async function callTool(
     const pck = providerConfigKeyFor(tool.requiresIntegration);
     if (!pck) {
       return textError(
-        `Tool ${name} requires ${tool.requiresIntegration}, but that provider isn't mapped in nango/providers.ts.`,
+        `Tool ${name} requires ${tool.requiresIntegration}, but that provider isn't mapped in connections/providers.ts.`,
       );
     }
     const conn = await getConnection(ctx.organizationId, pck);

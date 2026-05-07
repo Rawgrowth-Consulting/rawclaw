@@ -1,20 +1,20 @@
 import { registerTool, text, textError } from "../registry";
-import { nangoCall } from "../proxy";
+import { composioAction } from "../proxy";
 
 /**
- * Gmail tools via Nango proxy → Google Gmail API.
+ * Gmail tools via Composio executeAction → Google Gmail API.
  *
- * Registered in BOTH hosted and self-hosted modes. (We previously gated
- * to hosted-only on the assumption that self-hosted Claude Code would
- * reach Gmail via Anthropic's native connectors  -  but those don't
- * propagate from claude.ai to a VPS-side `claude` CLI session, so the
- * VPS drain has no way to call Gmail without these wrappers.)
+ * Pedro yanked Nango end-to-end on 2026-05-07 so these now route
+ * through Composio's catalog actions:
+ *   - GMAIL_FETCH_MAILS         (search / list)
+ *   - GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID  (single message)
+ *   - GMAIL_CREATE_EMAIL_DRAFT  (draft, safe default)
  *
- * Provider registered in Nango as `google-mail`; catalog integration id
- * is `gmail`. OAuth scopes required:
- *   - gmail.readonly (for search / read)
- *   - gmail.compose   (for draft)
- *   - gmail.send      (for direct send  -  gated by approvals later)
+ * Registered in BOTH hosted and self-hosted modes since the VPS
+ * drain has no other way to reach Gmail. Connection lookup goes
+ * through provider_config_key = "composio:gmail" in
+ * rgaios_connections, written by /api/connections/composio when the
+ * client clicks the Gmail card.
  */
 
 {
@@ -52,14 +52,11 @@ registerTool({
     if (!query) return textError("query is required");
     const limit = Math.min(Number(args.limit ?? 10) || 10, 50);
 
-    const resp = await nangoCall<GmailMessagesListResponse>(
+    const resp = await composioAction<GmailMessagesListResponse>(
       ctx.organizationId,
       "gmail",
-      {
-        method: "GET",
-        endpoint: "/gmail/v1/users/me/messages",
-        params: { q: query, maxResults: limit },
-      },
+      "GMAIL_FETCH_MAILS",
+      { query, max_results: limit },
     );
     const hits = resp.messages ?? [];
     if (hits.length === 0) return text(`No Gmail results for "${query}".`);
@@ -116,11 +113,12 @@ registerTool({
     const id = String(args.message_id ?? "").trim();
     if (!id) return textError("message_id is required");
 
-    const msg = await nangoCall<GmailMessage>(ctx.organizationId, "gmail", {
-      method: "GET",
-      endpoint: `/gmail/v1/users/me/messages/${id}`,
-      params: { format: "full" },
-    });
+    const msg = await composioAction<GmailMessage>(
+      ctx.organizationId,
+      "gmail",
+      "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+      { message_id: id, format: "full" },
+    );
     const headers = msg.payload?.headers ?? [];
     const find = (name: string) =>
       headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ??
@@ -182,25 +180,16 @@ registerTool({
     });
     if (!bodyFiltered.ok) return textError(bodyFiltered.error);
 
-    const headers = [
-      `To: ${to}`,
-      cc ? `Cc: ${cc}` : "",
-      `Subject: ${subjectFiltered.text}`,
-      'Content-Type: text/plain; charset="UTF-8"',
-      "MIME-Version: 1.0",
-      "",
-      bodyFiltered.text,
-    ].filter(Boolean);
-
-    const raw = Buffer.from(headers.join("\r\n"), "utf8").toString("base64url");
-
-    const resp = await nangoCall<GmailDraftResponse>(
+    const resp = await composioAction<GmailDraftResponse>(
       ctx.organizationId,
       "gmail",
+      "GMAIL_CREATE_EMAIL_DRAFT",
       {
-        method: "POST",
-        endpoint: "/gmail/v1/users/me/drafts",
-        data: { message: { raw } },
+        recipient_email: to,
+        ...(cc ? { cc: [cc] } : {}),
+        subject: subjectFiltered.text,
+        body: bodyFiltered.text,
+        is_html: false,
       },
     );
 

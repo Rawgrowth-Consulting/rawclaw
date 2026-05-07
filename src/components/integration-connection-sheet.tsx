@@ -114,69 +114,30 @@ export function IntegrationConnectionSheet({
     setError(null);
     setConnecting(true);
     try {
-      // 1. Ask our server for a Nango Connect Session token.
-      const sessionRes = await fetch("/api/nango/session", {
+      // Composio is now the single OAuth bridge. POST records a pending
+      // row in rgaios_connections + returns a Composio-hosted OAuth
+      // redirect URL. The user finishes auth on the provider, Composio
+      // calls /api/connections/composio/callback, and the row flips to
+      // status='connected'. No Nango frontend SDK any more.
+      const res = await fetch("/api/connections/composio", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ integrationId: integration.id }),
+        body: JSON.stringify({ key: integration.id }),
       });
-      if (!sessionRes.ok) {
-        const { error } = (await sessionRes.json()) as { error?: string };
-        throw new Error(error ?? "Failed to create Connect session");
-      }
-      const { token } = (await sessionRes.json()) as { token: string };
-
-      // 2. Dynamically import the frontend SDK so it doesn't land in SSR bundles.
-      const mod = await import("@nangohq/frontend");
-      const NangoCtor = mod.default;
-      const nango = new NangoCtor({ connectSessionToken: token });
-
-      // 3. Open Nango's hosted Connect UI and capture the payload fired on
-      //    successful auth. The webhook also writes this row in prod, but
-      //    relying on it alone breaks local dev  -  so we persist client-side.
-      type ConnectPayload = {
-        providerConfigKey?: string;
-        connectionId?: string;
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        redirectUrl?: string;
       };
-      let captured: ConnectPayload | null = null;
-
-      await new Promise<void>((resolve) => {
-        const controller = nango.openConnectUI({
-          onEvent: (event) => {
-            if (event.type === "connect") {
-              captured = (event.payload ?? null) as ConnectPayload | null;
-              resolve();
-            } else if (event.type === "close") {
-              resolve();
-            }
-          },
-        });
-        setTimeout(() => {
-          controller?.close?.();
-          resolve();
-        }, 5 * 60_000);
-      });
-
-      // 4. Persist the connection ourselves. The server re-fetches from Nango
-      //    to prove it exists before writing the row.
-      const payload = captured as ConnectPayload | null;
-      if (payload?.providerConfigKey && payload?.connectionId) {
-        const finalizeRes = await fetch("/api/connections/finalize", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            providerConfigKey: payload.providerConfigKey,
-            connectionId: payload.connectionId,
-          }),
-        });
-        if (!finalizeRes.ok) {
-          const { error } = (await finalizeRes
-            .json()
-            .catch(() => ({}))) as { error?: string };
-          throw new Error(error ?? "Failed to persist connection");
-        }
+      if (!res.ok) {
+        throw new Error(json.error ?? "Failed to start connection");
       }
-
+      if (json.redirectUrl) {
+        window.location.assign(json.redirectUrl);
+        return;
+      }
+      // No env wired (yet): the route logged interest. Refresh the
+      // connection list so the operator sees the pending row.
       await refresh();
     } catch (err) {
       setError((err as Error).message);

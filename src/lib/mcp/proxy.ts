@@ -1,17 +1,19 @@
-import { nango } from "@/lib/nango/server";
-import { getConnection } from "@/lib/connections/queries";
-import { providerConfigKeyFor } from "@/lib/nango/providers";
+import { composioCall } from "@/lib/composio/proxy";
 
 /**
- * Thin wrapper around nango.proxy() that resolves the current org's
- * connection for a given integration id and forwards the API call.
+ * Outbound integration call. Pedro removed Nango end-to-end on
+ * 2026-05-07 so this dispatches via Composio `executeAction`.
  *
- * Throws if the integration isn't connected  -  callers should have gated
- * with `requiresIntegration` in the tool definition, but we guard again
- * here for safety.
+ * Callers (gmail tool, booking calendar) used to pass a raw HTTP
+ * {method, endpoint, ...} shape that Nango proxied to the upstream
+ * provider. Composio doesn't expose a raw HTTP proxy on the SDK; it
+ * runs catalog actions instead (GMAIL_FETCH_MAILS,
+ * GOOGLECALENDAR_CREATE_EVENT, ...). The migration shim below takes
+ * the legacy ProxyOpts and forwards them as the `input` payload of a
+ * Composio action the caller must name explicitly.
  */
 
-type ProxyOpts = {
+export type ProxyOpts = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   endpoint: string;
   params?: Record<string, string | number | string[] | number[]>;
@@ -19,27 +21,22 @@ type ProxyOpts = {
   headers?: Record<string, string>;
 };
 
-export async function nangoCall<T = unknown>(
+/**
+ * Compose a Composio action call from the (orgId, appKey, action, input)
+ * tuple. Inputs are passed straight through; per-action shape lives in
+ * Composio's catalog docs.
+ */
+export async function composioAction<T = unknown>(
   organizationId: string,
-  integrationId: string,
-  opts: ProxyOpts,
+  appKey: string,
+  action: string,
+  input: Record<string, unknown>,
 ): Promise<T> {
-  const pck = providerConfigKeyFor(integrationId);
-  if (!pck) {
-    throw new Error(`No Nango provider mapped for ${integrationId}`);
-  }
-  const conn = await getConnection(organizationId, pck);
-  if (!conn) {
-    throw new Error(`${integrationId} isn't connected for this org`);
-  }
-  const resp = await nango().proxy({
-    providerConfigKey: conn.provider_config_key,
-    connectionId: conn.nango_connection_id,
-    method: opts.method,
-    endpoint: opts.endpoint,
-    params: opts.params,
-    data: opts.data,
-    headers: opts.headers,
-  });
-  return resp.data as T;
+  return composioCall<T>(organizationId, { appKey, action, input });
 }
+
+/**
+ * Legacy alias kept so existing tool code compiles unchanged. New
+ * callers should import composioAction directly.
+ */
+export const nangoCall = composioAction;

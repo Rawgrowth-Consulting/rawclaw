@@ -17,8 +17,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/auth",             // NextAuth itself
   "/api/mcp",              // per-tenant MCP bearer token
   "/api/health",           // health probe
-  "/api/nango/webhook",    // Nango posts here, no session
-  "/api/webhooks",         // Telegram etc
+  "/api/webhooks",         // Telegram, Stripe, Composio - all signed
   "/api/invites/accept",   // GET preview + POST accept use invite token, not session
   "/api/cron",             // CRON_SECRET bearer, called by the self-hosted tick timer
   "/api/connections/slack/oauth/callback", // Slack OAuth redirect  -  state is self-verifying
@@ -35,7 +34,6 @@ const CSRF_EXEMPT_PREFIXES = [
   "/api/auth", // NextAuth has its own csrfToken
   "/api/mcp", // bearer auth, no cookie session
   "/api/health",
-  "/api/nango/webhook",
   "/api/webhooks",
   "/api/cron",
   "/api/connections/slack/oauth/callback",

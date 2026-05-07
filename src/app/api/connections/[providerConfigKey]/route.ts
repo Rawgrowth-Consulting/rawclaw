@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { nango } from "@/lib/nango/server";
 import { deleteConnection, getConnection } from "@/lib/connections/queries";
 import { currentOrganizationId } from "@/lib/supabase/constants";
 import { deleteWebhook as deleteTelegramWebhook } from "@/lib/telegram/client";
@@ -58,17 +57,10 @@ export async function DELETE(
           );
         }
       }
-    } else {
-      // Best-effort revoke in Nango; local delete is authoritative.
-      try {
-        await nango().deleteConnection(
-          providerConfigKey,
-          existing.nango_connection_id,
-        );
-      } catch {
-        /* ignore  -  connection might already be gone upstream */
-      }
     }
+    // Bespoke providers (Stripe API key, Supabase PAT, etc) stored
+    // their secret in metadata; the local delete is the authoritative
+    // teardown. Composio + Telegram are handled in the branches above.
 
     await deleteConnection(organizationId, providerConfigKey);
     return NextResponse.json({ ok: true });

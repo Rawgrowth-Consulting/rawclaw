@@ -25,7 +25,7 @@ const SPECS: Spec[] = [
   { key: "OPENAI_API_KEY", required: "v3", soft: true },
   { key: "ANTHROPIC_API_KEY", required: "v3", soft: true },
 
-  { key: "NANGO_SECRET_KEY", required: "all", soft: true },
+  { key: "COMPOSIO_API_KEY", required: "all", soft: true },
   { key: "RESEND_API_KEY", required: "all", soft: true },
   { key: "CRON_SECRET", required: "all", soft: true },
 ];
@@ -72,7 +72,7 @@ export const env = {
   JWT_SECRET: process.env.JWT_SECRET,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-  NANGO_SECRET_KEY: process.env.NANGO_SECRET_KEY,
+  COMPOSIO_API_KEY: process.env.COMPOSIO_API_KEY,
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   CRON_SECRET: process.env.CRON_SECRET,
 } as const;

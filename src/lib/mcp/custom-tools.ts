@@ -29,7 +29,7 @@ export const MAX_CUSTOM_TOOL_LOOPS = 30;
 const ALLOWED_FETCH_HOSTS = new Set<string>([
   "api.anthropic.com",
   "api.openai.com",
-  "api.nango.dev",
+  "backend.composio.dev",
   "supabase.co",
 ]);
 
@@ -117,11 +117,11 @@ const SYSTEM_PROMPT_HEADER = [
   "- Each tool's handler must be async, return the result of text() or",
   "  textError(), and never read process.env, never use child_process,",
   "  never write outside the local_cache directory, and only fetch hosts",
-  "  on this allowlist: api.anthropic.com, api.openai.com, api.nango.dev,",
+  "  on this allowlist: api.anthropic.com, api.openai.com, backend.composio.dev,",
   "  supabase.co.",
   `- No em-dashes. Banned words (${BANNED_FOR_PROMPT}) must not appear in any string the tool returns.`,
   "- requiresIntegration is OPTIONAL. Set it only if the tool genuinely",
-  "  needs an OAuth connection wired through Nango.",
+  "  needs an OAuth connection wired through Composio.",
   "",
   "EXAMPLE (gmail.ts, trimmed):",
 ].join("\n");
@@ -266,9 +266,14 @@ function buildSandbox(captured: {
     }),
   };
   const fakeProxy = {
+    composioAction: async () => {
+      throw new Error(
+        "sandbox: composioAction is a no-op during the test phase. Real calls fire only after the tool is shipped.",
+      );
+    },
     nangoCall: async () => {
       throw new Error(
-        "sandbox: nangoCall is a no-op during the test phase. Real calls fire only after the tool is shipped.",
+        "sandbox: composioAction is a no-op during the test phase. Real calls fire only after the tool is shipped.",
       );
     },
   };
