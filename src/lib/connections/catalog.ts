@@ -30,6 +30,13 @@ export type CatalogEntry = {
   brandColor: string;
   /** True when an OAuth / API key flow already exists in this codebase. */
   hasNativeIntegration: boolean;
+  /**
+   * Composio app slug override. Defaults to `key` when omitted. Use this
+   * when our display key differs from Composio's slug (e.g. our "google-calendar"
+   * vs Composio's "googlecalendar"). Resolved by `composioAppNameFor()`
+   * and the Composio proxy / connect handlers.
+   */
+  composioAppName?: string;
 };
 
 /**
@@ -155,4 +162,15 @@ export function isNativeIntegration(key: string): boolean {
 
 export function getCatalogEntry(key: string): CatalogEntry | undefined {
   return CONNECTOR_CATALOG.find((c) => c.key === key);
+}
+
+/**
+ * Resolve a catalog key to the slug Composio expects. Defaults to the
+ * key itself; CatalogEntry can override via `composioAppName` when our
+ * display id diverges from Composio's catalog (e.g. "google-calendar"
+ * here vs Composio's "googlecalendar"). Used by /api/connections/composio
+ * POST and src/lib/composio/proxy.ts.
+ */
+export function composioAppNameFor(key: string): string {
+  return getCatalogEntry(key)?.composioAppName ?? key;
 }

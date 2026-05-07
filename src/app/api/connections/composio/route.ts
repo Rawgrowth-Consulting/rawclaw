@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { currentOrganizationId } from "@/lib/supabase/constants";
-import { getCatalogEntry } from "@/lib/connections/catalog";
+import { getCatalogEntry, composioAppNameFor } from "@/lib/connections/catalog";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            appName: entry.key,
+            appName: composioAppNameFor(entry.key),
             entityId: organizationId,
             redirectUri: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/connections/composio/callback`,
           }),

@@ -35,6 +35,29 @@ export async function DELETE(
           /* ignore  -  token might already be invalid upstream */
         }
       }
+    } else if (providerConfigKey.startsWith("composio:")) {
+      // Composio swap gap #3: revoke at Composio so the upstream OAuth
+      // grant is actually torn down, not just the local row. The grid
+      // POST stored connectionId in nango_connection_id; the API key
+      // lives in env.
+      const composioKey = process.env.COMPOSIO_API_KEY;
+      if (composioKey && existing.nango_connection_id) {
+        try {
+          await fetch(
+            `https://backend.composio.dev/api/v1/connectedAccounts/${existing.nango_connection_id}`,
+            {
+              method: "DELETE",
+              headers: { "x-api-key": composioKey },
+              signal: AbortSignal.timeout(15_000),
+            },
+          );
+        } catch (err) {
+          console.warn(
+            "[connections] composio revoke failed:",
+            (err as Error).message,
+          );
+        }
+      }
     } else {
       // Best-effort revoke in Nango; local delete is authoritative.
       try {
