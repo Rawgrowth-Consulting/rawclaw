@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
 import { chunkText } from "@/lib/knowledge/chunker";
 import { embedBatch, toPgVector } from "@/lib/knowledge/embedder";
+import { isSelfHosted } from "@/lib/deploy-mode";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { uploadToBucket } from "@/lib/storage/local";
 import { transcribeAudio } from "@/lib/voice/transcribe";
 
 /**
@@ -183,24 +185,31 @@ export async function POST(req: NextRequest) {
     const storagePath = `${orgId}/${Date.now()}-${safeName}`;
     const bytes = Buffer.from(await file.arrayBuffer());
 
-    const ensure = await ensureBucket(db);
-    if (!ensure.ok) {
-      console.error("[sales-calls/upload] bucket ensure failed:", ensure.error);
-      return NextResponse.json(
-        { error: `Storage not ready: ${ensure.error}` },
-        { status: 503 },
-      );
+    // Hosted: ensureBucket creates the Supabase Storage bucket on first
+    // call. Self-hosted: uploadToBucket writes to the local FS adapter,
+    // so the bucket-ensure guard is unnecessary.
+    if (!isSelfHosted) {
+      const ensure = await ensureBucket(db);
+      if (!ensure.ok) {
+        console.error(
+          "[sales-calls/upload] bucket ensure failed:",
+          ensure.error,
+        );
+        return NextResponse.json(
+          { error: `Storage not ready: ${ensure.error}` },
+          { status: 503 },
+        );
+      }
     }
 
-    const { error: uploadErr } = await db.storage
-      .from(BUCKET)
-      .upload(storagePath, bytes, {
-        contentType: mime,
-        upsert: false,
-      });
-    if (uploadErr) {
+    try {
+      await uploadToBucket(BUCKET, storagePath, bytes, mime);
+    } catch (uploadErr) {
       console.error("[sales-calls/upload] storage error:", uploadErr);
-      return NextResponse.json({ error: uploadErr.message }, { status: 500 });
+      return NextResponse.json(
+        { error: (uploadErr as Error).message },
+        { status: 500 },
+      );
     }
 
     // Insert pending row first so we have an id for chunk metadata.
