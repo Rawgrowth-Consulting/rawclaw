@@ -9,6 +9,7 @@ import { getOrgContext } from "@/lib/auth/admin";
 import { isDepartmentAllowed } from "@/lib/auth/dept-acl";
 import { DEFAULT_DEPARTMENTS } from "@/lib/agents/dto";
 import { DepartmentAgentList } from "./DepartmentAgentList";
+import { CrmWidget } from "@/components/departments/CrmWidget";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,15 @@ export default async function DepartmentDetailPage({
       }
     >
       <DashboardStats department={slug} />
+
+      {/* Sales-only CRM widget per Plan §8 + Chris brief. Conditional on
+          slug to avoid bloating other dept dashboards with empty CRM
+          cards; marketing etc. land their own widgets later. */}
+      {slug === "sales" ? (
+        <div className="mt-6">
+          <CrmWidget department={slug} />
+        </div>
+      ) : null}
 
       <div className="mt-6">
         <InsightsPanel department={slug} />
