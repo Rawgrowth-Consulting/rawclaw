@@ -1,4 +1,9 @@
-import { buildAgentChatPreamble } from "./preamble";
+import {
+  buildAgentChatPreamble,
+  buildAgentChatPreambleTail,
+  buildCapabilitiesAndTrustBlock,
+  buildReasoningProtocolBlock,
+} from "./preamble";
 import {
   buildSystemPrompt,
   type MemoryEntry,
@@ -7,26 +12,31 @@ import {
 import type { RunContext } from "@/lib/runs/queries";
 
 /**
- * DEEP WIN 4 phase 0 - unified agent context factory.
+ * DEEP WIN 4 unified agent context factory.
  *
- * Pure-delegation skeleton. Every mode forwards to the existing
- * legacy builder verbatim so the parity test in
- * tests/unit/context-parity.spec.ts can lock V1 == V2 byte-for-byte.
+ * Phase 0 shipped a pure-delegation skeleton (V2 wrappers == legacy).
+ * Phase 1 (this commit) introduces the CHAT_BLOCKS registry: chat +
+ * telegram modes now compose their output by iterating block helpers
+ * exported from preamble.ts. Three blocks are populated in phase 1:
  *
- * NO behavior change in this phase. Phase 1 extracts a block
- * registry from preamble.ts and starts composing inside
- * buildAgentContext; phases 2-4 flip the chat / telegram / routine /
- * invoke callsites to the V2 wrappers and delete the legacy entry
- * points. Until then this file is a no-op wrapper that establishes
- * the API shape.
+ *   capabilities-trust  - hardcoded leading text. Sync. No DB.
+ *   reasoning-protocol  - hardcoded reasoning + proactivity text.
+ *                          Sync. No DB.
+ *   legacy-tail         - everything else (memory, signals, skills,
+ *                          authority, persona, peer roster, brand,
+ *                          files, RAG, JSON COMMANDS, etc.). Heavy
+ *                          DB. Phase 1b splits into per-section
+ *                          helpers + adds 20+ more registry entries.
  *
- * Modes:
- *   chat | telegram - forward to buildAgentChatPreamble (preamble.ts
- *     comments call out that the chat route and the per-agent
- *     Telegram webhook share this surface).
- *   routine | invoke - forward to executor.buildSystemPrompt (the
- *     agent_invoke MCP tool creates a delegated run that runs through
- *     the same executor path).
+ * The legacy-tail block receives the already-accumulated content via
+ * priorContent so the inline `(preamble ? "\n\n" : "")` separator
+ * checks inside it behave exactly as in the legacy monolithic
+ * buildAgentChatPreamble. Output is byte-for-byte equal; parity test
+ * in tests/unit/context-parity.spec.ts must stay green.
+ *
+ * routine + invoke still forward straight to executor.buildSystemPrompt
+ * - those surfaces have no separator dependency on the chat preamble
+ * and stay simple.
  */
 
 export type AgentContextMode = "chat" | "telegram" | "routine" | "invoke";
@@ -52,13 +62,63 @@ type RoutineInput = {
 
 export type AgentContextInput = ChatInput | RoutineInput;
 
+export type ChatBlockContext = Omit<ChatInput, "mode"> & {
+  priorContent: string;
+};
+
+export type ChatBlock = {
+  id: string;
+  build: (ctx: ChatBlockContext) => Promise<string | null> | string | null;
+};
+
+/**
+ * Block composition order for chat + telegram surfaces. Each entry is
+ * called in sequence; non-null return values are concatenated. Blocks
+ * that need the already-accumulated content (for separator logic)
+ * read ctx.priorContent. Phase 1b will replace the single
+ * `legacy-tail` entry with ~22 per-section blocks.
+ */
+export const CHAT_BLOCKS: ChatBlock[] = [
+  {
+    id: "capabilities-trust",
+    build: () => buildCapabilitiesAndTrustBlock(),
+  },
+  {
+    id: "reasoning-protocol",
+    build: () => buildReasoningProtocolBlock(),
+  },
+  {
+    id: "legacy-tail",
+    build: (ctx) =>
+      buildAgentChatPreambleTail({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        orgName: ctx.orgName,
+        queryText: ctx.queryText,
+        userRole: ctx.userRole,
+        priorContent: ctx.priorContent,
+      }),
+  },
+];
+
+async function composeChatPreamble(
+  input: Omit<ChatInput, "mode">,
+): Promise<string> {
+  let out = "";
+  for (const block of CHAT_BLOCKS) {
+    const piece = await block.build({ ...input, priorContent: out });
+    if (piece) out += piece;
+  }
+  return out;
+}
+
 export async function buildAgentContext(
   input: AgentContextInput,
 ): Promise<string> {
   switch (input.mode) {
     case "chat":
     case "telegram":
-      return buildAgentChatPreamble({
+      return composeChatPreamble({
         orgId: input.orgId,
         agentId: input.agentId,
         orgName: input.orgName,
@@ -101,3 +161,9 @@ export async function buildInvokePreambleV2(
 ): Promise<string> {
   return buildAgentContext({ mode: "invoke", ...input });
 }
+
+// `buildAgentChatPreamble` re-export so legacy callers can continue to
+// import the monolithic entry point unchanged while the V2 wrappers
+// run through the registry. Phase 2 flips the chat route to V2 +
+// drops this re-export.
+export { buildAgentChatPreamble };
