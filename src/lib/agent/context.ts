@@ -403,6 +403,15 @@ export type ComposeChatPreambleOptions = {
    * cost 0 (always include).
    */
   skippableBudgetTokens?: number;
+  /**
+   * Optional AgentContextMode the composer is rendering for. When
+   * set, blocks that declare a `modes` allow-list and do NOT include
+   * this mode are filtered out. Blocks without a `modes` field
+   * always pass (default = all modes allowed). Phase-2 hook so
+   * future telegram-specific overrides (drop heavy CEO directives,
+   * etc.) can land without touching every callsite.
+   */
+  mode?: AgentContextMode;
 };
 
 /**
@@ -421,10 +430,18 @@ export function selectChatBlocks(
   blocks: ChatBlock[] = CHAT_BLOCKS,
   options: ComposeChatPreambleOptions = {},
 ): ChatBlock[] {
+  const { mode } = options;
+  // Mode filter first: drop blocks whose `modes` allow-list excludes
+  // the current mode. Blocks without a `modes` field always pass.
+  const modeFiltered =
+    mode === undefined
+      ? blocks
+      : blocks.filter((b) => !b.modes || b.modes.includes(mode));
+
   const budget = options.skippableBudgetTokens ?? Number.POSITIVE_INFINITY;
-  if (!Number.isFinite(budget) || budget < 0) return blocks;
+  if (!Number.isFinite(budget) || budget < 0) return modeFiltered;
   let spent = 0;
-  return blocks.filter((b) => {
+  return modeFiltered.filter((b) => {
     const priority = b.priority ?? "required";
     if (priority === "required") return true;
     const cost = b.defaultCostTokens ?? 0;
@@ -437,12 +454,16 @@ export function selectChatBlocks(
 async function composeChatPreamble(
   input: Omit<ChatInput, "mode">,
   options: ComposeChatPreambleOptions = {},
+  mode?: AgentContextMode,
 ): Promise<string> {
   const flags = await computeAgentCapabilityFlags({
     orgId: input.orgId,
     agentId: input.agentId,
   });
-  const selected = selectChatBlocks(CHAT_BLOCKS, options);
+  const selected = selectChatBlocks(CHAT_BLOCKS, {
+    ...options,
+    mode: options.mode ?? mode,
+  });
   let out = "";
   for (const block of selected) {
     const piece = await block.build({
@@ -471,6 +492,7 @@ export async function buildAgentContext(
           userRole: input.userRole,
         },
         options,
+        input.mode,
       );
     case "routine":
     case "invoke":

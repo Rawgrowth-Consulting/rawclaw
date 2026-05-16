@@ -119,3 +119,78 @@ test("selectChatBlocks: negative budget = pass-through (safety)", () => {
   const out = selectChatBlocks(FIXTURE, { skippableBudgetTokens: -1 });
   assert.equal(out.length, FIXTURE.length);
 });
+
+test("selectChatBlocks: mode filter drops blocks that opt-out", () => {
+  const chatOnly: ChatBlock = {
+    id: "chat-only",
+    build: noop,
+    priority: "required",
+    modes: ["chat"],
+  };
+  const telegramOnly: ChatBlock = {
+    id: "tg-only",
+    build: noop,
+    priority: "required",
+    modes: ["telegram"],
+  };
+  const both: ChatBlock = {
+    id: "both",
+    build: noop,
+    priority: "required",
+    modes: ["chat", "telegram"],
+  };
+  const noLimit: ChatBlock = {
+    id: "no-modes",
+    build: noop,
+    priority: "required",
+  };
+  const blocks = [chatOnly, telegramOnly, both, noLimit];
+
+  const chatOut = selectChatBlocks(blocks, { mode: "chat" }).map((b) => b.id);
+  assert.deepEqual(chatOut, ["chat-only", "both", "no-modes"]);
+
+  const telegramOut = selectChatBlocks(blocks, { mode: "telegram" }).map(
+    (b) => b.id,
+  );
+  assert.deepEqual(telegramOut, ["tg-only", "both", "no-modes"]);
+
+  const noMode = selectChatBlocks(blocks).map((b) => b.id);
+  assert.deepEqual(noMode, ["chat-only", "tg-only", "both", "no-modes"]);
+});
+
+test("selectChatBlocks: mode filter + budget compose correctly", () => {
+  const expensiveChatOnly: ChatBlock = {
+    id: "ex-chat",
+    build: noop,
+    priority: "skippable",
+    defaultCostTokens: 1000,
+    modes: ["chat"],
+  };
+  const cheapTelegram: ChatBlock = {
+    id: "ch-tg",
+    build: noop,
+    priority: "skippable",
+    defaultCostTokens: 50,
+    modes: ["telegram"],
+  };
+  const required: ChatBlock = {
+    id: "req",
+    build: noop,
+    priority: "required",
+  };
+  const blocks = [required, expensiveChatOnly, cheapTelegram];
+
+  // Telegram mode + 200 budget: ex-chat filtered by mode, ch-tg fits.
+  const tg = selectChatBlocks(blocks, {
+    mode: "telegram",
+    skippableBudgetTokens: 200,
+  }).map((b) => b.id);
+  assert.deepEqual(tg, ["req", "ch-tg"]);
+
+  // Chat mode + 200 budget: ex-chat over budget, ch-tg filtered by mode.
+  const chat = selectChatBlocks(blocks, {
+    mode: "chat",
+    skippableBudgetTokens: 200,
+  }).map((b) => b.id);
+  assert.deepEqual(chat, ["req"]);
+});
