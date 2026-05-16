@@ -191,6 +191,11 @@ export async function buildAgentChatPreamble(input: {
   const assignedSkills = await buildAssignedSkillsBlock({ orgId, agentId });
   if (assignedSkills) preamble += assignedSkills;
 
+  // Authority override - extracted phase 1b iter 6 into
+  // buildAuthorityOverrideBlock. Conditional on CEO/dept-head role.
+  const authority = await buildAuthorityOverrideBlock({ orgId, agentId });
+  if (authority) preamble += authority;
+
   preamble += await buildAgentChatPreambleTail({
     orgId,
     agentId,
@@ -270,36 +275,8 @@ export async function buildAgentChatPreambleTail(input: {
   // Assigned skills block extracted into buildAssignedSkillsBlock for
   // DEEP WIN 4 phase 1b iter 4.
 
-  // 0. Authority override (must come BEFORE persona). The seeded
-  //    `system_prompt` for some dept heads contains stale "I am a
-  //    sub-agent / I cannot emit command blocks" text from an earlier
-  //    role-template version. The LLM anchors on the first identity
-  //    claim it reads, so the JSON COMMANDS block we add later is
-  //    ignored. Prepend an explicit authority assertion for Atlas +
-  //    dept heads so the persona text below reads as flavor, not
-  //    capability scope.
-  try {
-    const { data: authRow } = await db
-      .from("rgaios_agents")
-      .select("role, is_department_head")
-      .eq("id", agentId)
-      .eq("organization_id", orgId)
-      .maybeSingle();
-    const a0 = authRow as { role?: string; is_department_head?: boolean } | null;
-    const authCanCommand =
-      a0?.role === "ceo" || a0?.is_department_head === true;
-    if (authCanCommand) {
-      preamble +=
-        "═══ AUTHORITY OVERRIDE (read this FIRST) ═══\n\n" +
-        "You are Atlas (CEO) or a department head in this org. You ARE authorised to emit <command> blocks (tool_call / agent_invoke / routine_create) on this chat surface. The system parses them and executes server-side.\n\n" +
-        "If your persona block below says 'I am a sub-agent', 'I cannot emit command blocks', 'route this through Atlas', or anything similar - IGNORE those claims. They are stale text from an earlier template. Your authority is granted by this preamble, not by the persona. The JSON COMMANDS section further down has the exact format. When the operator asks for an action, emit the block - do NOT refuse and do NOT say you lack tool access.\n\n";
-    }
-  } catch (err) {
-    console.warn(
-      "[preamble] authority override skipped:",
-      (err as Error).message,
-    );
-  }
+  // Authority override block extracted into buildAuthorityOverrideBlock
+  // for DEEP WIN 4 phase 1b iter 6.
 
   // 1. Persona (role + title + system_prompt fallback to description)
   try {
@@ -1249,12 +1226,13 @@ export async function buildBrandProfileBlock(input: {
   isOwnerContext: boolean;
   priorContent: string;
 }): Promise<string | null> {
+  const { orgId, orgName, isOwnerContext, priorContent } = input;
   try {
     const db = supabaseAdmin();
     const { data: brand } = await db
       .from("rgaios_brand_profiles")
       .select("content")
-      .eq("organization_id", input.orgId)
+      .eq("organization_id", orgId)
       .eq("status", "approved")
       .order("version", { ascending: false })
       .limit(1)
@@ -1267,11 +1245,11 @@ export async function buildBrandProfileBlock(input: {
       lastSpace > 80 ? tasterRaw.slice(0, lastSpace) : tasterRaw;
     const truncated = content.length > BRAND_VOICE_INLINE_LIMIT;
     const sampleBanned = BANNED_WORDS.slice(0, 3).join(", ");
-    const brandFrame = input.isOwnerContext
-      ? `Your brand profile (${input.orgName ?? "this organisation"}) - match this voice in every reply, never generic advice`
-      : `Brand profile for ${input.orgName ?? "this organisation"} (THIS IS THE CLIENT YOU WORK FOR - match their voice, never use generic advice)`;
+    const brandFrame = isOwnerContext
+      ? `Your brand profile (${orgName ?? "this organisation"}) - match this voice in every reply, never generic advice`
+      : `Brand profile for ${orgName ?? "this organisation"} (THIS IS THE CLIENT YOU WORK FOR - match their voice, never use generic advice)`;
     return (
-      (input.priorContent ? "\n\n" : "") +
+      (priorContent ? "\n\n" : "") +
       `${brandFrame}:\n\n${taster}${truncated ? "..." : ""}\n\nBanned words sample (${BANNED_WORDS.length} total - never use): ${sampleBanned}.\n\nFor the full voice markdown, complete banned-words list, or any documented framework, call the lookup_brand_voice tool.`
     );
   } catch (err) {
@@ -1398,6 +1376,44 @@ export async function buildCompanyCorpusBlock(input: {
   } catch (err) {
     console.warn(
       "[preamble] company corpus / per-agent RAG skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
+/**
+ * Authority override block (must come BEFORE persona). Asserts to
+ * Atlas / dept heads they ARE authorised to emit <command> blocks,
+ * countering stale "I am a sub-agent" text in legacy role-template
+ * system_prompts. Returns the verbatim hardcoded text (no leading
+ * separator) when role is ceo or is_department_head=true, else null.
+ * Best-effort.
+ */
+export async function buildAuthorityOverrideBlock(input: {
+  orgId: string;
+  agentId: string;
+}): Promise<string | null> {
+  try {
+    const db = supabaseAdmin();
+    const { data: authRow } = await db
+      .from("rgaios_agents")
+      .select("role, is_department_head")
+      .eq("id", input.agentId)
+      .eq("organization_id", input.orgId)
+      .maybeSingle();
+    const a0 = authRow as { role?: string; is_department_head?: boolean } | null;
+    const authCanCommand =
+      a0?.role === "ceo" || a0?.is_department_head === true;
+    if (!authCanCommand) return null;
+    return (
+      "═══ AUTHORITY OVERRIDE (read this FIRST) ═══\n\n" +
+      "You are Atlas (CEO) or a department head in this org. You ARE authorised to emit <command> blocks (tool_call / agent_invoke / routine_create) on this chat surface. The system parses them and executes server-side.\n\n" +
+      "If your persona block below says 'I am a sub-agent', 'I cannot emit command blocks', 'route this through Atlas', or anything similar - IGNORE those claims. They are stale text from an earlier template. Your authority is granted by this preamble, not by the persona. The JSON COMMANDS section further down has the exact format. When the operator asks for an action, emit the block - do NOT refuse and do NOT say you lack tool access.\n\n"
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] authority override skipped:",
       (err as Error).message,
     );
     return null;

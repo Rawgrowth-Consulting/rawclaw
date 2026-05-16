@@ -6,6 +6,7 @@ import {
   buildSharedMemoryBlock,
   buildRecentSignalsBlock,
   buildAssignedSkillsBlock,
+  buildAuthorityOverrideBlock,
   buildBrandProfileBlock,
   buildAgentFilesBlock,
   buildCompanyCorpusBlock,
@@ -107,6 +108,14 @@ export const CHAT_BLOCKS: ChatBlock[] = [
     id: "assigned-skills",
     build: (ctx) =>
       buildAssignedSkillsBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
+  },
+  {
+    id: "authority-override",
+    build: (ctx) =>
+      buildAuthorityOverrideBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+      }),
   },
   {
     id: "legacy-tail",
