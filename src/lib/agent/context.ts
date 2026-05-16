@@ -11,6 +11,7 @@ import {
   buildPendingTasksBlock,
   buildIdentityBlock,
   buildOrgRosterBlock,
+  buildRecentActivityBlock,
   buildPastMemoriesBlock,
   buildRecentReasoningBlock,
   buildBrandProfileBlock,
@@ -217,6 +218,15 @@ export const CHAT_BLOCKS: ChatBlock[] = [
       buildOrgRosterBlock({
         orgId: ctx.orgId,
         agentId: ctx.agentId,
+        isCeo: ctx.isCeo,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "recent-activity",
+    build: (ctx) =>
+      buildRecentActivityBlock({
+        orgId: ctx.orgId,
         isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),

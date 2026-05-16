@@ -235,11 +235,10 @@ export async function buildAgentChatPreamble(input: {
   });
   if (identity) preamble += identity;
 
-  // Org roster (CEO) - extracted phase 1d iter 14 into
-  // buildOrgRosterBlock. Self-checks isCeo via DB query; runs
-  // before tail so output position matches legacy (roster was the
-  // first emit inside the if (isCeo) tail branch).
-  const orgRoster = await (async (): Promise<string | null> => {
+  // Org roster (CEO) + Recent activity (CEO) - extracted phase 1d/e
+  // iter 14+15. Compute isCeo once + dispatch to both helpers.
+  const ceoBlocks = await (async (): Promise<string> => {
+    let acc = "";
     try {
       const dbR = supabaseAdmin();
       const { data: row } = await dbR
@@ -249,17 +248,25 @@ export async function buildAgentChatPreamble(input: {
         .eq("organization_id", orgId)
         .maybeSingle();
       const isCeo = (row as { role?: string } | null)?.role === "ceo";
-      return buildOrgRosterBlock({
+      const roster = await buildOrgRosterBlock({
         orgId,
         agentId,
         isCeo,
         priorContent: preamble,
       });
+      if (roster) acc += roster;
+      const recentActivity = await buildRecentActivityBlock({
+        orgId,
+        isCeo,
+        priorContent: preamble + acc,
+      });
+      if (recentActivity) acc += recentActivity;
     } catch {
-      return null;
+      // best-effort - skip
     }
+    return acc;
   })();
-  if (orgRoster) preamble += orgRoster;
+  preamble += ceoBlocks;
 
   preamble += await buildAgentChatPreambleTail({
     orgId,
@@ -461,58 +468,8 @@ export async function buildAgentChatPreambleTail(input: {
       // Org roster (CEO) block extracted into buildOrgRosterBlock
       // for DEEP WIN 4 phase 1d iter 14.
 
-      // Last 20 routine runs (succeeded or running) across org
-      const { data: runs } = await db
-        .from("rgaios_routine_runs")
-        .select(
-          "id, status, completed_at, created_at, output, routines:routine_id(title, assignee_agent_id)",
-        )
-        .eq("organization_id", orgId)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      const runRows = (runs ?? []) as Array<{
-        id: string;
-        status: string;
-        completed_at: string | null;
-        created_at: string;
-        output: { reply?: string } | null;
-        routines: { title: string | null; assignee_agent_id: string | null } | null;
-      }>;
-      // Resolve assignee names
-      const aIds = Array.from(
-        new Set(
-          runRows
-            .map((r) => r.routines?.assignee_agent_id)
-            .filter((x): x is string => typeof x === "string"),
-        ),
-      );
-      const nameById = new Map<string, string>();
-      if (aIds.length > 0) {
-        const { data: as } = await db
-          .from("rgaios_agents")
-          .select("id, name")
-          .in("id", aIds);
-        for (const a of (as ?? []) as Array<{ id: string; name: string }>) {
-          nameById.set(a.id, a.name);
-        }
-      }
-      if (runRows.length > 0) {
-        const block = runRows
-          .map((r, i) => {
-            const who = r.routines?.assignee_agent_id
-              ? nameById.get(r.routines.assignee_agent_id) ?? "agent"
-              : "unassigned";
-            const title = r.routines?.title ?? "(untitled)";
-            const out = (r.output?.reply ?? "")
-              .replace(/\n+/g, " ")
-              .slice(0, 100);
-            return `${i + 1}. [${r.status}] ${title} - ${who}${out ? ` :: ${out}` : ""}`;
-          })
-          .join("\n");
-        preamble +=
-          (preamble ? "\n\n" : "") +
-          `Recent agent activity across the WHOLE org (last 20 runs - you have full read access here, do NOT say "I don't have access"):\n${block}`;
-      }
+      // Recent agent activity (CEO) extracted into
+      // buildRecentActivityBlock for DEEP WIN 4 phase 1e iter 15.
 
       // Telegram entry-point directive. If the CEO has a Telegram bot
       // wired, they are the primary DM surface for the operator and
@@ -1337,6 +1294,79 @@ export async function buildRecentReasoningBlock(input: {
  * variant inside the tail) AND the org has at least one connected
  * Composio app. Returns null otherwise.
  */
+/**
+ * Recent agent activity (CEO) block. Last 20 routine runs across the
+ * whole org with assignee names resolved. Emitted only when isCeo.
+ * Returns null when there are no runs.
+ */
+export async function buildRecentActivityBlock(input: {
+  orgId: string;
+  isCeo: boolean;
+  priorContent: string;
+}): Promise<string | null> {
+  const { orgId, isCeo, priorContent } = input;
+  if (!isCeo) return null;
+  try {
+    const db = supabaseAdmin();
+    const { data: runs } = await db
+      .from("rgaios_routine_runs")
+      .select(
+        "id, status, completed_at, created_at, output, routines:routine_id(title, assignee_agent_id)",
+      )
+      .eq("organization_id", orgId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    const runRows = (runs ?? []) as Array<{
+      id: string;
+      status: string;
+      completed_at: string | null;
+      created_at: string;
+      output: { reply?: string } | null;
+      routines: { title: string | null; assignee_agent_id: string | null } | null;
+    }>;
+    const aIds = Array.from(
+      new Set(
+        runRows
+          .map((r) => r.routines?.assignee_agent_id)
+          .filter((x): x is string => typeof x === "string"),
+      ),
+    );
+    const nameById = new Map<string, string>();
+    if (aIds.length > 0) {
+      const { data: as } = await db
+        .from("rgaios_agents")
+        .select("id, name")
+        .in("id", aIds);
+      for (const a of (as ?? []) as Array<{ id: string; name: string }>) {
+        nameById.set(a.id, a.name);
+      }
+    }
+    if (runRows.length === 0) return null;
+    const block = runRows
+      .map((r, i) => {
+        const who = r.routines?.assignee_agent_id
+          ? nameById.get(r.routines.assignee_agent_id) ?? "agent"
+          : "unassigned";
+        const title = r.routines?.title ?? "(untitled)";
+        const out = (r.output?.reply ?? "")
+          .replace(/\n+/g, " ")
+          .slice(0, 100);
+        return `${i + 1}. [${r.status}] ${title} - ${who}${out ? ` :: ${out}` : ""}`;
+      })
+      .join("\n");
+    return (
+      (priorContent ? "\n\n" : "") +
+      `Recent agent activity across the WHOLE org (last 20 runs - you have full read access here, do NOT say "I don't have access"):\n${block}`
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] recent activity skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 /**
  * Org roster (CEO) block. Lists all agents (heads first, then sub-agents)
  * as labelled multi-line records per agent so Atlas dispatches by exact
