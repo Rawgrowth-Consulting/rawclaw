@@ -14,6 +14,7 @@ import {
   buildBrandProfileBlock,
   buildAgentFilesBlock,
   buildCompanyCorpusBlock,
+  buildCeoCommandsBlock,
   buildSubAgentComposioCommandsBlock,
   buildTrailingProtocolsBlock,
 } from "./preamble";
@@ -208,6 +209,14 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         orgName: ctx.orgName,
         queryText: ctx.queryText,
         userRole: ctx.userRole,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "json-commands-ceo",
+    build: (ctx) =>
+      buildCeoCommandsBlock({
+        canCommand: ctx.canCommand,
         priorContent: ctx.priorContent,
       }),
   },
