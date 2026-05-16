@@ -448,8 +448,34 @@ registerTool({
 
     const agent = await updateAgent(ctx.organizationId, id, patch);
     const integrations = Object.keys(agent.writePolicy ?? {});
+    // HOTFIX 12 (2026-05-17, Pedro porcaria verdict on R6 v2 walk):
+    // R6 reply: "I can't paste back the final description verbatim
+    // without re-reading my own row. Want me to fetch it (knowledge_query
+    // on my agent row)?" - because the tool result only echoed
+    // role/status/budget, never the description body that was patched.
+    // Agent has the write confirmation but nothing to surface, so it
+    // asks the operator for permission to do a follow-up read instead of
+    // just showing the result.
+    // Fix: echo each patched scalar with its new value FIRST in the
+    // tool result so the chat synth (route.ts pass-2 synth takes only
+    // the first line of the tool result for its "Done.\n\n<line>"
+    // message) renders "Done.\n\nNew description: <text>".
+    const trunc = (s: string, n: number): string =>
+      s.length > n ? s.slice(0, n - 1) + "…" : s;
+    const echoLines: string[] = [];
+    if (args.name !== undefined) echoLines.push(`New name: ${agent.name}`);
+    if (args.title !== undefined) echoLines.push(`New title: ${agent.title ?? "(empty)"}`);
+    if (args.description !== undefined)
+      echoLines.push(`New description: ${trunc(agent.description ?? "(empty)", 600)}`);
+    if (args.system_prompt !== undefined)
+      echoLines.push(`New system_prompt: ${trunc(agent.systemPrompt ?? "(empty)", 600)}`);
+    if (args.department !== undefined)
+      echoLines.push(`New department: ${agent.department ?? "(unassigned)"}`);
+    if (args.max_tokens !== undefined)
+      echoLines.push(`New max_tokens: ${agent.maxTokens ?? "(default)"}`);
     return text(
       [
+        ...echoLines,
         `Updated **${agent.name}**  -  role: ${agent.role}, status: ${agent.status}, budget: $${agent.budgetMonthlyUsd}/mo`,
         integrations.length
           ? `Connectors: ${integrations.join(", ")}`
