@@ -743,14 +743,33 @@ export async function POST(
   // Anonymous + member surfaces (legacy seed users without a membership
   // row, scheduled routine runs) get the original client-facing tone.
   const userRole = await getActiveOrgRole(ctx);
+  // Phase 2 selector: heavy threads (>20 incoming messages) lose budget
+  // for the skippable preamble blocks (memory / signals / skills /
+  // pending-tasks / past-mem / recent-reasoning / RAG / files). Required
+  // blocks (persona, brand, json commands, trailing protocols) always
+  // render so identity + tool protocol stay intact.
+  //
+  //   ≤20 messages -> no cap (full ~13.3k preamble)
+  //   21-40        -> 2000-token skippable cap
+  //   41+          -> 500-token skippable cap (drop most)
+  const messageCount = incoming.length;
+  const skippableBudgetTokens =
+    messageCount <= 20
+      ? Number.POSITIVE_INFINITY
+      : messageCount <= 40
+        ? 2000
+        : 500;
   const extraPreamble =
-    (await buildAgentChatPreambleV2({
-      orgId,
-      agentId,
-      orgName: ctx.activeOrgName,
-      queryText: lastContent,
-      userRole,
-    })) + recallBlock;
+    (await buildAgentChatPreambleV2(
+      {
+        orgId,
+        agentId,
+        orgName: ctx.activeOrgName,
+        queryText: lastContent,
+        userRole,
+      },
+      { skippableBudgetTokens },
+    )) + recallBlock;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
