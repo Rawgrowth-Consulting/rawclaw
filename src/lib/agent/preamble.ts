@@ -233,6 +233,24 @@ export async function buildAgentChatPreamble(input: {
     priorContent: preamble,
   });
 
+  // Past memories - extracted phase 1c iter 9 into
+  // buildPastMemoriesBlock.
+  const pastMem = await buildPastMemoriesBlock({
+    orgId,
+    agentId,
+    priorContent: preamble,
+  });
+  if (pastMem) preamble += pastMem;
+
+  // Recent reasoning - extracted phase 1c iter 9 into
+  // buildRecentReasoningBlock.
+  const recentReason = await buildRecentReasoningBlock({
+    orgId,
+    agentId,
+    priorContent: preamble,
+  });
+  if (recentReason) preamble += recentReason;
+
   // Brand profile + per-agent files + company-corpus extracted in
   // phase 1b iter 5. Same wiring: helpers return either the section
   // (with conditional separator) or null when the data slot is empty.
@@ -853,82 +871,9 @@ export async function buildAgentChatPreambleTail(input: {
       ].join("\n");
   }
 
-  // 2. Past memories (last 15 chat_memory audit entries for this agent)
-  try {
-    const { data: memories } = await db
-      .from("rgaios_audit_log")
-      .select("ts, detail")
-      .eq("organization_id", orgId)
-      .eq("kind", "chat_memory")
-      .filter("detail->>agent_id", "eq", agentId)
-      .order("ts", { ascending: false })
-      .limit(15);
-    const rows = (memories ?? []) as Array<{
-      ts: string;
-      detail: { fact?: string; agent_id?: string };
-    }>;
-    if (rows.length > 0) {
-      const block = rows
-        .filter((m) => m.detail?.fact)
-        .reverse()
-        .map((m, i) => `${i + 1}. ${m.detail.fact}`)
-        .join("\n");
-      if (block) {
-        preamble +=
-          (preamble ? "\n\n" : "") +
-          `Things you remember from past conversations with this user (treat as facts about their business + preferences):\n${block}`;
-      }
-    }
-  } catch (err) {
-    console.warn(
-      "[preamble] past memories skipped:",
-      (err as Error).message,
-    );
-  }
-
-  // 2b. Recent reasoning. Every reply opens with a <thinking> ReAct block
-  //   that thinking.ts extracts and persists to rgaios_audit_log
-  //   (kind chat_thinking, detail->>brief = the trace text, actor_id =
-  //   the agent). Until now those traces were write-only - the model
-  //   never saw its own prior reasoning, so every turn restarted cold.
-  //   Feed the last few back in so reasoning COMPOUNDS across turns: the
-  //   agent can see what it just decided and build on it instead of
-  //   re-deriving the same plan. Capped tight like the memory/signals
-  //   blocks; best-effort - a failed query just skips the block.
-  try {
-    const { data: traces } = await db
-      .from("rgaios_audit_log")
-      .select("ts, detail")
-      .eq("organization_id", orgId)
-      .eq("kind", "chat_thinking")
-      .eq("actor_id", agentId)
-      .order("ts", { ascending: false })
-      .limit(4);
-    const traceRows = (traces ?? []) as Array<{
-      ts: string;
-      detail: { brief?: string };
-    }>;
-    const block = traceRows
-      .map((t) => (t.detail?.brief ?? "").trim())
-      .filter((b) => b.length > 0)
-      .reverse()
-      .map((b, i) => `${i + 1}. ${b}`)
-      .join("\n");
-    if (block) {
-      preamble +=
-        (preamble ? "\n\n" : "") +
-        "═══ YOUR RECENT REASONING (last few turns) ═══\n\n" +
-        "These are the <thinking> traces from your own most recent replies in this thread, oldest first. Use them to stay consistent and build on what you already decided - do NOT re-derive a plan you just made, and do NOT contradict a conclusion you already landed on without a new reason.\n" +
-        block +
-        "\n";
-    }
-  } catch (err) {
-    // best-effort - a reasoning-lookup failure never blocks the reply
-    console.warn(
-      "[preamble] recent reasoning skipped:",
-      (err as Error).message,
-    );
-  }
+  // Past memories + recent reasoning blocks extracted into
+  // buildPastMemoriesBlock + buildRecentReasoningBlock for DEEP WIN 4
+  // phase 1c iter 9.
 
   // Brand profile + per-agent files blocks extracted into
   // buildBrandProfileBlock + buildAgentFilesBlock for DEEP WIN 4
@@ -1500,6 +1445,99 @@ export async function buildPendingTasksBlock(input: {
   } catch (err) {
     console.warn(
       "[preamble] pending tasks skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
+/**
+ * Past memories block. Reads last 15 chat_memory audit entries for
+ * this agent + renders "Things you remember..." section with
+ * conditional separator. Returns null when no memory rows.
+ */
+export async function buildPastMemoriesBlock(input: {
+  orgId: string;
+  agentId: string;
+  priorContent: string;
+}): Promise<string | null> {
+  const { orgId, agentId, priorContent } = input;
+  try {
+    const db = supabaseAdmin();
+    const { data: memories } = await db
+      .from("rgaios_audit_log")
+      .select("ts, detail")
+      .eq("organization_id", orgId)
+      .eq("kind", "chat_memory")
+      .filter("detail->>agent_id", "eq", agentId)
+      .order("ts", { ascending: false })
+      .limit(15);
+    const rows = (memories ?? []) as Array<{
+      ts: string;
+      detail: { fact?: string; agent_id?: string };
+    }>;
+    if (rows.length === 0) return null;
+    const block = rows
+      .filter((m) => m.detail?.fact)
+      .reverse()
+      .map((m, i) => `${i + 1}. ${m.detail.fact}`)
+      .join("\n");
+    if (!block) return null;
+    return (
+      (priorContent ? "\n\n" : "") +
+      `Things you remember from past conversations with this user (treat as facts about their business + preferences):\n${block}`
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] past memories skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
+/**
+ * Recent reasoning block. Reads last 4 chat_thinking audit traces +
+ * renders YOUR RECENT REASONING section with conditional separator.
+ * Returns null when no traces.
+ */
+export async function buildRecentReasoningBlock(input: {
+  orgId: string;
+  agentId: string;
+  priorContent: string;
+}): Promise<string | null> {
+  const { orgId, agentId, priorContent } = input;
+  try {
+    const db = supabaseAdmin();
+    const { data: traces } = await db
+      .from("rgaios_audit_log")
+      .select("ts, detail")
+      .eq("organization_id", orgId)
+      .eq("kind", "chat_thinking")
+      .eq("actor_id", agentId)
+      .order("ts", { ascending: false })
+      .limit(4);
+    const traceRows = (traces ?? []) as Array<{
+      ts: string;
+      detail: { brief?: string };
+    }>;
+    const block = traceRows
+      .map((t) => (t.detail?.brief ?? "").trim())
+      .filter((b) => b.length > 0)
+      .reverse()
+      .map((b, i) => `${i + 1}. ${b}`)
+      .join("\n");
+    if (!block) return null;
+    return (
+      (priorContent ? "\n\n" : "") +
+      "═══ YOUR RECENT REASONING (last few turns) ═══\n\n" +
+      "These are the <thinking> traces from your own most recent replies in this thread, oldest first. Use them to stay consistent and build on what you already decided - do NOT re-derive a plan you just made, and do NOT contradict a conclusion you already landed on without a new reason.\n" +
+      block +
+      "\n"
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] recent reasoning skipped:",
       (err as Error).message,
     );
     return null;

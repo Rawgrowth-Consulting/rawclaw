@@ -9,6 +9,8 @@ import {
   buildAuthorityOverrideBlock,
   buildPersonaAndOrgPlaceBlock,
   buildPendingTasksBlock,
+  buildPastMemoriesBlock,
+  buildRecentReasoningBlock,
   buildBrandProfileBlock,
   buildAgentFilesBlock,
   buildCompanyCorpusBlock,
@@ -146,6 +148,24 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         orgName: ctx.orgName,
         queryText: ctx.queryText,
         userRole: ctx.userRole,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "past-memories",
+    build: (ctx) =>
+      buildPastMemoriesBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "recent-reasoning",
+    build: (ctx) =>
+      buildRecentReasoningBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
         priorContent: ctx.priorContent,
       }),
   },
