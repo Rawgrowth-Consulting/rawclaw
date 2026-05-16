@@ -10,6 +10,7 @@ import {
   buildPersonaAndOrgPlaceBlock,
   buildPendingTasksBlock,
   buildIdentityBlock,
+  buildOrgRosterBlock,
   buildPastMemoriesBlock,
   buildRecentReasoningBlock,
   buildBrandProfileBlock,
@@ -207,6 +208,16 @@ export const CHAT_BLOCKS: ChatBlock[] = [
       buildIdentityBlock({
         orgId: ctx.orgId,
         agentId: ctx.agentId,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "org-roster",
+    build: (ctx) =>
+      buildOrgRosterBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),
   },

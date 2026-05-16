@@ -235,6 +235,32 @@ export async function buildAgentChatPreamble(input: {
   });
   if (identity) preamble += identity;
 
+  // Org roster (CEO) - extracted phase 1d iter 14 into
+  // buildOrgRosterBlock. Self-checks isCeo via DB query; runs
+  // before tail so output position matches legacy (roster was the
+  // first emit inside the if (isCeo) tail branch).
+  const orgRoster = await (async (): Promise<string | null> => {
+    try {
+      const dbR = supabaseAdmin();
+      const { data: row } = await dbR
+        .from("rgaios_agents")
+        .select("role")
+        .eq("id", agentId)
+        .eq("organization_id", orgId)
+        .maybeSingle();
+      const isCeo = (row as { role?: string } | null)?.role === "ceo";
+      return buildOrgRosterBlock({
+        orgId,
+        agentId,
+        isCeo,
+        priorContent: preamble,
+      });
+    } catch {
+      return null;
+    }
+  })();
+  if (orgRoster) preamble += orgRoster;
+
   preamble += await buildAgentChatPreambleTail({
     orgId,
     agentId,
@@ -432,84 +458,8 @@ export async function buildAgentChatPreambleTail(input: {
     // YOUR IDENTITY block extracted into buildIdentityBlock for DEEP
     // WIN 4 phase 1d iter 13.
     if (isCeo) {
-      // 1c-pre. Live agent roster. Atlas hallucinates "Marketing Manager"
-      // / "Sales Manager" / "Finance Manager" because the seeded names
-      // carry random suffixes (Sales Manager picsa, Bookkeeper 7vpa9,
-      // Content Strategist x4z4y). Without the actual roster injected
-      // every first-attempt agent_invoke fails. Inject the heads list +
-      // sub-agents grouped by department so Atlas dispatches by exact
-      // name on the first try.
-      //
-      // Why title + description are pulled here too (2026-05-14, Marti):
-      // Scan kept "confusing names with roles and responsibilities" - it
-      // only ever saw name/role/department, so when an agent's title said
-      // "Customer Service" but role=ops/department=fulfilment, Scan would
-      // "correct" the operator with the role slug. The fix is two-part:
-      // (1) inject every human-readable field, (2) render each agent as a
-      // labelled multi-line record so the model cannot read the name as
-      // if it were the job description.
-      try {
-        const { data: roster } = await db
-          .from("rgaios_agents")
-          .select("name, role, title, description, department, is_department_head")
-          .eq("organization_id", orgId)
-          .neq("id", agentId)
-          .order("is_department_head", { ascending: false });
-        const rows = (roster ?? []) as Array<{
-          name: string;
-          role: string | null;
-          title: string | null;
-          description: string | null;
-          department: string | null;
-          is_department_head: boolean | null;
-        }>;
-        if (rows.length > 0) {
-          const heads = rows.filter((a) => a.is_department_head);
-          const subs = rows.filter((a) => !a.is_department_head);
-          // One labelled record per agent. Each field is on its own line
-          // with an explicit "FIELD:" prefix so Scan reads NAME as just an
-          // identifier and ROLE / DEPARTMENT / TITLE / RESPONSIBILITY as
-          // the actual job. Responsibility (description / title) is the
-          // plain-English answer to "what does this person do" - Scan
-          // should quote that back to the operator, not the role slug.
-          const fmtAgent = (a: (typeof rows)[number]): string => {
-            const responsibility =
-              (a.description && a.description.trim()) ||
-              (a.title && a.title.trim()) ||
-              "(not documented - ask the operator, do not guess)";
-            return [
-              `  - NAME: ${a.name}`,
-              `    ROLE (internal slug, NOT a job summary): ${a.role ?? "?"}`,
-              `    DEPARTMENT: ${a.department ?? "?"}`,
-              `    TITLE: ${a.title ?? "(none)"}`,
-              `    RESPONSIBILITY: ${responsibility}`,
-            ].join("\n");
-          };
-          const headBlock = heads.length
-            ? "DEPARTMENT HEADS (emit agent_invoke against the exact NAME value):\n" +
-              heads.map(fmtAgent).join("\n\n")
-            : "";
-          const subBlock = subs.length
-            ? "SUB-AGENTS (route work to them via their department head, NOT via direct dispatch):\n" +
-              subs.map(fmtAgent).join("\n\n")
-            : "";
-          preamble +=
-            (preamble ? "\n\n" : "") +
-            "═══ ORG ROSTER (live, from DB - THIS IS THE SOURCE OF TRUTH) ═══\n\n" +
-            "This roster is the SINGLE SOURCE OF TRUTH for who owns what. It overrides your memory, the persona text, and any prior conversation. Never guess a colleague's department or responsibility from their name or from what you think you remember - if it is not in their record below, you do not know it: read the record or ask the operator.\n\n" +
-            "How to read each record below:\n" +
-            "  - NAME is only an identifier. It is NOT a description of what the agent does. Never infer someone's job from their name.\n" +
-            "  - DEPARTMENT + ROLE + RESPONSIBILITY together describe the job. When the operator asks 'who handles X' or 'what does <Name> do', answer from RESPONSIBILITY (and DEPARTMENT), not from the NAME and not from a memory.\n" +
-            "  - When routing or delegating, pick the agent by matching the work against the DEPARTMENT + RESPONSIBILITY fields - not against the name. Then copy that agent's NAME value verbatim into agent_invoke.\n" +
-            "  - If the operator states someone's role and it differs from this roster, the roster wins - but do NOT lecture them; say 'the roster has <Name> as <RESPONSIBILITY> in <DEPARTMENT>' and offer to have it changed at /agents.\n\n" +
-            [headBlock, subBlock].filter(Boolean).join("\n\n");
-        }
-      } catch (err) {
-        console.warn(
-          "[preamble] org roster skipped:",
-          (err as Error).message,
-        );
-      }
+      // Org roster (CEO) block extracted into buildOrgRosterBlock
+      // for DEEP WIN 4 phase 1d iter 14.
 
       // Last 20 routine runs (succeeded or running) across org
       const { data: runs } = await db
@@ -1387,6 +1337,80 @@ export async function buildRecentReasoningBlock(input: {
  * variant inside the tail) AND the org has at least one connected
  * Composio app. Returns null otherwise.
  */
+/**
+ * Org roster (CEO) block. Lists all agents (heads first, then sub-agents)
+ * as labelled multi-line records per agent so Atlas dispatches by exact
+ * NAME and the operator-facing copy reads RESPONSIBILITY/DEPARTMENT
+ * instead of the role slug. Emitted only when isCeo=true.
+ */
+export async function buildOrgRosterBlock(input: {
+  orgId: string;
+  agentId: string;
+  isCeo: boolean;
+  priorContent: string;
+}): Promise<string | null> {
+  const { orgId, agentId, isCeo, priorContent } = input;
+  if (!isCeo) return null;
+  try {
+    const db = supabaseAdmin();
+    const { data: roster } = await db
+      .from("rgaios_agents")
+      .select("name, role, title, description, department, is_department_head")
+      .eq("organization_id", orgId)
+      .neq("id", agentId)
+      .order("is_department_head", { ascending: false });
+    const rows = (roster ?? []) as Array<{
+      name: string;
+      role: string | null;
+      title: string | null;
+      description: string | null;
+      department: string | null;
+      is_department_head: boolean | null;
+    }>;
+    if (rows.length === 0) return null;
+    const heads = rows.filter((a) => a.is_department_head);
+    const subs = rows.filter((a) => !a.is_department_head);
+    const fmtAgent = (a: (typeof rows)[number]): string => {
+      const responsibility =
+        (a.description && a.description.trim()) ||
+        (a.title && a.title.trim()) ||
+        "(not documented - ask the operator, do not guess)";
+      return [
+        `  - NAME: ${a.name}`,
+        `    ROLE (internal slug, NOT a job summary): ${a.role ?? "?"}`,
+        `    DEPARTMENT: ${a.department ?? "?"}`,
+        `    TITLE: ${a.title ?? "(none)"}`,
+        `    RESPONSIBILITY: ${responsibility}`,
+      ].join("\n");
+    };
+    const headBlock = heads.length
+      ? "DEPARTMENT HEADS (emit agent_invoke against the exact NAME value):\n" +
+        heads.map(fmtAgent).join("\n\n")
+      : "";
+    const subBlock = subs.length
+      ? "SUB-AGENTS (route work to them via their department head, NOT via direct dispatch):\n" +
+        subs.map(fmtAgent).join("\n\n")
+      : "";
+    return (
+      (priorContent ? "\n\n" : "") +
+      "═══ ORG ROSTER (live, from DB - THIS IS THE SOURCE OF TRUTH) ═══\n\n" +
+      "This roster is the SINGLE SOURCE OF TRUTH for who owns what. It overrides your memory, the persona text, and any prior conversation. Never guess a colleague's department or responsibility from their name or from what you think you remember - if it is not in their record below, you do not know it: read the record or ask the operator.\n\n" +
+      "How to read each record below:\n" +
+      "  - NAME is only an identifier. It is NOT a description of what the agent does. Never infer someone's job from their name.\n" +
+      "  - DEPARTMENT + ROLE + RESPONSIBILITY together describe the job. When the operator asks 'who handles X' or 'what does <Name> do', answer from RESPONSIBILITY (and DEPARTMENT), not from the NAME and not from a memory.\n" +
+      "  - When routing or delegating, pick the agent by matching the work against the DEPARTMENT + RESPONSIBILITY fields - not against the name. Then copy that agent's NAME value verbatim into agent_invoke.\n" +
+      "  - If the operator states someone's role and it differs from this roster, the roster wins - but do NOT lecture them; say 'the roster has <Name> as <RESPONSIBILITY> in <DEPARTMENT>' and offer to have it changed at /agents.\n\n" +
+      [headBlock, subBlock].filter(Boolean).join("\n\n")
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] org roster skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 /**
  * YOUR IDENTITY block (HOTFIX 5). Injects the agent's name + UUID so
  * agents_update self-edits can pass either form. Returns null when no
