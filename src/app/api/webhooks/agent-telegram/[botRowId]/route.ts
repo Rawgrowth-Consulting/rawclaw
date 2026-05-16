@@ -13,7 +13,7 @@ import {
 import { tryDecryptSecret } from "@/lib/crypto";
 import { chatReply, CHAT_HANDOFF_SENTINEL_PREFIX } from "@/lib/agent/chat";
 import { surfaceThinkingTelegram } from "@/lib/agent/thinking";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildTelegramPreambleV2 } from "@/lib/agent/context";
 import { transcribeVoice } from "@/lib/agent/voice-transcribe";
 import { describeImage } from "@/lib/agent/image-describe";
 
@@ -254,7 +254,7 @@ export async function POST(
     // so the Telegram bot replies are grounded in the client's actual
     // offer/voice/SOPs instead of generic SaaS phrasing. Best-effort -
     // a missing embedder just skips RAG.
-    const extraPreamble = await buildAgentChatPreamble({
+    const extraPreamble = await buildTelegramPreambleV2({
       orgId: organizationId,
       agentId,
       orgName: orgRow?.name ?? null,
