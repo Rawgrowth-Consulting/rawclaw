@@ -442,8 +442,17 @@ export async function runOauthToolLoop(
       const isRateLimited =
         lastErr instanceof AnthropicHttpError && lastErr.status === 429;
       if (isRateLimited) {
+        // HOTFIX 8c (2026-05-17, Pedro 16:36 + B 16:42): operator
+        // sees this string verbatim in monitor-alert chips when a
+        // delegated run trips the OAuth pool. The previous copy
+        // ("Claude Max quota exhausted - all OAuth tokens cooling
+        // down") leaked internal ops jargon - the operator does
+        // not run the OAuth pool, does not know what "cooling down"
+        // means, and "Claude Max" names a specific Anthropic SKU
+        // the client may not even pay for. Rewrite to operator-
+        // friendly copy that keeps the actionable next step.
         throw new Error(
-          "Claude Max quota exhausted - all OAuth tokens cooling down. Operator should add more accounts to /connections.",
+          "Hit our run limit for the moment - retrying shortly. If this keeps happening, add another account at /connections.",
         );
       }
       if (lastErr instanceof Error) throw lastErr;
