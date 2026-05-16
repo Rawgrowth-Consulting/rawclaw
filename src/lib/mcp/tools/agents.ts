@@ -265,7 +265,11 @@ registerTool({
   inputSchema: {
     type: "object",
     properties: {
-      id: { type: "string", description: "Agent id to update." },
+      id: {
+        type: "string",
+        description:
+          "Agent UUID OR name (case-insensitive). The handler resolves a name to its UUID via the org-scoped agents table, so the agent can call `agents_update({id:'Kasia', ...})` from chat without first looking up its own UUID. UUIDs always win if a name happens to look like a UUID.",
+      },
       name: { type: "string" },
       title: { type: "string" },
       role: { type: "string" },
@@ -308,29 +312,54 @@ registerTool({
     required: ["id"],
   },
   handler: async (args, ctx) => {
-    const id = String(args.id ?? "").trim();
-    if (!id) return textError("id is required");
+    const idOrName = String(args.id ?? "").trim();
+    if (!idOrName) return textError("id is required");
 
     // Privilege guard - mirrors agents_fire's CEO/dept-head protection.
     // Without it any agent could promote itself to role "ceo" (which
     // grants the orchestrator surface + JSON COMMANDS authority) or
     // demote / rewire the real CEO or a department head. role:"ceo"
     // passes the VALID_ROLES check, so the gate has to live here.
+    //
+    // HOTFIX 5 (2026-05-17): the agent calling agents_update from chat
+    // does not know its own UUID - the persona only carries its name.
+    // R5/R9 walk surfaced "agent Kasia not found" because the lookup
+    // was UUID-only. Resolve either form: try UUID first, then fall
+    // back to a case-insensitive name match scoped to the same org.
     const db = supabaseAdmin();
-    const { data: targetRow } = await db
-      .from("rgaios_agents")
-      .select("role, is_department_head, name")
-      .eq("id", id)
-      .eq("organization_id", ctx.organizationId)
-      .maybeSingle();
-    const target = targetRow as {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    type ResolvedAgent = {
+      id: string;
       role: string | null;
       is_department_head: boolean | null;
       name: string;
-    } | null;
-    if (!target) {
-      return textError(`agent ${id} not found in your organization`);
+    };
+    let targetRow: ResolvedAgent | null = null;
+    if (UUID_RE.test(idOrName)) {
+      const { data } = await db
+        .from("rgaios_agents")
+        .select("id, role, is_department_head, name")
+        .eq("id", idOrName)
+        .eq("organization_id", ctx.organizationId)
+        .maybeSingle();
+      targetRow = data as ResolvedAgent | null;
     }
+    if (!targetRow) {
+      const { data } = await db
+        .from("rgaios_agents")
+        .select("id, role, is_department_head, name")
+        .ilike("name", idOrName)
+        .eq("organization_id", ctx.organizationId)
+        .maybeSingle();
+      targetRow = data as ResolvedAgent | null;
+    }
+    const target = targetRow;
+    if (!target) {
+      return textError(
+        `agent ${idOrName} not found in your organization (tried UUID + case-insensitive name lookup)`,
+      );
+    }
+    const id = target.id;
     if (args.role !== undefined && String(args.role).trim() === "ceo") {
       return textError(
         'can\'t promote an agent to CEO from MCP - role:"ceo" is an operator action in the dashboard agent panel.',

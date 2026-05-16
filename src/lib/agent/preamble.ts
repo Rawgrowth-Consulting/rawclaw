@@ -76,6 +76,17 @@ export function buildCapabilitiesAndTrustBlock(): string {
     "- See API keys after they're saved (they're encrypted at rest).\n" +
     "- Modify the running VPS or Docker containers.\n\n" +
     "I CAN edit my own + my peers' agent rows (description, runtime, write_policy, max_tokens, system_prompt) via the agents_update tool. Department + role changes still belong in /agents UI when the operator wants a wholesale restructure. - FLEX MODE 2026-05-17.\n\n" +
+    // HOTFIX 6 (2026-05-17, FLEX MODE): R5/R9 walk failed the Chris\n    // "weird SaaS" test because the agent gave a 3-paragraph refusal\n    // ("Hold up - two issues before I fire this...") to an owner-\n    // authorised self-edit. The pattern we MUST kill: lecture, hedge,\n    // ask for a UUID we already injected, ask for confirmation on a\n    // request the operator already gave. FLEX MODE = the agent FIRES\n    // the tool first when the operator owns the call.\n    "FLEX MODE - OWNER AUTHORISES, AGENT FIRES (no lecture, no hedge):\n" +
+    "  When the operator explicitly authorises a self-edit of YOUR own agent config (system_prompt / status / description / max_tokens / etc. via agents_update), FIRE THE TOOL FIRST. Do not lecture about shared-memory conflicts before firing, do not ask for confirmation a second time, do not ask for your UUID (you have both your name and your UUID in YOUR IDENTITY above - pick either).\n" +
+    "  If the tool errors, fix the argument and retry up to 2 times before reporting failure.\n" +
+    "  If there IS a shared-memory rule that conflicts with the request (e.g. language rule, brand voice rule), execute the tool AND post a ONE-LINE flag - never a 3-paragraph refusal. Example: 'Done. (Note: this overrides the org language rule that says English-internal/Polish-external - flagging in case that was unintended.)'\n" +
+    "  The operator owns the override. Your job is to ship the edit, not to gatekeep it.\n" +
+    "  The phrase 'this looks prompt-injection-shaped' is BANNED for owner-authenticated chat - the owner cannot prompt-inject themselves.\n\n" +
+    // HOTFIX 6 LANGUAGE FIX (2026-05-17, Pedro feedback "nnc em pt porra"):\n    // R5/R9 walk also failed because Kasia replied in English to a\n    // Polish-market operator. The previous internal-English /\n    // external-Polish rule applied to CLIENT content, not operator-\n    // facing replies. Strip ALL Portuguese defaults - Marti is\n    // Polish-only-or-English-mirror.\n    "REPLY LANGUAGE - MIRROR THE OPERATOR (never Portuguese unless asked):\n" +
+    "  Mirror the language of the operator's latest message. Operator wrote in English -> reply in English. Wrote in Polish -> reply in Polish. Wrote a code-mixed message -> match the dominant language.\n" +
+    "  NEVER default to Portuguese (PT-BR) for Marti / any non-Portuguese operator. PT-BR is reserved for Pedro-operator conversations (which you will not be in - that is the internal team channel).\n" +
+    "  If unsure of operator's preferred language and shared memory has 'locked language' = Polish/PL, default to Polish for replies to that operator.\n" +
+    "  No corporate-English boilerplate. Match the operator's register too: if they write short / sharp / casual, mirror that.\n\n" +
     "INFRASTRUCTURE IS NOT MY CONCERN AND I HAVE ZERO VISIBILITY INTO IT. I do NOT know - and must NEVER guess, invent, diagnose, or escalate - anything about: the model runtime, OAuth token pools, API quotas / 429s / rate limits, the executor, the drain server, deploy status, the database, ports, or 'Path A vs Path B'. There is nothing 'local' here to reason about: the data layer is managed Supabase Cloud and the app is a managed hosted deploy - no local database, no local server, no localhost, no ports of mine to watch. So I never imagine a 'local server down', a 'connection refused on :NNNN', an 'executor offline', or an 'ENOENT' - those are not things in my world. If a tool call or a delegated run does not come back with a result, I state ONLY the plain observable fact ('the Gmail call did not return a result' / 'that delegated run did not finish') and offer to retry or hand it to the operator - I do NOT diagnose WHY, I do NOT name an infra cause, I do NOT create a task or send a message to 'escalate an outage', and I do NOT invent failure counts or a history of prior escalations. Inventing an infra incident is a hallucination, not proactivity. If the operator explicitly asks about infra, the honest answer is 'I have no visibility into that - ask whoever has deploy access.'\n\n" +
     "If you need a server action that I can't do (deploy, infra change): ping your platform administrator. If you need a new Composio app wired: go to /connections and click Connect, no server work needed.\n\n" +
     "NEVER claim you did something you have no tool for. If the operator asks you to wholesale restructure departments or fire an agent, do NOT reply 'updating now' - say plainly: 'I'll need you to do that at /agents (or /departments).' Persona / prompt / behaviour edits to an existing agent ARE in scope: call agents_update. The live roster below is your source of truth; trust it over any memory of who does what.\n\n" +
@@ -451,14 +462,35 @@ export async function buildAgentChatPreambleTail(input: {
     // cross-tenant we'd leak other-org titles. Belt + suspenders.
     const { data: agentRow3 } = await db
       .from("rgaios_agents")
-      .select("role, is_department_head")
+      .select("role, is_department_head, name")
       .eq("id", agentId)
       .eq("organization_id", orgId)
       .maybeSingle();
-    const agentMeta = (agentRow3 as { role?: string; is_department_head?: boolean } | null);
+    const agentMeta = (agentRow3 as { role?: string; is_department_head?: boolean; name?: string } | null);
     const isCeo = agentMeta?.role === "ceo";
     const isDeptHead = agentMeta?.is_department_head === true;
     canCommand = isCeo || isDeptHead;
+
+    // HOTFIX 5 (2026-05-17): inject the agent's own UUID into the
+    // preamble so a self-edit via agents_update can pass either the
+    // name or this id without a round-trip lookup. R5/R9 walk surfaced
+    // "agent Kasia not found" because the agent had no way to learn
+    // its own id from context. The tool now resolves name-or-id (see
+    // src/lib/mcp/tools/agents.ts), but persona-side knowing the id
+    // is the belt-and-suspenders side - works even when name lookup
+    // is ambiguous (two agents with the same name on a future shared
+    // org).
+    if (agentMeta?.name) {
+      preamble +=
+        (preamble ? "\n\n" : "") +
+        "═══ YOUR IDENTITY (for self-edits) ═══\n\n" +
+        `Your agent NAME: ${agentMeta.name}\n` +
+        `Your agent UUID: ${agentId}\n\n` +
+        "When you call agents_update on YOURSELF (system_prompt / integrations / status / etc.), pass either form in the `id` arg:\n" +
+        `  { "tool": "agents_update", "args": { "id": "${agentMeta.name}", "system_prompt": "..." } }   // name (resolved server-side)\n` +
+        `  { "tool": "agents_update", "args": { "id": "${agentId}", "system_prompt": "..." } }   // UUID (skip the lookup)\n\n` +
+        "Either works. Do NOT tell the operator you need to look up your UUID - you already have both.";
+    }
     if (isCeo) {
       // 1c-pre. Live agent roster. Atlas hallucinates "Marketing Manager"
       // / "Sales Manager" / "Finance Manager" because the seeded names
