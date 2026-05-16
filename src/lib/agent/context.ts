@@ -419,6 +419,22 @@ export function chatHistoryBudgetFactor(messageCount: number): number {
 }
 
 /**
+ * Iter 43: composed chat budget for a given (role, history) pair.
+ * Equals the role-aware base * history scale factor, rounded.
+ * Use this from chat-route + admin debug pages so the composition
+ * lives in one place; route call sites become a single helper
+ * call.
+ */
+export function computeChatBudget(
+  flags: AgentCapabilityFlags,
+  messageCount = 0,
+): number {
+  return Math.round(
+    ROLE_BASED_BUDGET_POLICY(flags) * chatHistoryBudgetFactor(messageCount),
+  );
+}
+
+/**
  * Decide which CHAT_BLOCKS entries are eligible to render given the
  * caller-supplied budget. Required blocks always pass. Skippable
  * blocks are kept in registry order until the running total of

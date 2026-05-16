@@ -31,22 +31,22 @@ const TELEGRAM_ROUTE_SRC = readFileSync(
   "utf8",
 );
 
-test("chat route imports ROLE_BASED_BUDGET_POLICY + chatHistoryBudgetFactor", () => {
+test("chat route imports computeChatBudget", () => {
+  // Iter 43: ROLE_BASED_BUDGET_POLICY * chatHistoryBudgetFactor
+  // collapsed into computeChatBudget. Chat route only needs the
+  // composed helper.
   assert.match(
     CHAT_ROUTE_SRC,
-    /import \{[^}]*\bROLE_BASED_BUDGET_POLICY\b[^}]*\bchatHistoryBudgetFactor\b[^}]*\} from "@\/lib\/agent\/context"/,
-    "chat route must import both budget helpers from context.ts",
+    /import \{[^}]*\bcomputeChatBudget\b[^}]*\} from "@\/lib\/agent\/context"/,
+    "chat route must import computeChatBudget from context.ts",
   );
 });
 
-test("chat route budgetPolicy multiplies role base × history factor", () => {
-  // The Math.round(ROLE_BASED_BUDGET_POLICY(flags) * chatHistoryBudgetFactor(messageCount))
-  // shape is the iter 41 one-liner. Regex allows arbitrary whitespace
-  // and the flags identifier name so a rename doesn't break it.
+test("chat route budgetPolicy delegates to computeChatBudget", () => {
   assert.match(
     CHAT_ROUTE_SRC,
-    /Math\.round\(\s*ROLE_BASED_BUDGET_POLICY\(\w+\)\s*\*\s*chatHistoryBudgetFactor\(\w+\)\s*,?\s*\)/,
-    "chat route budgetPolicy must compose ROLE_BASED_BUDGET_POLICY * chatHistoryBudgetFactor",
+    /budgetPolicy:\s*\(\w+\)\s*=>\s*computeChatBudget\(\w+,\s*\w+\)/,
+    "chat route budgetPolicy must call computeChatBudget(flags, messageCount)",
   );
 });
 

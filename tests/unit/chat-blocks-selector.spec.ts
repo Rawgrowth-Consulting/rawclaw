@@ -9,6 +9,7 @@ import {
   describeSelection,
   ROLE_BASED_BUDGET_POLICY,
   chatHistoryBudgetFactor,
+  computeChatBudget,
   type ChatBlock,
 } from "../../src/lib/agent/context";
 
@@ -433,4 +434,29 @@ test("chatHistoryBudgetFactor: tier order matches config (first-match wins)", ()
     chatHistoryBudgetFactor(41),
     "40 and 41 must land in different tiers",
   );
+});
+
+test("computeChatBudget: CEO @ 0 msgs = 6000 * 1.0 = 6000", () => {
+  const ceo = { isCeo: true, isDeptHead: false, canCommand: true, hasComposio: false };
+  assert.equal(computeChatBudget(ceo, 0), 6000);
+});
+
+test("computeChatBudget: CEO @ 30 msgs = 6000 * 0.5 = 3000", () => {
+  const ceo = { isCeo: true, isDeptHead: false, canCommand: true, hasComposio: false };
+  assert.equal(computeChatBudget(ceo, 30), 3000);
+});
+
+test("computeChatBudget: specialist @ 50 msgs = 2000 * 0.2 = 400", () => {
+  const sp = { isCeo: false, isDeptHead: false, canCommand: false, hasComposio: false };
+  assert.equal(computeChatBudget(sp, 50), 400);
+});
+
+test("computeChatBudget: dept head @ 20 msgs = 4000 * 1.0 = 4000", () => {
+  const dh = { isCeo: false, isDeptHead: true, canCommand: true, hasComposio: false };
+  assert.equal(computeChatBudget(dh, 20), 4000);
+});
+
+test("computeChatBudget: messageCount defaults to 0 = full role base", () => {
+  const ceo = { isCeo: true, isDeptHead: false, canCommand: true, hasComposio: false };
+  assert.equal(computeChatBudget(ceo), 6000);
 });

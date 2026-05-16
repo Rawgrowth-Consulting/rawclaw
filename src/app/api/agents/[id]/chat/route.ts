@@ -10,8 +10,7 @@ import { extractChatMemoryFact } from "@/lib/agent/chat-memory";
 import { applyBrandFilter } from "@/lib/brand/apply-filter";
 import {
   buildAgentChatPreambleV2,
-  ROLE_BASED_BUDGET_POLICY,
-  chatHistoryBudgetFactor,
+  computeChatBudget,
 } from "@/lib/agent/context";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
@@ -768,11 +767,7 @@ export async function POST(
         userRole,
       },
       {
-        budgetPolicy: (flags) =>
-          Math.round(
-            ROLE_BASED_BUDGET_POLICY(flags) *
-              chatHistoryBudgetFactor(messageCount),
-          ),
+        budgetPolicy: (flags) => computeChatBudget(flags, messageCount),
         telemetry: true,
       },
     )) + recallBlock;
