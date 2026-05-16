@@ -900,17 +900,24 @@ export async function chatReply(input: {
       };
     }
     if (lastStatus === 401) {
+      // HOTFIX 17 polish (2026-05-17, OPT 7 audit): the prior copy
+      // mentioned "member" / "token" - infra jargon for the operator
+      // who manages "accounts" at /connections. Same actionable next
+      // step in friendlier words.
       return {
         ok: false,
         error:
-          "Claude Max token expired or invalid for every connected member. Reconnect at Dashboard → Connections.",
+          "Sign-in expired for every connected account. Reconnect at /connections.",
       };
     }
     if (lastStatus === 429) {
+      // HOTFIX 17 polish: match HOTFIX 8c copy for the rate-limit
+      // path so the operator gets the SAME wording whether the
+      // 429 comes from the OAuth pool helper or this fallback.
       return {
         ok: false,
         error:
-          "Anthropic rate limit hit on every Claude Max token in the pool. Wait a minute or connect another member's account.",
+          "Hit our run limit for the moment - retrying shortly. If this keeps happening, add another account at /connections.",
       };
     }
     return {
