@@ -4,7 +4,11 @@ import assert from "node:assert/strict";
 process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://test.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-key";
 
-import { selectChatBlocks, type ChatBlock } from "../../src/lib/agent/context";
+import {
+  selectChatBlocks,
+  describeSelection,
+  type ChatBlock,
+} from "../../src/lib/agent/context";
 
 const noop = async () => null;
 
@@ -193,4 +197,100 @@ test("selectChatBlocks: mode filter + budget compose correctly", () => {
     skippableBudgetTokens: 200,
   }).map((b) => b.id);
   assert.deepEqual(chat, ["req"]);
+});
+
+test("describeSelection: reports selected + skipped with reason", () => {
+  const cheapMode: ChatBlock = {
+    id: "cheap-chat",
+    build: noop,
+    priority: "skippable",
+    defaultCostTokens: 50,
+    modes: ["chat"],
+  };
+  const expensive: ChatBlock = {
+    id: "ex",
+    build: noop,
+    priority: "skippable",
+    defaultCostTokens: 1000,
+  };
+  const required: ChatBlock = {
+    id: "req",
+    build: noop,
+    priority: "required",
+    defaultCostTokens: 100,
+  };
+
+  const decision = describeSelection(
+    [required, cheapMode, expensive],
+    { mode: "telegram", skippableBudgetTokens: 500 },
+  );
+
+  // cheapMode dropped by mode, expensive dropped by budget, req kept.
+  assert.deepEqual(
+    decision.selected.map((s) => s.id),
+    ["req"],
+  );
+  assert.deepEqual(
+    decision.skipped.map((s) => ({ id: s.id, reason: s.reason })),
+    [
+      { id: "cheap-chat", reason: "mode" },
+      { id: "ex", reason: "budget" },
+    ],
+  );
+  assert.equal(decision.totalSelectedCost, 100);
+  assert.equal(decision.totalSkippedCost, 1050);
+});
+
+test("describeSelection: full budget keeps everything (no reason marked)", () => {
+  const required: ChatBlock = {
+    id: "req",
+    build: noop,
+    priority: "required",
+    defaultCostTokens: 200,
+  };
+  const skip: ChatBlock = {
+    id: "skip",
+    build: noop,
+    priority: "skippable",
+    defaultCostTokens: 300,
+  };
+  const decision = describeSelection([required, skip]);
+  assert.equal(decision.skipped.length, 0);
+  assert.deepEqual(
+    decision.selected.map((s) => s.id),
+    ["req", "skip"],
+  );
+  assert.equal(decision.totalSelectedCost, 500);
+});
+
+test("describeSelection: budget exactly matches one skippable", () => {
+  const required: ChatBlock = {
+    id: "req",
+    build: noop,
+    priority: "required",
+    defaultCostTokens: 50,
+  };
+  const a: ChatBlock = {
+    id: "a",
+    build: noop,
+    priority: "skippable",
+    defaultCostTokens: 100,
+  };
+  const b: ChatBlock = {
+    id: "b",
+    build: noop,
+    priority: "skippable",
+    defaultCostTokens: 100,
+  };
+  const decision = describeSelection([required, a, b], {
+    skippableBudgetTokens: 100,
+  });
+  assert.deepEqual(
+    decision.selected.map((s) => s.id),
+    ["req", "a"],
+  );
+  assert.deepEqual(
+    decision.skipped.map((s) => ({ id: s.id, reason: s.reason })),
+    [{ id: "b", reason: "budget" }],
+  );
 });

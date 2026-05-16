@@ -450,6 +450,73 @@ export function selectChatBlocks(
   });
 }
 
+export type SelectionEntry = {
+  id: string;
+  priority: ChatBlockPriority;
+  cost: number;
+};
+
+export type SkippedEntry = SelectionEntry & {
+  reason: "mode" | "budget";
+};
+
+export type SelectionDecision = {
+  selected: SelectionEntry[];
+  skipped: SkippedEntry[];
+  totalSelectedCost: number;
+  totalSkippedCost: number;
+};
+
+/**
+ * Pure debug helper. Mirrors the selectChatBlocks decision but also
+ * reports which blocks were dropped and why (mode filter vs budget
+ * cut). Useful for tests + production telemetry without paying the
+ * cost of actually rendering anything.
+ */
+export function describeSelection(
+  blocks: ChatBlock[] = CHAT_BLOCKS,
+  options: ComposeChatPreambleOptions = {},
+): SelectionDecision {
+  const { mode } = options;
+  const budget = options.skippableBudgetTokens ?? Number.POSITIVE_INFINITY;
+  const budgetActive = Number.isFinite(budget) && budget >= 0;
+
+  const selected: SelectionEntry[] = [];
+  const skipped: SkippedEntry[] = [];
+  let totalSelectedCost = 0;
+  let totalSkippedCost = 0;
+  let spent = 0;
+
+  for (const b of blocks) {
+    const priority = b.priority ?? "required";
+    const cost = b.defaultCostTokens ?? 0;
+
+    if (mode !== undefined && b.modes && !b.modes.includes(mode)) {
+      skipped.push({ id: b.id, priority, cost, reason: "mode" });
+      totalSkippedCost += cost;
+      continue;
+    }
+
+    if (priority === "required") {
+      selected.push({ id: b.id, priority, cost });
+      totalSelectedCost += cost;
+      continue;
+    }
+
+    // skippable + budget gate
+    if (budgetActive && spent + cost > budget) {
+      skipped.push({ id: b.id, priority, cost, reason: "budget" });
+      totalSkippedCost += cost;
+      continue;
+    }
+    spent += cost;
+    selected.push({ id: b.id, priority, cost });
+    totalSelectedCost += cost;
+  }
+
+  return { selected, skipped, totalSelectedCost, totalSkippedCost };
+}
+
 async function composeChatPreamble(
   input: Omit<ChatInput, "mode">,
   options: ComposeChatPreambleOptions = {},
