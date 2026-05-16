@@ -80,6 +80,22 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
     pattern: /\ball OAuth tokens cooling down\b/gi,
     replacement: "retrying shortly",
   },
+  // HOTFIX 15 prime (2026-05-17, R-BELL findings + B 17:36 ACK):
+  // additional infra-jargon strings persisted in
+  // rgaios_agent_chat_messages / notification surfaces.
+  {
+    pattern:
+      /Anthropic call failed:\s*The operation was aborted due to timeout/gi,
+    replacement: "External AI call timed out - retrying.",
+  },
+  {
+    pattern: /\bAnthropic call failed\b/gi,
+    replacement: "external AI call failed",
+  },
+  {
+    pattern: /\bOAuth tokens?\b/gi,
+    replacement: "credentials",
+  },
 ];
 
 export function humanizeJargon(raw: string): string {

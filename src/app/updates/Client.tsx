@@ -19,6 +19,7 @@ import {
   Zap,
 } from "lucide-react";
 import { jsonFetcher } from "@/lib/swr";
+import { humanizeJargon } from "@/lib/agent/jargon";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -474,7 +475,7 @@ function ActivityList({ events }: { events: ActivityEvent[] }) {
                   </div>
                   <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                     {e.actor_type === "agent" ? "agent" : (e.actor_type ?? "system")}
-                    {summary ? ` · ${summary}` : ""}
+                    {summary ? ` · ${humanizeJargon(summary)}` : ""}
                   </p>
                 </div>
                 {hasDetail && (
@@ -666,7 +667,7 @@ function HumanSummary({
 
   return (
     <p className="text-[12.5px] leading-relaxed text-foreground">
-      {summary}
+      {humanizeJargon(summary)}
     </p>
   );
 }
