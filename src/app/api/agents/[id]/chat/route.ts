@@ -1128,50 +1128,64 @@ export async function POST(
               // for the fallback path).
               const pass2EmittedCommands = commandResults.length > preTry2ResultCount;
               const visibleAfterStrip = (pass2Thinking.visibleReply ?? "").trim();
+              // HOTFIX 11 (2026-05-17): R5/R9 v4 walk surfaced the
+              // visibleAfterStrip <20 char threshold missing the
+              // "Retrying with my UUID this time." case (38 chars, but
+              // still an intermediate-state phrase, NOT the operator's
+              // final answer). Tighten the synth trigger to ALSO fire
+              // on common retry-intermediate openers regardless of
+              // length. AND if pass-2 ran but ALL its commands failed,
+              // emit a clear "couldn't complete" message instead of
+              // letting the retry-mid-sentence sit there as final.
+              const looksLikeIntermediate =
+                /^(retrying|trying|attempting|let me retry|one moment|hold on|working on|let me try)/i
+                  .test(visibleAfterStrip);
               if (
                 pass2EmittedCommands &&
-                visibleAfterStrip.length < 20
+                (visibleAfterStrip.length < 20 || looksLikeIntermediate)
               ) {
                 const pass2Results = commandResults.slice(preTry2ResultCount);
-                // HOTFIX 8 (2026-05-17): operator-facing UX cleanup.
-                // For agents_update specifically, lift the body of the
-                // tool result into a one-line "Done. New system_prompt:
-                // <body>" message instead of the generic "✓ agents_update"
-                // chip. R5/R9 v2 reject reason was exactly that the
-                // operator never saw what changed - now they do.
-                // Cap the prompt preview at 240 chars so a long system_
-                // prompt doesn't blow up the message.
-                const lines = pass2Results.map((r) => {
-                  const detail = r.detail ?? {};
-                  const tool = typeof detail.tool === "string" ? detail.tool : "tool";
-                  const preview =
-                    typeof detail.result_preview === "string"
-                      ? (detail.result_preview as string)
-                      : r.summary;
-                  if (r.ok && tool === "agents_update") {
-                    // queries.ts returns "Updated **<name>** - role: ...,
-                    // status: ..., budget: ...". Strip the markdown bold
-                    // and add a "New prompt:" suffix if the patch carried
-                    // a system_prompt arg.
-                    const firstLine = preview.split("\n")[0].replace(/\*\*/g, "");
-                    return firstLine.slice(0, 240);
-                  }
-                  if (r.ok) {
-                    return `Done - ${tool}: ${preview.split("\n")[0]}`.slice(0, 240);
-                  }
-                  // Failed cases: still surface, but in operator language
-                  // (jargon humanization is the OTHER half of HOTFIX 8 -
-                  // applied to .thinking via extractThinking; this side
-                  // shows the tool's own error text so still flag it
-                  // plainly without the FAILED/ERROR shouting.
-                  return `Heads-up - ${tool} hit a snag: ${preview.split("\n")[0]}`.slice(0, 240);
-                });
-                const hasAgentsUpdate = pass2Results.some(
-                  (r) => r.ok && r.detail?.tool === "agents_update",
-                );
-                preFilterText = hasAgentsUpdate
-                  ? `Done.\n\n${lines.join("\n")}`
-                  : `Done.\n\n${lines.join("\n")}`;
+                const allFailed =
+                  pass2Results.length > 0 &&
+                  pass2Results.every((r) => !r.ok);
+                if (allFailed) {
+                  // No success to summarize - explicit failure copy.
+                  // Don't repeat the tool error verbatim (it's already
+                  // in the FAILED card); say plainly that nothing went
+                  // through + offer rephrase, so the operator isn't
+                  // left staring at "Retrying with my..." as final.
+                  const tools = Array.from(
+                    new Set(
+                      pass2Results.map((r) =>
+                        typeof r.detail?.tool === "string" ? r.detail.tool : "tool",
+                      ),
+                    ),
+                  ).join(", ");
+                  preFilterText =
+                    `Couldn't complete that one - the ${tools} call failed on every retry. ` +
+                    "Want to try rephrasing it, or should I take a different approach?";
+                } else {
+                  // HOTFIX 8 lift: operator-facing one-liner per result.
+                  // Cap each preview at 240 chars so a long system_
+                  // prompt doesn't blow up the message.
+                  const lines = pass2Results.map((r) => {
+                    const detail = r.detail ?? {};
+                    const tool = typeof detail.tool === "string" ? detail.tool : "tool";
+                    const preview =
+                      typeof detail.result_preview === "string"
+                        ? (detail.result_preview as string)
+                        : r.summary;
+                    if (r.ok && tool === "agents_update") {
+                      const firstLine = preview.split("\n")[0].replace(/\*\*/g, "");
+                      return firstLine.slice(0, 240);
+                    }
+                    if (r.ok) {
+                      return `Done - ${tool}: ${preview.split("\n")[0]}`.slice(0, 240);
+                    }
+                    return `Heads-up - ${tool} hit a snag: ${preview.split("\n")[0]}`.slice(0, 240);
+                  });
+                  preFilterText = `Done.\n\n${lines.join("\n")}`;
+                }
               }
             }
           } catch (err) {
