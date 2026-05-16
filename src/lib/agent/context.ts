@@ -143,9 +143,32 @@ export async function computeAgentCapabilityFlags(input: {
   }
 }
 
+/**
+ * Per-block metadata for the phase 2 selector layer. Pure annotation
+ * for now - composeChatPreamble still iterates every block. A future
+ * iter will skip blocks when (running token cost + this block's
+ * defaultCostTokens) exceeds a per-turn budget AND the block's
+ * priority is "skippable".
+ *
+ *   defaultCostTokens - rough size in tokens for budget math. 0 for
+ *     pure-text blocks that are tiny; nominal upper bound for large
+ *     directives. Real cost is the byte length / 4; this hint just
+ *     lets the selector skip a block fast without rendering it.
+ *   priority - "required" blocks always render. "skippable" blocks
+ *     drop first under token pressure. Default = "required" so
+ *     iter-23 scaffolding adds zero behavior change.
+ *   modes - which AgentContextMode values include this block. Default
+ *     = both "chat" and "telegram". Future per-mode tweaks (drop
+ *     verbose CEO directives in telegram, etc.) go here.
+ */
+export type ChatBlockPriority = "required" | "skippable";
+
 export type ChatBlock = {
   id: string;
   build: (ctx: ChatBlockContext) => Promise<string | null> | string | null;
+  defaultCostTokens?: number;
+  priority?: ChatBlockPriority;
+  modes?: AgentContextMode[];
 };
 
 /**
