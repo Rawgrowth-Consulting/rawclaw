@@ -280,14 +280,8 @@ export async function buildAgentChatPreamble(input: {
   })();
   preamble += ceoBlocks;
 
-  preamble += await buildAgentChatPreambleTail({
-    orgId,
-    agentId,
-    orgName,
-    queryText,
-    userRole: input.userRole,
-    priorContent: preamble,
-  });
+  // buildAgentChatPreambleTail call removed phase 1e iter 19 - all
+  // emit sites are now in their own helpers (above + below).
 
   // JSON COMMANDS (CEO/dept-head variant + sub-agent composio variant).
   // Extracted phase 1c iter 11+12. Compute canCommand + hasComposio
@@ -394,17 +388,9 @@ export async function buildAgentChatPreamble(input: {
  * named helper + adds it to CHAT_BLOCKS, at which point this tail
  * function is deleted.
  */
-export async function buildAgentChatPreambleTail(input: {
-  orgId: string;
-  agentId: string;
-  orgName: string | null;
-  queryText: string;
-  userRole?: "owner" | "admin" | "developer" | "member" | null;
-  priorContent: string;
-}): Promise<string> {
-  void input;
-  return "";
-}
+// buildAgentChatPreambleTail removed phase 1e iter 19. Every original
+// preamble emit site is now in a named CHAT_BLOCKS helper; the
+// wrapper had become a no-op that returned "".
 
 /**
  * Trailing MCP protocol directives - TASK CREATION + AGENT MANAGEMENT

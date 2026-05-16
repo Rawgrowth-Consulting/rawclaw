@@ -1,6 +1,5 @@
 import {
   buildAgentChatPreamble,
-  buildAgentChatPreambleTail,
   buildCapabilitiesAndTrustBlock,
   buildReasoningProtocolBlock,
   buildSharedMemoryBlock,
@@ -251,18 +250,9 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         priorContent: ctx.priorContent,
       }),
   },
-  {
-    id: "legacy-tail",
-    build: (ctx) =>
-      buildAgentChatPreambleTail({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        orgName: ctx.orgName,
-        queryText: ctx.queryText,
-        userRole: ctx.userRole,
-        priorContent: ctx.priorContent,
-      }),
-  },
+  // legacy-tail CHAT_BLOCKS entry removed phase 1e iter 19. The
+  // wrapper buildAgentChatPreambleTail had become a no-op after all
+  // emit sites were extracted (iter 1-17).
   {
     id: "json-commands-ceo",
     build: (ctx) =>
