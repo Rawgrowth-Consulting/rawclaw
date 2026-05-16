@@ -7,6 +7,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-key";
 import {
   selectChatBlocks,
   describeSelection,
+  ROLE_BASED_BUDGET_POLICY,
   type ChatBlock,
 } from "../../src/lib/agent/context";
 
@@ -346,5 +347,56 @@ test("describeSelection: budget exactly matches one skippable", () => {
   assert.deepEqual(
     decision.skipped.map((s) => ({ id: s.id, reason: s.reason })),
     [{ id: "b", reason: "budget" }],
+  );
+});
+
+test("ROLE_BASED_BUDGET_POLICY: CEO gets 6000", () => {
+  assert.equal(
+    ROLE_BASED_BUDGET_POLICY({
+      isCeo: true,
+      isDeptHead: false,
+      canCommand: true,
+      hasComposio: false,
+    }),
+    6000,
+  );
+});
+
+test("ROLE_BASED_BUDGET_POLICY: dept head gets 4000", () => {
+  assert.equal(
+    ROLE_BASED_BUDGET_POLICY({
+      isCeo: false,
+      isDeptHead: true,
+      canCommand: true,
+      hasComposio: false,
+    }),
+    4000,
+  );
+});
+
+test("ROLE_BASED_BUDGET_POLICY: specialist (neither) gets 2000", () => {
+  assert.equal(
+    ROLE_BASED_BUDGET_POLICY({
+      isCeo: false,
+      isDeptHead: false,
+      canCommand: false,
+      hasComposio: false,
+    }),
+    2000,
+  );
+});
+
+test("ROLE_BASED_BUDGET_POLICY: CEO outranks dept-head (both flags true)", () => {
+  // Defensive: bad data could set both isCeo + isDeptHead true.
+  // CEO check comes first, so CEO budget wins. Pinning this so a
+  // future reorder can't silently downgrade a CEO bot.
+  assert.equal(
+    ROLE_BASED_BUDGET_POLICY({
+      isCeo: true,
+      isDeptHead: true,
+      canCommand: true,
+      hasComposio: false,
+    }),
+    6000,
   );
 });

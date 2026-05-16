@@ -13,7 +13,10 @@ import {
 import { tryDecryptSecret } from "@/lib/crypto";
 import { chatReply, CHAT_HANDOFF_SENTINEL_PREFIX } from "@/lib/agent/chat";
 import { surfaceThinkingTelegram } from "@/lib/agent/thinking";
-import { buildTelegramPreambleV2 } from "@/lib/agent/context";
+import {
+  buildTelegramPreambleV2,
+  ROLE_BASED_BUDGET_POLICY,
+} from "@/lib/agent/context";
 import { transcribeVoice } from "@/lib/agent/voice-transcribe";
 import { describeImage } from "@/lib/agent/image-describe";
 
@@ -266,7 +269,7 @@ export async function POST(
         orgName: orgRow?.name ?? null,
         queryText: text,
       },
-      { skippableBudgetTokens: 2000, telemetry: true },
+      { budgetPolicy: ROLE_BASED_BUDGET_POLICY, telemetry: true },
     ).catch(() => "");
 
     // The key difference vs the legacy webhook: agentId is passed so the

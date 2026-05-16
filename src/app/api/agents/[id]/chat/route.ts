@@ -8,7 +8,10 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
 import { extractChatMemoryFact } from "@/lib/agent/chat-memory";
 import { applyBrandFilter } from "@/lib/brand/apply-filter";
-import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
+import {
+  buildAgentChatPreambleV2,
+  ROLE_BASED_BUDGET_POLICY,
+} from "@/lib/agent/context";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
 import { extractThinking, humanizeJargon } from "@/lib/agent/thinking";
@@ -749,16 +752,14 @@ export async function POST(
   // blocks (persona, brand, json commands, trailing protocols) always
   // render so identity + tool protocol stay intact.
   //
-  //   ≤20 messages -> no cap (full ~13.3k preamble)
-  //   21-40        -> 2000-token skippable cap
-  //   41+          -> 500-token skippable cap (drop most)
+  // Iter 36: base budget is role-aware (CEO 6000 / dept-head 4000 /
+  // specialist 2000) instead of a fixed number, then scaled DOWN as
+  // history grows to protect context window under long threads.
+  //
+  //   ≤20 messages -> full role base
+  //   21-40        -> 50% of role base
+  //   41+          -> 20% of role base
   const messageCount = incoming.length;
-  const skippableBudgetTokens =
-    messageCount <= 20
-      ? Number.POSITIVE_INFINITY
-      : messageCount <= 40
-        ? 2000
-        : 500;
   const extraPreamble =
     (await buildAgentChatPreambleV2(
       {
@@ -768,7 +769,15 @@ export async function POST(
         queryText: lastContent,
         userRole,
       },
-      { skippableBudgetTokens, telemetry: true },
+      {
+        budgetPolicy: (flags) => {
+          const base = ROLE_BASED_BUDGET_POLICY(flags);
+          if (messageCount <= 20) return base;
+          if (messageCount <= 40) return Math.round(base * 0.5);
+          return Math.round(base * 0.2);
+        },
+        telemetry: true,
+      },
     )) + recallBlock;
 
   const encoder = new TextEncoder();

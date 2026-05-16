@@ -418,6 +418,30 @@ export type ComposeChatPreambleOptions = {
    * it so production logs show which blocks the budget cut.
    */
   telemetry?: boolean;
+  /**
+   * Optional role-aware budget resolver. When set, the composer
+   * computes AgentCapabilityFlags once (single DB round-trip) and
+   * passes them to this policy; the returned value OVERRIDES
+   * skippableBudgetTokens. Iter 36 hook so the chat route +
+   * telegram webhook can pick a base budget that scales with agent
+   * authority (CEO > dept head > specialist) without duplicating
+   * the flag lookup.
+   */
+  budgetPolicy?: (flags: AgentCapabilityFlags) => number;
+};
+
+/**
+ * Default role-aware budget. CEO agents get the biggest context
+ * window (cross-org synthesis), dept heads get a mid tier (single
+ * domain depth), specialists run lean. Values pinned per [B 17:26]
+ * iter-35 spec - tweak in one place if telemetry shows headroom.
+ */
+export const ROLE_BASED_BUDGET_POLICY = (
+  flags: AgentCapabilityFlags,
+): number => {
+  if (flags.isCeo) return 6000;
+  if (flags.isDeptHead) return 4000;
+  return 2000;
 };
 
 /**
@@ -526,6 +550,11 @@ async function composeChatPreamble(
     ...options,
     mode: options.mode ?? mode,
   };
+  // Iter 36: budgetPolicy (if set) overrides skippableBudgetTokens
+  // using the already-computed flags - no extra DB round-trip.
+  if (options.budgetPolicy) {
+    effectiveOptions.skippableBudgetTokens = options.budgetPolicy(flags);
+  }
   const decision = describeSelection(CHAT_BLOCKS, effectiveOptions);
   const selectedIds = new Set(decision.selected.map((s) => s.id));
 
