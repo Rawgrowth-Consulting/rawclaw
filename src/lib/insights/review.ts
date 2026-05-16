@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 
 /**
  * Autoresearch REVIEW phase. After every spawned task for an insight
@@ -257,7 +257,7 @@ VERDICT: PASS or REFINE (REFINE if any task <3 OR average <3.5).`;
 
     let preamble = "";
     try {
-      preamble = await buildAgentChatPreamble({
+      preamble = await buildAgentChatPreambleV2({
         orgId,
         agentId: reviewer.id,
         orgName,

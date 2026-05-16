@@ -3,7 +3,7 @@ import { getOrgContext } from "@/lib/auth/admin";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 import { badUuidResponse } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -99,7 +99,7 @@ Spawn the concrete tasks needed to actually ship the plan. Use <task assignee=".
 
 Keep your reply VISIBLE part to 1-2 sentences confirming you're on it. The detail goes in the <task> blocks.`;
 
-  const preamble = await buildAgentChatPreamble({
+  const preamble = await buildAgentChatPreambleV2({
     orgId: ctx.activeOrgId,
     agentId: a.id,
     orgName,

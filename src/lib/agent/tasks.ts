@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { dispatchRun } from "@/lib/runs/dispatch";
 import { chatReply } from "@/lib/agent/chat";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 import { extractThinking } from "@/lib/agent/thinking";
 import { stripOrchestrationMarkup } from "@/lib/runs/executor";
 import { persistSharedMemoryFromReply } from "@/lib/memory/shared";
@@ -439,7 +439,7 @@ export async function executeChatTask(input: {
 
   let extraPreamble = "";
   try {
-    extraPreamble = await buildAgentChatPreamble({
+    extraPreamble = await buildAgentChatPreambleV2({
       orgId: input.orgId,
       agentId: input.assigneeAgentId,
       orgName,

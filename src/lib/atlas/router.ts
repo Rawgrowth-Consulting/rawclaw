@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 
 /**
  * Atlas error router. Scans recent failed routine_runs + low-quality
@@ -183,7 +183,7 @@ ${list}
 
 Emit ONE <task> block per failure with assignee + new title + description that explains the angle change. Skip block if your verdict is ESCALATE - mention it in the visible reply instead.`;
 
-  const preamble = await buildAgentChatPreamble({
+  const preamble = await buildAgentChatPreambleV2({
     orgId,
     agentId: atlas.id,
     orgName,

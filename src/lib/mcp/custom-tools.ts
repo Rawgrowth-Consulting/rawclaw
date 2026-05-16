@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 import { registerTool, listTools } from "./registry";
 import type { JsonSchema, McpTool, ToolContext, ToolResult } from "./types";
 
@@ -185,7 +185,7 @@ export async function draftCustomMcpTool(input: {
     retryContext: input.retryContext,
   });
 
-  const preamble = await buildAgentChatPreamble({
+  const preamble = await buildAgentChatPreambleV2({
     orgId: input.orgId,
     agentId: atlas.id,
     orgName: atlas.orgName,

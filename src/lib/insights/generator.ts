@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 import { searchWeb, formatSearchBlock } from "@/lib/web-search/duckduckgo";
 import { reviewSpawnedTasks } from "@/lib/insights/review";
 
@@ -308,7 +308,7 @@ async function consultCouncil(input: {
   const settled = await Promise.all(
     ordered.map(async (head) => {
       try {
-        const preamble = await buildAgentChatPreamble({
+        const preamble = await buildAgentChatPreambleV2({
           orgId,
           agentId: head.agentId,
           orgName,
@@ -506,7 +506,7 @@ No SaaS clichés. Concrete numbers. Brand voice on.`;
       // Build full preamble so agent has brand + memory + RAG + org place
       // when reasoning about the anomaly. That's what makes the answer
       // grounded instead of generic.
-      let preamble = await buildAgentChatPreamble({
+      let preamble = await buildAgentChatPreambleV2({
         orgId: input.orgId,
         agentId: agent.id,
         orgName: agent.orgName,
@@ -969,7 +969,7 @@ Look at what tasks you spawned last time (in your pending tasks list above). Wha
 
 Format same as before: ROOT CAUSE / PLAN with <task> blocks / CONFIRM. Concrete, brand voice on.`;
 
-  const preamble = await buildAgentChatPreamble({
+  const preamble = await buildAgentChatPreambleV2({
     orgId,
     agentId: agent.id,
     orgName: agent.orgName,

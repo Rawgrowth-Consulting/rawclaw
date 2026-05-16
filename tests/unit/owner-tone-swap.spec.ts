@@ -103,8 +103,8 @@ test("chat route imports getActiveOrgRole + threads userRole into preamble", () 
   );
   assert.match(
     CHAT_ROUTE_SRC,
-    /buildAgentChatPreamble\(\{[\s\S]*?userRole,[\s\S]*?\}\)/,
-    "buildAgentChatPreamble call must pass userRole through",
+    /buildAgentChatPreamble(?:V2)?\(\{[\s\S]*?userRole,[\s\S]*?\}\)/,
+    "buildAgentChatPreamble(V2) call must pass userRole through",
   );
 });
 
