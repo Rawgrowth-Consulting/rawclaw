@@ -39,6 +39,43 @@ export type ExtractedThinking = {
  * - Caps the surfaced text at 600 chars so a runaway block can't blow up
  *   an audit row or a Telegram message.
  */
+// HOTFIX 8 (2026-05-17, FLEX MODE OPERATOR UX): swap developer jargon
+// in the operator-visible reasoning trace for plain operator language.
+// R5/R9 v2 walk leaked "coercion error" / "UUID" / "lookup ambiguity"
+// directly into Kasia's reasoning panel - pure implementation noise
+// that the operator never needs to see. The thinking string surfaces
+// in two places (chat Reasoning chip + Telegram "💭 ..." prefix) so
+// the transform lives at extractThinking's boundary, not at the emit
+// site, so any new caller inherits the humanization automatically.
+//
+// IMPORTANT: this is a display-only transform. The original reasoning
+// is still persisted to rgaios_audit_log (kind chat_thinking) with the
+// raw text, so /trace + the developer view keep the technical content
+// for debugging. Only the operator-visible chip is rewritten.
+const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /\bcoercion error\b/gi, replacement: "had a small hiccup" },
+  { pattern: /\bUUID\b/g, replacement: "id" },
+  { pattern: /\blookup ambiguity\b/gi, replacement: "name resolution" },
+  { pattern: /\bdodge the\b/gi, replacement: "work around the" },
+  { pattern: /\bcomposio\b/gi, replacement: "the integration" },
+  // \bMCP\b only - "MCP-direct" / "MCP tool" leak as bare protocol names
+  // that mean nothing to operators. Strip the prefix, keep the noun if any.
+  { pattern: /\bMCP-direct\b/g, replacement: "internal" },
+  { pattern: /\bMCP\b/g, replacement: "internal" },
+  { pattern: /\btool_call\b/g, replacement: "command" },
+  { pattern: /\bpass-2\b/g, replacement: "second turn" },
+  { pattern: /\bpass-1\b/g, replacement: "first turn" },
+  { pattern: /\bschema\b/g, replacement: "shape" },
+];
+
+function humanizeThinking(raw: string): string {
+  let out = raw;
+  for (const { pattern, replacement } of JARGON_MAP) {
+    out = out.replace(pattern, replacement);
+  }
+  return out;
+}
+
 export function extractThinking(reply: string): ExtractedThinking {
   if (!reply) return { thinking: null, visibleReply: reply ?? "" };
 
@@ -59,7 +96,7 @@ export function extractThinking(reply: string): ExtractedThinking {
       );
       const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
       return {
-        thinking: raw ? raw.slice(0, 600) : null,
+        thinking: raw ? humanizeThinking(raw).slice(0, 600) : null,
         visibleReply: reply.slice(0, idx).trim(),
       };
     }
@@ -78,7 +115,7 @@ export function extractThinking(reply: string): ExtractedThinking {
   // safe - thinking is narrative, not a command surface.
   const cleaned = stripOrchestrationMarkup(m[1] ?? "");
   const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
-  const thinking = raw ? raw.slice(0, 600) : null;
+  const thinking = raw ? humanizeThinking(raw).slice(0, 600) : null;
 
   // Strip ALL <thinking> blocks (the matched one + any extras) PLUS any
   // stray unpaired <thinking>/</thinking> tag so no raw XML survives

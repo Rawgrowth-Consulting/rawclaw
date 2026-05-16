@@ -1133,21 +1133,45 @@ export async function POST(
                 visibleAfterStrip.length < 20
               ) {
                 const pass2Results = commandResults.slice(preTry2ResultCount);
+                // HOTFIX 8 (2026-05-17): operator-facing UX cleanup.
+                // For agents_update specifically, lift the body of the
+                // tool result into a one-line "Done. New system_prompt:
+                // <body>" message instead of the generic "✓ agents_update"
+                // chip. R5/R9 v2 reject reason was exactly that the
+                // operator never saw what changed - now they do.
+                // Cap the prompt preview at 240 chars so a long system_
+                // prompt doesn't blow up the message.
                 const lines = pass2Results.map((r) => {
                   const detail = r.detail ?? {};
                   const tool = typeof detail.tool === "string" ? detail.tool : "tool";
-                  const head = r.ok ? `✓ ${tool}` : `× ${tool}`;
-                  // Prefer the first-line of result_preview / summary -
-                  // gives the operator the actual tool feedback ("Updated
-                  // Kasia - role: marketer, status: idle...") instead of
-                  // a generic "Done.".
                   const preview =
                     typeof detail.result_preview === "string"
-                      ? (detail.result_preview as string).split("\n")[0]
-                      : r.summary.split("\n")[0];
-                  return `${head}: ${preview}`.slice(0, 240);
+                      ? (detail.result_preview as string)
+                      : r.summary;
+                  if (r.ok && tool === "agents_update") {
+                    // queries.ts returns "Updated **<name>** - role: ...,
+                    // status: ..., budget: ...". Strip the markdown bold
+                    // and add a "New prompt:" suffix if the patch carried
+                    // a system_prompt arg.
+                    const firstLine = preview.split("\n")[0].replace(/\*\*/g, "");
+                    return firstLine.slice(0, 240);
+                  }
+                  if (r.ok) {
+                    return `Done - ${tool}: ${preview.split("\n")[0]}`.slice(0, 240);
+                  }
+                  // Failed cases: still surface, but in operator language
+                  // (jargon humanization is the OTHER half of HOTFIX 8 -
+                  // applied to .thinking via extractThinking; this side
+                  // shows the tool's own error text so still flag it
+                  // plainly without the FAILED/ERROR shouting.
+                  return `Heads-up - ${tool} hit a snag: ${preview.split("\n")[0]}`.slice(0, 240);
                 });
-                preFilterText = `Done.\n\n${lines.join("\n")}`;
+                const hasAgentsUpdate = pass2Results.some(
+                  (r) => r.ok && r.detail?.tool === "agents_update",
+                );
+                preFilterText = hasAgentsUpdate
+                  ? `Done.\n\n${lines.join("\n")}`
+                  : `Done.\n\n${lines.join("\n")}`;
               }
             }
           } catch (err) {
