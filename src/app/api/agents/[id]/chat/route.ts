@@ -8,7 +8,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { chatReply } from "@/lib/agent/chat";
 import { extractChatMemoryFact } from "@/lib/agent/chat-memory";
 import { applyBrandFilter } from "@/lib/brand/apply-filter";
-import { buildAgentChatPreamble } from "@/lib/agent/preamble";
+import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
 import { extractThinking } from "@/lib/agent/thinking";
@@ -744,7 +744,7 @@ export async function POST(
   // row, scheduled routine runs) get the original client-facing tone.
   const userRole = await getActiveOrgRole(ctx);
   const extraPreamble =
-    (await buildAgentChatPreamble({
+    (await buildAgentChatPreambleV2({
       orgId,
       agentId,
       orgName: ctx.activeOrgName,
