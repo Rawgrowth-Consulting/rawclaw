@@ -8,6 +8,7 @@ import {
   selectChatBlocks,
   describeSelection,
   ROLE_BASED_BUDGET_POLICY,
+  chatHistoryBudgetFactor,
   type ChatBlock,
 } from "../../src/lib/agent/context";
 
@@ -398,5 +399,38 @@ test("ROLE_BASED_BUDGET_POLICY: CEO outranks dept-head (both flags true)", () =>
       hasComposio: false,
     }),
     6000,
+  );
+});
+
+test("chatHistoryBudgetFactor: short threads (≤20) keep full budget", () => {
+  assert.equal(chatHistoryBudgetFactor(0), 1.0);
+  assert.equal(chatHistoryBudgetFactor(1), 1.0);
+  assert.equal(chatHistoryBudgetFactor(20), 1.0);
+});
+
+test("chatHistoryBudgetFactor: medium threads (21-40) get 50%", () => {
+  assert.equal(chatHistoryBudgetFactor(21), 0.5);
+  assert.equal(chatHistoryBudgetFactor(30), 0.5);
+  assert.equal(chatHistoryBudgetFactor(40), 0.5);
+});
+
+test("chatHistoryBudgetFactor: long threads (41+) collapse to 20%", () => {
+  assert.equal(chatHistoryBudgetFactor(41), 0.2);
+  assert.equal(chatHistoryBudgetFactor(100), 0.2);
+  assert.equal(chatHistoryBudgetFactor(10_000), 0.2);
+});
+
+test("chatHistoryBudgetFactor: tier order matches config (first-match wins)", () => {
+  // Boundary at 20: still tier 1 (factor 1.0). 21 jumps to tier 2.
+  assert.notEqual(
+    chatHistoryBudgetFactor(20),
+    chatHistoryBudgetFactor(21),
+    "20 and 21 must land in different tiers",
+  );
+  // Boundary at 40: still tier 2 (0.5). 41 jumps to tier 3 (0.2).
+  assert.notEqual(
+    chatHistoryBudgetFactor(40),
+    chatHistoryBudgetFactor(41),
+    "40 and 41 must land in different tiers",
   );
 });

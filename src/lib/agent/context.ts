@@ -373,6 +373,10 @@ type RoleBudgetConfig = {
     deptHead: number;
     specialist: number;
   };
+  chatHistoryScale: Array<{
+    maxMessages: number | null;
+    factor: number;
+  }>;
 };
 
 /**
@@ -392,6 +396,27 @@ export const ROLE_BASED_BUDGET_POLICY = (
   if (flags.isDeptHead) return deptHead;
   return specialist;
 };
+
+/**
+ * Iter 41: chat-route history scale factor. Reads the
+ * budget-policy.config.json `chatHistoryScale` array and picks the
+ * first tier whose `maxMessages` covers the running message count
+ * (null = catch-all for longest threads). Returns the factor to
+ * multiply the role-aware base budget by.
+ *
+ * Defaults: 1.0 at ≤20 msgs, 0.5 at ≤40 msgs, 0.2 beyond. Lifted
+ * out of chat route so ops can tune the scale-down curve without
+ * a code edit.
+ */
+export function chatHistoryBudgetFactor(messageCount: number): number {
+  const scale = (BUDGET_POLICY_CONFIG as RoleBudgetConfig).chatHistoryScale;
+  for (const tier of scale) {
+    if (tier.maxMessages === null || messageCount <= tier.maxMessages) {
+      return tier.factor;
+    }
+  }
+  return 1.0;
+}
 
 /**
  * Decide which CHAT_BLOCKS entries are eligible to render given the

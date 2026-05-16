@@ -3,5 +3,10 @@
     "ceo": 6000,
     "deptHead": 4000,
     "specialist": 2000
-  }
+  },
+  "chatHistoryScale": [
+    { "maxMessages": 20, "factor": 1.0 },
+    { "maxMessages": 40, "factor": 0.5 },
+    { "maxMessages": null, "factor": 0.2 }
+  ]
 }

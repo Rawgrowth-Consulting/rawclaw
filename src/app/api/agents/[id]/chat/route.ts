@@ -11,6 +11,7 @@ import { applyBrandFilter } from "@/lib/brand/apply-filter";
 import {
   buildAgentChatPreambleV2,
   ROLE_BASED_BUDGET_POLICY,
+  chatHistoryBudgetFactor,
 } from "@/lib/agent/context";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
@@ -752,13 +753,10 @@ export async function POST(
   // blocks (persona, brand, json commands, trailing protocols) always
   // render so identity + tool protocol stay intact.
   //
-  // Iter 36: base budget is role-aware (CEO 6000 / dept-head 4000 /
-  // specialist 2000) instead of a fixed number, then scaled DOWN as
-  // history grows to protect context window under long threads.
-  //
-  //   ≤20 messages -> full role base
-  //   21-40        -> 50% of role base
-  //   41+          -> 20% of role base
+  // Iter 36 + iter 41: base budget is role-aware (ROLE_BASED_BUDGET_POLICY)
+  // scaled by the chat-history factor (chatHistoryBudgetFactor) so long
+  // threads tighten the cap proportionally. Both pieces read from
+  // budget-policy.config.json so ops can retune without code edits.
   const messageCount = incoming.length;
   const extraPreamble =
     (await buildAgentChatPreambleV2(
@@ -770,12 +768,11 @@ export async function POST(
         userRole,
       },
       {
-        budgetPolicy: (flags) => {
-          const base = ROLE_BASED_BUDGET_POLICY(flags);
-          if (messageCount <= 20) return base;
-          if (messageCount <= 40) return Math.round(base * 0.5);
-          return Math.round(base * 0.2);
-        },
+        budgetPolicy: (flags) =>
+          Math.round(
+            ROLE_BASED_BUDGET_POLICY(flags) *
+              chatHistoryBudgetFactor(messageCount),
+          ),
         telemetry: true,
       },
     )) + recallBlock;
