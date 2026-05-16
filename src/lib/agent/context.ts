@@ -365,18 +365,32 @@ export type ComposeChatPreambleOptions = {
   budgetPolicy?: (flags: AgentCapabilityFlags) => number;
 };
 
+import BUDGET_POLICY_CONFIG from "./budget-policy.config.json";
+
+type RoleBudgetConfig = {
+  roleBudget: {
+    ceo: number;
+    deptHead: number;
+    specialist: number;
+  };
+};
+
 /**
  * Default role-aware budget. CEO agents get the biggest context
  * window (cross-org synthesis), dept heads get a mid tier (single
- * domain depth), specialists run lean. Values pinned per [B 17:26]
- * iter-35 spec - tweak in one place if telemetry shows headroom.
+ * domain depth), specialists run lean. Iter 40: values lifted to
+ * budget-policy.config.json so ops can tune tiers without code
+ * edit. Defaults pinned per [B 17:26] iter-35 spec.
  */
 export const ROLE_BASED_BUDGET_POLICY = (
   flags: AgentCapabilityFlags,
 ): number => {
-  if (flags.isCeo) return 6000;
-  if (flags.isDeptHead) return 4000;
-  return 2000;
+  const { ceo, deptHead, specialist } = (
+    BUDGET_POLICY_CONFIG as RoleBudgetConfig
+  ).roleBudget;
+  if (flags.isCeo) return ceo;
+  if (flags.isDeptHead) return deptHead;
+  return specialist;
 };
 
 /**

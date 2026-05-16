@@ -9,6 +9,7 @@ import {
   type AgentContextMode,
 } from "../../src/lib/agent/context";
 import CHAT_BLOCKS_CONFIG from "../../src/lib/agent/chat-blocks.config.json";
+import BUDGET_POLICY_CONFIG from "../../src/lib/agent/budget-policy.config.json";
 
 // Iter 35 guard rail. The 21-entry CHAT_BLOCKS array is the source
 // of truth for what renders in the chat preamble. A future
@@ -167,6 +168,25 @@ test("CHAT_BLOCKS: array + each entry are Object.frozen (iter 38)", () => {
     assert.ok(
       Object.isFrozen(block),
       `CHAT_BLOCKS entry "${block.id}" must be Object.frozen`,
+    );
+  }
+});
+
+test("budget-policy.config.json: roleBudget tiers match defaults (iter 40)", () => {
+  const rb = (BUDGET_POLICY_CONFIG as { roleBudget: Record<string, number> })
+    .roleBudget;
+  assert.equal(rb.ceo, 6000, "CEO tier default");
+  assert.equal(rb.deptHead, 4000, "dept-head tier default");
+  assert.equal(rb.specialist, 2000, "specialist tier default");
+});
+
+test("budget-policy.config.json: every tier is a positive finite number (iter 40)", () => {
+  const rb = (BUDGET_POLICY_CONFIG as { roleBudget: Record<string, number> })
+    .roleBudget;
+  for (const [tier, value] of Object.entries(rb)) {
+    assert.ok(
+      typeof value === "number" && Number.isFinite(value) && value > 0,
+      `tier "${tier}" must be a positive finite number, got ${String(value)}`,
     );
   }
 });
