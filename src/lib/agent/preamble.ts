@@ -175,6 +175,12 @@ export async function buildAgentChatPreamble(input: {
   // that receives the already-accumulated content via priorContent so
   // the inline `(preamble ? "\n\n" : "")` separator checks behave
   // exactly as in legacy.
+  // Shared org memory - extracted phase 1b iter 2 into
+  // buildSharedMemoryBlock. Appended here so legacy callers of
+  // buildAgentChatPreamble still get the full preamble.
+  const sharedMem = await buildSharedMemoryBlock({ orgId, agentId });
+  if (sharedMem) preamble += sharedMem;
+
   preamble += await buildAgentChatPreambleTail({
     orgId,
     agentId,
@@ -221,43 +227,8 @@ export async function buildAgentChatPreambleTail(input: {
   const db = supabaseAdmin();
   let preamble = priorContent;
 
-  // 0-pre. Shared org memory. Facts every agent should "just know" -
-  //   client uses Shopify, the operator's Instagram is @x, decided to
-  //   drop feature Y - live in rgaios_shared_memory (operator-seeded or
-  //   emitted by peers via <shared_memory>). listSharedMemoryForAgent
-  //   existed but had ZERO callers, so the table was write-only and the
-  //   facts never reached the model. Inject the top facts here so e.g.
-  //   "my Instagram" resolves without the operator typing the handle.
-  try {
-    const { listSharedMemoryForAgent } = await import("@/lib/memory/shared");
-    const { data: deptRow } = await db
-      .from("rgaios_agents")
-      .select("department")
-      .eq("id", agentId)
-      .eq("organization_id", orgId)
-      .maybeSingle();
-    const agentDept = (deptRow as { department?: string | null } | null)
-      ?.department ?? null;
-    const facts = await listSharedMemoryForAgent({
-      orgId,
-      agentId,
-      agentDept,
-      limit: 12,
-    });
-    if (facts.length > 0) {
-      preamble +=
-        "\n\n═══ SHARED ORG MEMORY (facts you already know) ═══\n\n" +
-        "These are established facts about this org and operator. Treat them as ground truth - do NOT ask the operator for something already here, and resolve references against them (e.g. 'my Instagram' -> the handle below).\n" +
-        facts.map((f) => `  - ${f.fact}`).join("\n") +
-        "\n";
-    }
-  } catch (err) {
-    // best-effort - a memory-lookup failure never blocks the reply
-    console.warn(
-      "[preamble] shared org memory skipped:",
-      (err as Error).message,
-    );
-  }
+  // Shared org memory block extracted into buildSharedMemoryBlock for
+  // DEEP WIN 4 phase 1b iter 2 registry use.
 
   // 0-pre-a2. Recent signals & metrics. The whole point of "be proactive"
   //   is that a flag must point at something REAL - a live agent once
@@ -1311,6 +1282,51 @@ export async function buildAgentChatPreambleTail(input: {
  * separator is added only if priorContent is non-empty (preserves the
  * exact legacy `(preamble ? "\n\n" : "")` behaviour).
  */
+/**
+ * Shared org memory facts (`listSharedMemoryForAgent`) block. Async,
+ * single DB-table dep. Returns the formatted SHARED ORG MEMORY
+ * section (with leading "\n\n") or null when no facts.
+ *
+ * Best-effort: any thrown error is logged + null returned so a memory
+ * lookup failure never blocks the reply (legacy behaviour).
+ */
+export async function buildSharedMemoryBlock(input: {
+  orgId: string;
+  agentId: string;
+}): Promise<string | null> {
+  try {
+    const { listSharedMemoryForAgent } = await import("@/lib/memory/shared");
+    const db = supabaseAdmin();
+    const { data: deptRow } = await db
+      .from("rgaios_agents")
+      .select("department")
+      .eq("id", input.agentId)
+      .eq("organization_id", input.orgId)
+      .maybeSingle();
+    const agentDept = (deptRow as { department?: string | null } | null)
+      ?.department ?? null;
+    const facts = await listSharedMemoryForAgent({
+      orgId: input.orgId,
+      agentId: input.agentId,
+      agentDept,
+      limit: 12,
+    });
+    if (facts.length === 0) return null;
+    return (
+      "\n\n═══ SHARED ORG MEMORY (facts you already know) ═══\n\n" +
+      "These are established facts about this org and operator. Treat them as ground truth - do NOT ask the operator for something already here, and resolve references against them (e.g. 'my Instagram' -> the handle below).\n" +
+      facts.map((f) => `  - ${f.fact}`).join("\n") +
+      "\n"
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] shared org memory skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 export function buildTrailingProtocolsBlock(priorContent: string): string {
   const body = [
     "═══ TASK CREATION ═══",
