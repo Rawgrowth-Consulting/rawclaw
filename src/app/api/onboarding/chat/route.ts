@@ -1558,10 +1558,15 @@ export async function POST(req: NextRequest) {
               // the operator knows what to do instead of staring at a
               // dead chat. Re-throw so the outer try/catch closes the
               // stream cleanly.
+              // HOTFIX 18 (2026-05-17, OPT 12 audit): match HOTFIX 8c
+              // canonical operator copy so the onboarding chat speaks
+              // the same words as the main agent chat when run-limit
+              // / auth errors surface. Drops "Claude sessions" /
+              // "Claude Max session" jargon for friendlier vocabulary.
               const friendly = raw.includes("429")
-                ? "Your Claude Max account is rate-limited right now. Wait a few minutes (or close other Claude sessions) and try again."
+                ? "Hit our run limit for the moment - retrying shortly. If this keeps happening, add another account at /connections."
                 : raw.includes("401")
-                  ? "Claude Max session expired - reconnect at /connections."
+                  ? "Sign-in expired for every connected account. Reconnect at /connections."
                   : raw.includes("model")
                     ? `Model error: ${raw}`
                     : null;
