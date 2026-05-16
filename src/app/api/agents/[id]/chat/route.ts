@@ -1137,8 +1137,15 @@ export async function POST(
               // length. AND if pass-2 ran but ALL its commands failed,
               // emit a clear "couldn't complete" message instead of
               // letting the retry-mid-sentence sit there as final.
+              // HOTFIX 11b (2026-05-17): extend regex per R-MARTI-2
+              // walk. Marta hung on "File name didn't resolve - let me
+              // pull..." which starts with "File" - not matched by the
+              // original verb-list. Add file/name/lookup recovery
+              // phrases + generic "I'll <verb>" / "I need to <verb>"
+              // so the synth fallback catches every common recovery
+              // intermediate.
               const looksLikeIntermediate =
-                /^(retrying|trying|attempting|let me retry|one moment|hold on|working on|let me try)/i
+                /^(retrying|trying|attempting|let me retry|one moment|hold on|working on|let me try|let me pull|let me check|let me look|let me search|let me query|couldn't find|file (name )?didn't|missing|need to (look|find|check|pull|search|query)|searching|querying|pulling|checking|looking up|i'?ll (try|retry|check|pull|look|search|query))/i
                   .test(visibleAfterStrip);
               if (
                 pass2EmittedCommands &&
