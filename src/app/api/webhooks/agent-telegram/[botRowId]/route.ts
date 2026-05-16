@@ -254,12 +254,20 @@ export async function POST(
     // so the Telegram bot replies are grounded in the client's actual
     // offer/voice/SOPs instead of generic SaaS phrasing. Best-effort -
     // a missing embedder just skips RAG.
-    const extraPreamble = await buildTelegramPreambleV2({
-      orgId: organizationId,
-      agentId,
-      orgName: orgRow?.name ?? null,
-      queryText: text,
-    }).catch(() => "");
+    // Telegram is mobile-first - keep the preamble lean by capping the
+    // skippable bucket (memory / signals / skills / pending / past-mem
+    // / recent-reasoning / agent-files / company-corpus / recent-activity)
+    // at ~2000 tokens. Required identity + brand + tool protocol always
+    // render so the agent stays in character.
+    const extraPreamble = await buildTelegramPreambleV2(
+      {
+        orgId: organizationId,
+        agentId,
+        orgName: orgRow?.name ?? null,
+        queryText: text,
+      },
+      { skippableBudgetTokens: 2000 },
+    ).catch(() => "");
 
     // The key difference vs the legacy webhook: agentId is passed so the
     // persona is THIS bot's owner, not the org default.
