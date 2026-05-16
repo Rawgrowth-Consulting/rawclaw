@@ -1,0 +1,23 @@
+[
+  { "id": "capabilities-trust", "priority": "required", "defaultCostTokens": 700 },
+  { "id": "reasoning-protocol", "priority": "required", "defaultCostTokens": 900 },
+  { "id": "shared-memory", "priority": "skippable", "defaultCostTokens": 300 },
+  { "id": "recent-signals", "priority": "skippable", "defaultCostTokens": 400 },
+  { "id": "assigned-skills", "priority": "skippable", "defaultCostTokens": 150 },
+  { "id": "authority-override", "priority": "required", "defaultCostTokens": 200 },
+  { "id": "persona-org-place", "priority": "required", "defaultCostTokens": 250 },
+  { "id": "pending-tasks", "priority": "skippable", "defaultCostTokens": 200 },
+  { "id": "identity", "priority": "required", "defaultCostTokens": 150 },
+  { "id": "org-roster", "priority": "required", "defaultCostTokens": 800 },
+  { "id": "recent-activity", "priority": "skippable", "defaultCostTokens": 600 },
+  { "id": "ceo-telegram-entry", "priority": "required", "defaultCostTokens": 600 },
+  { "id": "atlas-directives", "priority": "required", "defaultCostTokens": 2000 },
+  { "id": "json-commands-ceo", "priority": "required", "defaultCostTokens": 3000 },
+  { "id": "json-commands-composio", "priority": "required", "defaultCostTokens": 1500 },
+  { "id": "past-memories", "priority": "skippable", "defaultCostTokens": 400 },
+  { "id": "recent-reasoning", "priority": "skippable", "defaultCostTokens": 400 },
+  { "id": "brand-profile", "priority": "required", "defaultCostTokens": 250 },
+  { "id": "agent-files", "priority": "skippable", "defaultCostTokens": 150 },
+  { "id": "company-corpus", "priority": "skippable", "defaultCostTokens": 600 },
+  { "id": "trailing-protocols", "priority": "required", "defaultCostTokens": 700 }
+]

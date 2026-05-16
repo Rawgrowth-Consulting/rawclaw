@@ -8,6 +8,7 @@ import {
   CHAT_BLOCKS,
   type AgentContextMode,
 } from "../../src/lib/agent/context";
+import CHAT_BLOCKS_CONFIG from "../../src/lib/agent/chat-blocks.config.json";
 
 // Iter 35 guard rail. The 21-entry CHAT_BLOCKS array is the source
 // of truth for what renders in the chat preamble. A future
@@ -107,4 +108,47 @@ test("CHAT_BLOCKS: registry contains the expected 21 entries (phase 2 baseline)"
     21,
     `CHAT_BLOCKS size changed to ${CHAT_BLOCKS.length}; update the baseline if intentional`,
   );
+});
+
+test("CHAT_BLOCKS config JSON: parses + has 21 entries (iter 37)", () => {
+  assert.ok(
+    Array.isArray(CHAT_BLOCKS_CONFIG),
+    "chat-blocks.config.json must be a JSON array",
+  );
+  assert.equal(
+    CHAT_BLOCKS_CONFIG.length,
+    21,
+    `JSON config size ${CHAT_BLOCKS_CONFIG.length} != 21 baseline; bump if intentional`,
+  );
+});
+
+test("CHAT_BLOCKS config JSON: every entry matches CHAT_BLOCKS in order (iter 37)", () => {
+  const configIds = (CHAT_BLOCKS_CONFIG as Array<{ id: string }>).map(
+    (e) => e.id,
+  );
+  const blockIds = CHAT_BLOCKS.map((b) => b.id);
+  assert.deepEqual(
+    configIds,
+    blockIds,
+    "JSON config id order must match CHAT_BLOCKS order (composer relies on registry order)",
+  );
+});
+
+test("CHAT_BLOCKS config JSON: every entry has valid required fields (iter 37)", () => {
+  for (const entry of CHAT_BLOCKS_CONFIG as Array<Record<string, unknown>>) {
+    assert.ok(
+      typeof entry.id === "string" && entry.id.length > 0,
+      `config entry missing id: ${JSON.stringify(entry)}`,
+    );
+    assert.ok(
+      entry.priority === "required" || entry.priority === "skippable",
+      `config entry "${String(entry.id)}" has invalid priority: ${String(entry.priority)}`,
+    );
+    assert.ok(
+      typeof entry.defaultCostTokens === "number" &&
+        Number.isFinite(entry.defaultCostTokens) &&
+        entry.defaultCostTokens >= 0,
+      `config entry "${String(entry.id)}" has invalid defaultCostTokens: ${String(entry.defaultCostTokens)}`,
+    );
+  }
 });

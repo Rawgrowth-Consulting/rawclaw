@@ -171,222 +171,152 @@ export type ChatBlock = {
 };
 
 /**
+ * Per-block builders. Pure mapping from CHAT_BLOCK id to its build
+ * function. Iter 37 split: metadata (id, priority, defaultCostTokens,
+ * modes) lives in chat-blocks.config.json so ops can tune budgets +
+ * priority without editing TS. Builders stay in code because they
+ * close over typed helpers.
+ */
+const CHAT_BLOCK_BUILDERS: Record<
+  string,
+  (ctx: ChatBlockContext) => Promise<string | null> | string | null
+> = {
+  "capabilities-trust": () => buildCapabilitiesAndTrustBlock(),
+  "reasoning-protocol": () => buildReasoningProtocolBlock(),
+  "shared-memory": (ctx) =>
+    buildSharedMemoryBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
+  "recent-signals": (ctx) => buildRecentSignalsBlock({ orgId: ctx.orgId }),
+  "assigned-skills": (ctx) =>
+    buildAssignedSkillsBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
+  "authority-override": (ctx) =>
+    buildAuthorityOverrideBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
+  "persona-org-place": (ctx) =>
+    buildPersonaAndOrgPlaceBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      priorContent: ctx.priorContent,
+    }),
+  "pending-tasks": (ctx) =>
+    buildPendingTasksBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      priorContent: ctx.priorContent,
+    }),
+  identity: (ctx) =>
+    buildIdentityBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      priorContent: ctx.priorContent,
+    }),
+  "org-roster": (ctx) =>
+    buildOrgRosterBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      isCeo: ctx.isCeo,
+      priorContent: ctx.priorContent,
+    }),
+  "recent-activity": (ctx) =>
+    buildRecentActivityBlock({
+      orgId: ctx.orgId,
+      isCeo: ctx.isCeo,
+      priorContent: ctx.priorContent,
+    }),
+  "ceo-telegram-entry": (ctx) =>
+    buildCeoTelegramEntryBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      isCeo: ctx.isCeo,
+      priorContent: ctx.priorContent,
+    }),
+  "atlas-directives": (ctx) =>
+    buildAtlasDirectivesBlock({
+      isCeo: ctx.isCeo,
+      priorContent: ctx.priorContent,
+    }),
+  // legacy-tail CHAT_BLOCKS entry removed phase 1e iter 19.
+  "json-commands-ceo": (ctx) =>
+    buildCeoCommandsBlock({
+      canCommand: ctx.canCommand,
+      priorContent: ctx.priorContent,
+    }),
+  "json-commands-composio": (ctx) =>
+    buildSubAgentComposioCommandsBlock({
+      canCommand: ctx.canCommand,
+      hasComposio: ctx.hasComposio,
+      priorContent: ctx.priorContent,
+    }),
+  "past-memories": (ctx) =>
+    buildPastMemoriesBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      priorContent: ctx.priorContent,
+    }),
+  "recent-reasoning": (ctx) =>
+    buildRecentReasoningBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      priorContent: ctx.priorContent,
+    }),
+  "brand-profile": (ctx) =>
+    buildBrandProfileBlock({
+      orgId: ctx.orgId,
+      orgName: ctx.orgName,
+      isOwnerContext: ctx.userRole === "owner" || ctx.userRole === "admin",
+      priorContent: ctx.priorContent,
+    }),
+  "agent-files": (ctx) =>
+    buildAgentFilesBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      priorContent: ctx.priorContent,
+    }),
+  "company-corpus": (ctx) =>
+    buildCompanyCorpusBlock({
+      orgId: ctx.orgId,
+      agentId: ctx.agentId,
+      queryText: ctx.queryText,
+      priorContent: ctx.priorContent,
+    }),
+  "trailing-protocols": (ctx) => buildTrailingProtocolsBlock(ctx.priorContent),
+};
+
+type ChatBlockConfigEntry = {
+  id: string;
+  priority: ChatBlockPriority;
+  defaultCostTokens: number;
+  modes?: AgentContextMode[];
+};
+
+import CHAT_BLOCKS_CONFIG from "./chat-blocks.config.json";
+
+/**
  * Block composition order for chat + telegram surfaces. Each entry is
  * called in sequence; non-null return values are concatenated. Blocks
  * that need the already-accumulated content (for separator logic)
- * read ctx.priorContent. Phase 1b will replace the single
- * `legacy-tail` entry with ~22 per-section blocks.
+ * read ctx.priorContent.
+ *
+ * Iter 37: metadata externalized to chat-blocks.config.json. The
+ * registry below is a JOIN: ops-tunable JSON entries x typed
+ * builders. Throws at module init if any config id has no matching
+ * builder (loud failure beats silent dropouts).
  */
-export const CHAT_BLOCKS: ChatBlock[] = [
-  {
-    id: "capabilities-trust",
-    build: () => buildCapabilitiesAndTrustBlock(),
-    defaultCostTokens: 700,
-    priority: "required",
-  },
-  {
-    id: "reasoning-protocol",
-    build: () => buildReasoningProtocolBlock(),
-    defaultCostTokens: 900,
-    priority: "required",
-  },
-  {
-    id: "shared-memory",
-    build: (ctx) =>
-      buildSharedMemoryBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
-    defaultCostTokens: 300,
-    priority: "skippable",
-  },
-  {
-    id: "recent-signals",
-    build: (ctx) => buildRecentSignalsBlock({ orgId: ctx.orgId }),
-    defaultCostTokens: 400,
-    priority: "skippable",
-  },
-  {
-    id: "assigned-skills",
-    build: (ctx) =>
-      buildAssignedSkillsBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
-    defaultCostTokens: 150,
-    priority: "skippable",
-  },
-  {
-    id: "authority-override",
-    build: (ctx) =>
-      buildAuthorityOverrideBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-      }),
-    defaultCostTokens: 200,
-    priority: "required",
-  },
-  {
-    id: "persona-org-place",
-    build: (ctx) =>
-      buildPersonaAndOrgPlaceBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 250,
-    priority: "required",
-  },
-  {
-    id: "pending-tasks",
-    build: (ctx) =>
-      buildPendingTasksBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 200,
-    priority: "skippable",
-  },
-  {
-    id: "identity",
-    build: (ctx) =>
-      buildIdentityBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 150,
-    priority: "required",
-  },
-  {
-    id: "org-roster",
-    build: (ctx) =>
-      buildOrgRosterBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        isCeo: ctx.isCeo,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 800,
-    priority: "required",
-  },
-  {
-    id: "recent-activity",
-    build: (ctx) =>
-      buildRecentActivityBlock({
-        orgId: ctx.orgId,
-        isCeo: ctx.isCeo,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 600,
-    priority: "skippable",
-  },
-  {
-    id: "ceo-telegram-entry",
-    build: (ctx) =>
-      buildCeoTelegramEntryBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        isCeo: ctx.isCeo,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 600,
-    priority: "required",
-  },
-  {
-    id: "atlas-directives",
-    build: (ctx) =>
-      buildAtlasDirectivesBlock({
-        isCeo: ctx.isCeo,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 2000,
-    priority: "required",
-  },
-  // legacy-tail CHAT_BLOCKS entry removed phase 1e iter 19. The
-  // wrapper buildAgentChatPreambleTail had become a no-op after all
-  // emit sites were extracted (iter 1-17).
-  {
-    id: "json-commands-ceo",
-    build: (ctx) =>
-      buildCeoCommandsBlock({
-        canCommand: ctx.canCommand,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 3000,
-    priority: "required",
-  },
-  {
-    id: "json-commands-composio",
-    build: (ctx) =>
-      buildSubAgentComposioCommandsBlock({
-        canCommand: ctx.canCommand,
-        hasComposio: ctx.hasComposio,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 1500,
-    priority: "required",
-  },
-  {
-    id: "past-memories",
-    build: (ctx) =>
-      buildPastMemoriesBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 400,
-    priority: "skippable",
-  },
-  {
-    id: "recent-reasoning",
-    build: (ctx) =>
-      buildRecentReasoningBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 400,
-    priority: "skippable",
-  },
-  {
-    id: "brand-profile",
-    build: (ctx) =>
-      buildBrandProfileBlock({
-        orgId: ctx.orgId,
-        orgName: ctx.orgName,
-        isOwnerContext:
-          ctx.userRole === "owner" || ctx.userRole === "admin",
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 250,
-    priority: "required",
-  },
-  {
-    id: "agent-files",
-    build: (ctx) =>
-      buildAgentFilesBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 150,
-    priority: "skippable",
-  },
-  {
-    id: "company-corpus",
-    build: (ctx) =>
-      buildCompanyCorpusBlock({
-        orgId: ctx.orgId,
-        agentId: ctx.agentId,
-        queryText: ctx.queryText,
-        priorContent: ctx.priorContent,
-      }),
-    defaultCostTokens: 600,
-    priority: "skippable",
-  },
-  {
-    id: "trailing-protocols",
-    build: (ctx) => buildTrailingProtocolsBlock(ctx.priorContent),
-    defaultCostTokens: 700,
-    priority: "required",
-  },
-];
+export const CHAT_BLOCKS: ChatBlock[] = (
+  CHAT_BLOCKS_CONFIG as ChatBlockConfigEntry[]
+).map((entry) => {
+  const build = CHAT_BLOCK_BUILDERS[entry.id];
+  if (!build) {
+    throw new Error(
+      `chat-blocks.config.json entry "${entry.id}" has no builder in CHAT_BLOCK_BUILDERS`,
+    );
+  }
+  return {
+    id: entry.id,
+    build,
+    priority: entry.priority,
+    defaultCostTokens: entry.defaultCostTokens,
+    ...(entry.modes ? { modes: entry.modes } : {}),
+  };
+});
 
 export type ComposeChatPreambleOptions = {
   /**
