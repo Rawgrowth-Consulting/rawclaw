@@ -16,6 +16,7 @@ import {
   buildCompanyCorpusBlock,
   buildTrailingProtocolsBlock,
 } from "./preamble";
+import { supabaseAdmin } from "@/lib/supabase/server";
 import {
   buildSystemPrompt,
   type MemoryEntry,
@@ -74,9 +75,67 @@ type RoutineInput = {
 
 export type AgentContextInput = ChatInput | RoutineInput;
 
+export type AgentCapabilityFlags = {
+  isCeo: boolean;
+  isDeptHead: boolean;
+  canCommand: boolean;
+  hasComposio: boolean;
+};
+
 export type ChatBlockContext = Omit<ChatInput, "mode"> & {
   priorContent: string;
-};
+} & AgentCapabilityFlags;
+
+/**
+ * Resolve role + connection flags for the current agent in one round
+ * of queries. Phase 1c iter 10 (STRAT A) added these to
+ * ChatBlockContext so subsequent block extractions (JSON COMMANDS,
+ * CEO branch sub-pieces) can read them via ctx instead of each
+ * helper re-querying. Best-effort: any thrown error falls back to all
+ * flags false so the registry composes safely without these blocks.
+ */
+export async function computeAgentCapabilityFlags(input: {
+  orgId: string;
+  agentId: string;
+}): Promise<AgentCapabilityFlags> {
+  const fallback: AgentCapabilityFlags = {
+    isCeo: false,
+    isDeptHead: false,
+    canCommand: false,
+    hasComposio: false,
+  };
+  try {
+    const db = supabaseAdmin();
+    const { data: agentRow } = await db
+      .from("rgaios_agents")
+      .select("role, is_department_head")
+      .eq("id", input.agentId)
+      .eq("organization_id", input.orgId)
+      .maybeSingle();
+    const meta = agentRow as
+      | { role?: string; is_department_head?: boolean }
+      | null;
+    const isCeo = meta?.role === "ceo";
+    const isDeptHead = meta?.is_department_head === true;
+    const canCommand = isCeo || isDeptHead;
+
+    let hasComposio = false;
+    try {
+      const { count: connCount } = await db
+        .from("rgaios_connections")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", input.orgId)
+        .eq("status", "connected");
+      hasComposio = (connCount ?? 0) > 0;
+    } catch {
+      hasComposio = false;
+    }
+
+    return { isCeo, isDeptHead, canCommand, hasComposio };
+  } catch {
+    return fallback;
+  }
+}
 
 export type ChatBlock = {
   id: string;
@@ -208,9 +267,17 @@ export const CHAT_BLOCKS: ChatBlock[] = [
 async function composeChatPreamble(
   input: Omit<ChatInput, "mode">,
 ): Promise<string> {
+  const flags = await computeAgentCapabilityFlags({
+    orgId: input.orgId,
+    agentId: input.agentId,
+  });
   let out = "";
   for (const block of CHAT_BLOCKS) {
-    const piece = await block.build({ ...input, priorContent: out });
+    const piece = await block.build({
+      ...input,
+      ...flags,
+      priorContent: out,
+    });
     if (piece) out += piece;
   }
   return out;
