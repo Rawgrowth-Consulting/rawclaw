@@ -224,6 +224,17 @@ export async function buildAgentChatPreamble(input: {
   });
   if (pendingTasks) preamble += pendingTasks;
 
+  // YOUR IDENTITY block - extracted phase 1d iter 13 into
+  // buildIdentityBlock. Sits inside the 1c-bis CEO try in legacy
+  // tail; here it runs before the tail so byte-for-byte order
+  // matches (it was the first emit in the outer try anyway).
+  const identity = await buildIdentityBlock({
+    orgId,
+    agentId,
+    priorContent: preamble,
+  });
+  if (identity) preamble += identity;
+
   preamble += await buildAgentChatPreambleTail({
     orgId,
     agentId,
@@ -418,26 +429,8 @@ export async function buildAgentChatPreambleTail(input: {
     const isDeptHead = agentMeta?.is_department_head === true;
     canCommand = isCeo || isDeptHead;
 
-    // HOTFIX 5 (2026-05-17): inject the agent's own UUID into the
-    // preamble so a self-edit via agents_update can pass either the
-    // name or this id without a round-trip lookup. R5/R9 walk surfaced
-    // "agent Kasia not found" because the agent had no way to learn
-    // its own id from context. The tool now resolves name-or-id (see
-    // src/lib/mcp/tools/agents.ts), but persona-side knowing the id
-    // is the belt-and-suspenders side - works even when name lookup
-    // is ambiguous (two agents with the same name on a future shared
-    // org).
-    if (agentMeta?.name) {
-      preamble +=
-        (preamble ? "\n\n" : "") +
-        "═══ YOUR IDENTITY (for self-edits) ═══\n\n" +
-        `Your agent NAME: ${agentMeta.name}\n` +
-        `Your agent UUID: ${agentId}\n\n` +
-        "When you call agents_update on YOURSELF (system_prompt / integrations / status / etc.), pass either form in the `id` arg:\n" +
-        `  { "tool": "agents_update", "args": { "id": "${agentMeta.name}", "system_prompt": "..." } }   // name (resolved server-side)\n` +
-        `  { "tool": "agents_update", "args": { "id": "${agentId}", "system_prompt": "..." } }   // UUID (skip the lookup)\n\n` +
-        "Either works. Do NOT tell the operator you need to look up your UUID - you already have both.";
-    }
+    // YOUR IDENTITY block extracted into buildIdentityBlock for DEEP
+    // WIN 4 phase 1d iter 13.
     if (isCeo) {
       // 1c-pre. Live agent roster. Atlas hallucinates "Marketing Manager"
       // / "Sales Manager" / "Finance Manager" because the seeded names
@@ -1394,6 +1387,46 @@ export async function buildRecentReasoningBlock(input: {
  * variant inside the tail) AND the org has at least one connected
  * Composio app. Returns null otherwise.
  */
+/**
+ * YOUR IDENTITY block (HOTFIX 5). Injects the agent's name + UUID so
+ * agents_update self-edits can pass either form. Returns null when no
+ * name found (defensive). Best-effort.
+ */
+export async function buildIdentityBlock(input: {
+  orgId: string;
+  agentId: string;
+  priorContent: string;
+}): Promise<string | null> {
+  const { orgId, agentId, priorContent } = input;
+  try {
+    const db = supabaseAdmin();
+    const { data: agentRow } = await db
+      .from("rgaios_agents")
+      .select("name")
+      .eq("id", agentId)
+      .eq("organization_id", orgId)
+      .maybeSingle();
+    const name = (agentRow as { name?: string } | null)?.name;
+    if (!name) return null;
+    return (
+      (priorContent ? "\n\n" : "") +
+      "═══ YOUR IDENTITY (for self-edits) ═══\n\n" +
+      `Your agent NAME: ${name}\n` +
+      `Your agent UUID: ${agentId}\n\n` +
+      "When you call agents_update on YOURSELF (system_prompt / integrations / status / etc.), pass either form in the `id` arg:\n" +
+      `  { "tool": "agents_update", "args": { "id": "${name}", "system_prompt": "..." } }   // name (resolved server-side)\n` +
+      `  { "tool": "agents_update", "args": { "id": "${agentId}", "system_prompt": "..." } }   // UUID (skip the lookup)\n\n` +
+      "Either works. Do NOT tell the operator you need to look up your UUID - you already have both."
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] identity skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 /**
  * CEO + dept-head JSON COMMANDS block. Emitted when canCommand is
  * true (role==ceo OR is_department_head==true). Carries the full

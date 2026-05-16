@@ -9,6 +9,7 @@ import {
   buildAuthorityOverrideBlock,
   buildPersonaAndOrgPlaceBlock,
   buildPendingTasksBlock,
+  buildIdentityBlock,
   buildPastMemoriesBlock,
   buildRecentReasoningBlock,
   buildBrandProfileBlock,
@@ -195,6 +196,15 @@ export const CHAT_BLOCKS: ChatBlock[] = [
     id: "pending-tasks",
     build: (ctx) =>
       buildPendingTasksBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "identity",
+    build: (ctx) =>
+      buildIdentityBlock({
         orgId: ctx.orgId,
         agentId: ctx.agentId,
         priorContent: ctx.priorContent,
