@@ -1770,18 +1770,27 @@ function SystemBlock({
 
   if (kind === "commands") {
     if (commands && commands.length > 0) {
+      // HOTFIX 14b (2026-05-17, R-ORCH-1 v2 verdict): when N
+      // delegations fire in one turn and all bounce with the same
+      // humanized error (run-limit, quota etc), collapse them into
+      // a single grouped card "Delegated to A, B, C - all hit run
+      // limit, retrying shortly" instead of N stacked FAILED cards.
+      // Only groups CONSECUTIVE failed agent_invoke cmds that share
+      // the same delegated_output string - keeps the dispatch order
+      // intact when failures are interleaved with successes.
+      const groupedCommands = groupConsecutiveFailedDelegations(commands);
       // Each executed command is its own node on the rail, in order.
       // The rail runs through all of them (railTop/railBottom on the
       // ends; always-connected in the middle) so a multi-tool turn
       // reads as one sequence.
       return (
         <>
-          {commands.map((cmd, i) => (
+          {groupedCommands.map((cmd, i) => (
             <OrchestrationStep
               key={i}
               cmd={cmd}
               railTop={i === 0 ? railTop : true}
-              railBottom={i === commands.length - 1 ? railBottom : true}
+              railBottom={i === groupedCommands.length - 1 ? railBottom : true}
             />
           ))}
         </>
@@ -1826,6 +1835,69 @@ function SystemBlock({
       </p>
     </TimelineRow>
   );
+}
+
+// HOTFIX 14b helper: collapse consecutive failed agent_invoke
+// cards that share the same delegated_output text into one
+// grouped card. Returns a new array; original input untouched.
+// Grouping kicks in only at 2+ matches so a single failed
+// delegation still renders normally.
+function groupConsecutiveFailedDelegations(
+  cmds: CommandResult[],
+): CommandResult[] {
+  const out: CommandResult[] = [];
+  let i = 0;
+  while (i < cmds.length) {
+    const c = cmds[i];
+    const detail = (c.detail ?? {}) as Record<string, unknown>;
+    const sharedOutput =
+      typeof detail.delegated_output === "string"
+        ? (detail.delegated_output as string)
+        : null;
+    if (c.type === "agent_invoke" && !c.ok && sharedOutput) {
+      const group: CommandResult[] = [c];
+      let j = i + 1;
+      while (j < cmds.length) {
+        const n = cmds[j];
+        const nd = (n.detail ?? {}) as Record<string, unknown>;
+        if (
+          n.type === "agent_invoke" &&
+          !n.ok &&
+          typeof nd.delegated_output === "string" &&
+          (nd.delegated_output as string) === sharedOutput
+        ) {
+          group.push(n);
+          j++;
+        } else {
+          break;
+        }
+      }
+      if (group.length >= 2) {
+        const names = group
+          .map((g) => {
+            const d = (g.detail ?? {}) as Record<string, unknown>;
+            return typeof d.assignee_name === "string"
+              ? (d.assignee_name as string)
+              : "(unknown)";
+          })
+          .filter(Boolean);
+        out.push({
+          ...c,
+          summary: `Delegated to ${names.join(", ")} - ${sharedOutput}`,
+          detail: {
+            ...detail,
+            assignee_name: names.join(", "),
+            grouped_count: group.length,
+          },
+        });
+        i = j;
+        continue;
+      }
+    }
+    out.push(c);
+    i++;
+  }
+  return out;
 }
 
 // One executed <command> rendered as a single timeline node.
