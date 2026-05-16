@@ -1213,6 +1213,40 @@ export async function POST(
                   preFilterText = `Done.\n\n${lines.join("\n")}`;
                 }
               }
+              // HOTFIX 12b (2026-05-17, B 17:08 SPEC): force-prepend
+              // the agents_update echo line when the model wrote its
+              // OWN reply (so the synth-fallback above didn't fire)
+              // and that reply doesn't already quote the new field
+              // value verbatim. R5/R9 v6 walk: model wrote
+              // "Done - 'Be punchy and casual.' appended..." instead
+              // of "Done. New description: <full body>". Operator
+              // can't verify a paraphrase. Pull the canonical
+              // "New <field>: <value>" line from the tool result
+              // preview and prepend it if missing.
+              if (pass2EmittedCommands && preFilterText.trim().length > 0) {
+                const pass2Results = commandResults.slice(preTry2ResultCount);
+                const okUpdate = pass2Results.find(
+                  (r) =>
+                    r.ok &&
+                    typeof r.detail?.tool === "string" &&
+                    (r.detail.tool as string) === "agents_update",
+                );
+                if (okUpdate) {
+                  const detail = okUpdate.detail ?? {};
+                  const preview =
+                    typeof detail.result_preview === "string"
+                      ? (detail.result_preview as string)
+                      : okUpdate.summary;
+                  const echoLine =
+                    preview
+                      .split("\n")
+                      .map((l) => l.replace(/\*\*/g, "").trim())
+                      .find((l) => /^New\s+[A-Za-z_]+:/.test(l)) ?? null;
+                  if (echoLine && !preFilterText.includes(echoLine)) {
+                    preFilterText = `${echoLine}\n\n${preFilterText.trim()}`;
+                  }
+                }
+              }
             }
           } catch (err) {
             console.warn(
