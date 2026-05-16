@@ -129,7 +129,8 @@ Keep your reply VISIBLE part to 1-2 sentences confirming you're on it. The detai
     if (/Claude Max|no.*token|access_token/i.test(msg)) {
       return NextResponse.json(
         {
-          error: "No Claude Max token connected for this organization.",
+          error:
+            "No account connected for this organization. Connect at /connections to enable approvals.",
           needsConnection: true,
           connectUrl: "/connections",
         },
@@ -146,7 +147,8 @@ Keep your reply VISIBLE part to 1-2 sentences confirming you're on it. The detai
     if (/Claude Max|no.*token|access_token/i.test(r.error)) {
       return NextResponse.json(
         {
-          error: "No Claude Max token connected for this organization.",
+          error:
+            "No account connected for this organization. Connect at /connections to enable approvals.",
           needsConnection: true,
           connectUrl: "/connections",
         },
