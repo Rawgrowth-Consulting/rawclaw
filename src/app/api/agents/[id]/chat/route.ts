@@ -1012,6 +1012,11 @@ export async function POST(
                   refineNotes.join("\n") +
                   "\n"
                 : "";
+            // HOTFIX 7: snapshot the result count BEFORE pass-2 fires
+            // so we can detect "pass-2 emitted fresh commands" without
+            // re-counting the merged array later. Used by the empty-
+            // visible-reply fallback below.
+            const preTry2ResultCount = commandResults.length;
             const pass2 = await chatReply({
               organizationId: orgId,
               organizationName: ctx.activeOrgName,
@@ -1100,6 +1105,49 @@ export async function POST(
               }
               if (pass2Thinking.visibleReply) {
                 preFilterText = pass2Thinking.visibleReply;
+              }
+              // HOTFIX 7 (2026-05-17): chat-finalize hang after a
+              // pass-2 that emitted a successful command but no
+              // surrounding prose. R5/R9 v2 walk reproduced it:
+              // - pass 1 fired agents_update (failed, coercion error)
+              // - pass 2 retried agents_update (ok)
+              // - pass 2 reply body was ONLY the <command> block - no
+              //   visible text - so after extract+strip the visibleReply
+              //   was empty, no preFilterText override, no "Done"
+              //   message ever rendered. The model treated the retry-
+              //   succeeded as terminal and the operator saw "thinking..."
+              //   then silence for 3min+.
+              // Fix: if pass-2 ran fresh commands AND the visible reply
+              // is empty/trivial (<20 chars after trim, since the model
+              // sometimes prepends "Retrying..." then nothing), synthesize
+              // a one-liner from those NEW pass-2 results. Mirror the
+              // operator's input language hint via the same preamble rule
+              // (DO NOT explicitly translate - the SAY-IT format covers
+              // English; the agent's own re-render would localize, but we
+              // can't run a 3rd pass safely so flat English is acceptable
+              // for the fallback path).
+              const pass2EmittedCommands = commandResults.length > preTry2ResultCount;
+              const visibleAfterStrip = (pass2Thinking.visibleReply ?? "").trim();
+              if (
+                pass2EmittedCommands &&
+                visibleAfterStrip.length < 20
+              ) {
+                const pass2Results = commandResults.slice(preTry2ResultCount);
+                const lines = pass2Results.map((r) => {
+                  const detail = r.detail ?? {};
+                  const tool = typeof detail.tool === "string" ? detail.tool : "tool";
+                  const head = r.ok ? `✓ ${tool}` : `× ${tool}`;
+                  // Prefer the first-line of result_preview / summary -
+                  // gives the operator the actual tool feedback ("Updated
+                  // Kasia - role: marketer, status: idle...") instead of
+                  // a generic "Done.".
+                  const preview =
+                    typeof detail.result_preview === "string"
+                      ? (detail.result_preview as string).split("\n")[0]
+                      : r.summary.split("\n")[0];
+                  return `${head}: ${preview}`.slice(0, 240);
+                });
+                preFilterText = `Done.\n\n${lines.join("\n")}`;
               }
             }
           } catch (err) {
