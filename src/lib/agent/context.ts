@@ -6,6 +6,9 @@ import {
   buildSharedMemoryBlock,
   buildRecentSignalsBlock,
   buildAssignedSkillsBlock,
+  buildBrandProfileBlock,
+  buildAgentFilesBlock,
+  buildCompanyCorpusBlock,
   buildTrailingProtocolsBlock,
 } from "./preamble";
 import {
@@ -114,6 +117,36 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         orgName: ctx.orgName,
         queryText: ctx.queryText,
         userRole: ctx.userRole,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "brand-profile",
+    build: (ctx) =>
+      buildBrandProfileBlock({
+        orgId: ctx.orgId,
+        orgName: ctx.orgName,
+        isOwnerContext:
+          ctx.userRole === "owner" || ctx.userRole === "admin",
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "agent-files",
+    build: (ctx) =>
+      buildAgentFilesBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "company-corpus",
+    build: (ctx) =>
+      buildCompanyCorpusBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        queryText: ctx.queryText,
         priorContent: ctx.priorContent,
       }),
   },

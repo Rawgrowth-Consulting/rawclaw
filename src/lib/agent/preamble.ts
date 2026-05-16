@@ -200,6 +200,30 @@ export async function buildAgentChatPreamble(input: {
     priorContent: preamble,
   });
 
+  // Brand profile + per-agent files + company-corpus extracted in
+  // phase 1b iter 5. Same wiring: helpers return either the section
+  // (with conditional separator) or null when the data slot is empty.
+  const brand = await buildBrandProfileBlock({
+    orgId,
+    orgName,
+    isOwnerContext,
+    priorContent: preamble,
+  });
+  if (brand) preamble += brand;
+  const files = await buildAgentFilesBlock({
+    orgId,
+    agentId,
+    priorContent: preamble,
+  });
+  if (files) preamble += files;
+  const corpus = await buildCompanyCorpusBlock({
+    orgId,
+    agentId,
+    queryText,
+    priorContent: preamble,
+  });
+  if (corpus) preamble += corpus;
+
   // Trailing MCP protocols (TASK CREATION + AGENT MANAGEMENT +
   // SHARED MEMORY + DATA-ASK PROTOCOL). Extracted in phase 1b for
   // CHAT_BLOCKS registry; here it's appended verbatim so legacy
@@ -1008,146 +1032,12 @@ export async function buildAgentChatPreambleTail(input: {
     );
   }
 
-  // 3. Brand profile - SLIM. Only the first ~200 chars of the
-  // approved markdown + 3 of the 11 banned words. The agent calls
-  // lookup_brand_voice when it needs the full voice + complete
-  // banned-words list. Saves ~2-6k input tokens per turn on long
-  // brand profiles (the rate-limit driver pre-refactor).
-  try {
-    const { data: brand } = await db
-      .from("rgaios_brand_profiles")
-      .select("content")
-      .eq("organization_id", orgId)
-      .eq("status", "approved")
-      .order("version", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const content = (brand as { content?: string } | null)?.content?.trim();
-    if (content) {
-      const tasterRaw = content.slice(0, BRAND_VOICE_INLINE_LIMIT);
-      // Don't cut a word in half - drop back to the last whitespace
-      // when the slice landed mid-token.
-      const lastSpace = tasterRaw.lastIndexOf(" ");
-      const taster =
-        lastSpace > 80 ? tasterRaw.slice(0, lastSpace) : tasterRaw;
-      const truncated = content.length > BRAND_VOICE_INLINE_LIMIT;
-      const sampleBanned = BANNED_WORDS.slice(0, 3).join(", ");
-      // FLEX MODE (Chris feedback 2026-05-17): when the operator is
-      // the owner/admin, talk TO them ("your brand profile") instead
-      // of ABOUT them ("the client"). Anything else keeps the original
-      // third-person framing for legitimate client-facing surfaces
-      // (Telegram webhook with no session, scheduled routine runs,
-      // delegate-to-CEO chains).
-      const brandFrame = isOwnerContext
-        ? `Your brand profile (${orgName ?? "this organisation"}) - match this voice in every reply, never generic advice`
-        : `Brand profile for ${orgName ?? "this organisation"} (THIS IS THE CLIENT YOU WORK FOR - match their voice, never use generic advice)`;
-      preamble +=
-        (preamble ? "\n\n" : "") +
-        `${brandFrame}:\n\n${taster}${truncated ? "..." : ""}\n\nBanned words sample (${BANNED_WORDS.length} total - never use): ${sampleBanned}.\n\nFor the full voice markdown, complete banned-words list, or any documented framework, call the lookup_brand_voice tool.`;
-    }
-  } catch (err) {
-    console.warn(
-      "[preamble] brand profile skipped:",
-      (err as Error).message,
-    );
-  }
+  // Brand profile + per-agent files blocks extracted into
+  // buildBrandProfileBlock + buildAgentFilesBlock for DEEP WIN 4
+  // phase 1b iter 5.
 
-  // 4. Per-agent files - SLIM. Used to inject top-3 RAG chunks
-  // (~1-3k tokens). Now we only inject the COUNT + the 5 most recent
-  // FILENAMES so the agent knows what reference material exists. For
-  // semantic content the agent calls knowledge_query (full body) or
-  // lookup_my_files (full inventory + 1-line summary).
-  try {
-    const { data: files, count } = await db
-      .from("rgaios_agent_files")
-      .select("filename, uploaded_at", { count: "exact" })
-      .eq("organization_id", orgId)
-      .eq("agent_id", agentId)
-      .order("uploaded_at", { ascending: false })
-      .limit(AGENT_FILES_INLINE_LIMIT);
-    const fileRows = (files ?? []) as Array<{ filename: string }>;
-    const totalFiles = count ?? fileRows.length;
-    if (totalFiles > 0) {
-      const lines = fileRows.map((f, i) => `  ${i + 1}. ${f.filename}`);
-      const moreNote =
-        totalFiles > fileRows.length
-          ? `\n  ... and ${totalFiles - fileRows.length} more.`
-          : "";
-      preamble +=
-        (preamble ? "\n\n" : "") +
-        `Files attached to you (${totalFiles} total, ${fileRows.length} most recent shown):\n${lines.join("\n")}${moreNote}\n\nFor a one-line summary of every file call lookup_my_files. For the full text of one file, call knowledge_query with the filename in the prompt.`;
-    }
-  } catch (err) {
-    // Table missing / RLS surprise. Continue without inventory.
-    console.warn(
-      "[preamble] per-agent files skipped:",
-      (err as Error).message,
-    );
-  }
-
-  // 5. Company corpus - SLIM. Embed the query once; if the TOP-1
-  // chunk crosses the similarity floor, inject it inline so the model
-  // has at least one grounded fact for free. Below the floor we drop
-  // the prefetch entirely - the model can call lookup_company_fact if
-  // it actually needs it. Embedder failures here are non-fatal.
-  //
-  // Also keeps the per-agent RAG escape hatch alive: if the agent's
-  // own files have a high-similarity hit we surface that single chunk
-  // too (capped at one chunk, not three).
-  try {
-    const queryVector = await embedOne(queryText);
-
-    const { data: agentChunks } = await db.rpc("rgaios_match_agent_chunks", {
-      p_agent_id: agentId,
-      p_organization_id: orgId,
-      p_query: toPgVector(queryVector),
-      p_top_k: RAG_TOP_K,
-    });
-    const chunks = (agentChunks ?? []) as ChunkRow[];
-    const topAgentChunk = chunks[0];
-    if (
-      topAgentChunk &&
-      typeof topAgentChunk.similarity === "number" &&
-      topAgentChunk.similarity >= COMPANY_PREFETCH_MIN_SIMILARITY
-    ) {
-      preamble +=
-        (preamble ? "\n\n" : "") +
-        `Top hit from your files for this query (${topAgentChunk.filename}, sim ${(topAgentChunk.similarity * 100).toFixed(1)}%):\n${topAgentChunk.content.slice(0, 600)}\n\nFor more chunks call knowledge_query.`;
-    }
-
-    const { data: companyRows } = await db.rpc("rgaios_match_company_chunks", {
-      p_org_id: orgId,
-      p_query_embedding: toPgVector(queryVector),
-      p_match_count: 1,
-      p_min_similarity: COMPANY_PREFETCH_MIN_SIMILARITY,
-    });
-    const companyChunks = (companyRows ?? []) as Array<{
-      source: string;
-      chunk_text: string;
-      similarity?: number;
-    }>;
-    const top = companyChunks[0];
-    if (top) {
-      const sim = typeof top.similarity === "number"
-        ? ` (sim ${(top.similarity * 100).toFixed(1)}%)`
-        : "";
-      preamble +=
-        (preamble ? "\n\n" : "") +
-        `Top company-corpus hit (${top.source}${sim}):\n${top.chunk_text.slice(0, 600)}\n\nFor more facts about the client's business call lookup_company_fact with a focused query.`;
-    } else {
-      // Nothing high-confidence prefetched. Tell the model the tool
-      // exists so it doesn't pretend the corpus is empty.
-      preamble +=
-        (preamble ? "\n\n" : "") +
-        `No high-confidence match in the company corpus for this turn. If you need a specific fact about the client (pricing, ICP, past scripts), call lookup_company_fact.`;
-    }
-  } catch (err) {
-    // No embedder, no key, or RPC missing. Continue without RAG.
-    console.warn(
-      "[preamble] company corpus / per-agent RAG skipped:",
-      (err as Error).message,
-    );
-  }
+  // Company corpus + per-agent RAG extracted into
+  // buildCompanyCorpusBlock for DEEP WIN 4 phase 1b iter 5.
 
   // Trailing protocols block (TASK CREATION + AGENT MANAGEMENT +
   // SHARED MEMORY + DATA-ASK PROTOCOL) extracted into
@@ -1339,6 +1229,175 @@ export async function buildAssignedSkillsBlock(input: {
   } catch (err) {
     console.warn(
       "[preamble] assigned skills skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
+/**
+ * Brand profile (SLIM) block. Pulls latest approved
+ * rgaios_brand_profiles row + renders the brand voice taster + sample
+ * banned words. Owner/admin sees "Your brand profile" framing; other
+ * surfaces keep the client-facing framing (FLEX MODE 2026-05-17).
+ * Returns the formatted section with conditional "\n\n" leading
+ * separator, or null when no approved profile.
+ */
+export async function buildBrandProfileBlock(input: {
+  orgId: string;
+  orgName: string | null;
+  isOwnerContext: boolean;
+  priorContent: string;
+}): Promise<string | null> {
+  try {
+    const db = supabaseAdmin();
+    const { data: brand } = await db
+      .from("rgaios_brand_profiles")
+      .select("content")
+      .eq("organization_id", input.orgId)
+      .eq("status", "approved")
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const content = (brand as { content?: string } | null)?.content?.trim();
+    if (!content) return null;
+    const tasterRaw = content.slice(0, BRAND_VOICE_INLINE_LIMIT);
+    const lastSpace = tasterRaw.lastIndexOf(" ");
+    const taster =
+      lastSpace > 80 ? tasterRaw.slice(0, lastSpace) : tasterRaw;
+    const truncated = content.length > BRAND_VOICE_INLINE_LIMIT;
+    const sampleBanned = BANNED_WORDS.slice(0, 3).join(", ");
+    const brandFrame = input.isOwnerContext
+      ? `Your brand profile (${input.orgName ?? "this organisation"}) - match this voice in every reply, never generic advice`
+      : `Brand profile for ${input.orgName ?? "this organisation"} (THIS IS THE CLIENT YOU WORK FOR - match their voice, never use generic advice)`;
+    return (
+      (input.priorContent ? "\n\n" : "") +
+      `${brandFrame}:\n\n${taster}${truncated ? "..." : ""}\n\nBanned words sample (${BANNED_WORDS.length} total - never use): ${sampleBanned}.\n\nFor the full voice markdown, complete banned-words list, or any documented framework, call the lookup_brand_voice tool.`
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] brand profile skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
+/**
+ * Per-agent files (SLIM) block. Count + 5 most recent filenames so the
+ * agent knows what reference material exists; semantic content goes
+ * through knowledge_query / lookup_my_files tools. Returns the section
+ * with conditional "\n\n" leading separator, or null when no files.
+ */
+export async function buildAgentFilesBlock(input: {
+  orgId: string;
+  agentId: string;
+  priorContent: string;
+}): Promise<string | null> {
+  try {
+    const db = supabaseAdmin();
+    const { data: files, count } = await db
+      .from("rgaios_agent_files")
+      .select("filename, uploaded_at", { count: "exact" })
+      .eq("organization_id", input.orgId)
+      .eq("agent_id", input.agentId)
+      .order("uploaded_at", { ascending: false })
+      .limit(AGENT_FILES_INLINE_LIMIT);
+    const fileRows = (files ?? []) as Array<{ filename: string }>;
+    const totalFiles = count ?? fileRows.length;
+    if (totalFiles === 0) return null;
+    const lines = fileRows.map((f, i) => `  ${i + 1}. ${f.filename}`);
+    const moreNote =
+      totalFiles > fileRows.length
+        ? `\n  ... and ${totalFiles - fileRows.length} more.`
+        : "";
+    return (
+      (input.priorContent ? "\n\n" : "") +
+      `Files attached to you (${totalFiles} total, ${fileRows.length} most recent shown):\n${lines.join("\n")}${moreNote}\n\nFor a one-line summary of every file call lookup_my_files. For the full text of one file, call knowledge_query with the filename in the prompt.`
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] per-agent files skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
+/**
+ * Company corpus + per-agent RAG prefetch block. Embeds the query
+ * once, surfaces TOP-1 chunk from agent files (when over similarity
+ * floor) + TOP-1 from company corpus (or a "use lookup_company_fact"
+ * fallback). Returns the concatenated section(s) with conditional
+ * leading "\n\n" or null if embedding/RPC fails entirely.
+ */
+export async function buildCompanyCorpusBlock(input: {
+  orgId: string;
+  agentId: string;
+  queryText: string;
+  priorContent: string;
+}): Promise<string | null> {
+  try {
+    const db = supabaseAdmin();
+    const queryVector = await embedOne(input.queryText);
+    let acc = input.priorContent;
+    let out = "";
+    const append = (segment: string): void => {
+      const piece = (acc ? "\n\n" : "") + segment;
+      out += piece;
+      acc += piece;
+    };
+
+    const { data: agentChunks } = await db.rpc("rgaios_match_agent_chunks", {
+      p_agent_id: input.agentId,
+      p_organization_id: input.orgId,
+      p_query: toPgVector(queryVector),
+      p_top_k: RAG_TOP_K,
+    });
+    const chunks = (agentChunks ?? []) as ChunkRow[];
+    const topAgentChunk = chunks[0];
+    if (
+      topAgentChunk &&
+      typeof topAgentChunk.similarity === "number" &&
+      topAgentChunk.similarity >= COMPANY_PREFETCH_MIN_SIMILARITY
+    ) {
+      append(
+        `Top hit from your files for this query (${topAgentChunk.filename}, sim ${(topAgentChunk.similarity * 100).toFixed(1)}%):\n${topAgentChunk.content.slice(0, 600)}\n\nFor more chunks call knowledge_query.`,
+      );
+    }
+
+    const { data: companyRows } = await db.rpc(
+      "rgaios_match_company_chunks",
+      {
+        p_org_id: input.orgId,
+        p_query_embedding: toPgVector(queryVector),
+        p_match_count: 1,
+        p_min_similarity: COMPANY_PREFETCH_MIN_SIMILARITY,
+      },
+    );
+    const companyChunks = (companyRows ?? []) as Array<{
+      source: string;
+      chunk_text: string;
+      similarity?: number;
+    }>;
+    const top = companyChunks[0];
+    if (top) {
+      const sim = typeof top.similarity === "number"
+        ? ` (sim ${(top.similarity * 100).toFixed(1)}%)`
+        : "";
+      append(
+        `Top company-corpus hit (${top.source}${sim}):\n${top.chunk_text.slice(0, 600)}\n\nFor more facts about the client's business call lookup_company_fact with a focused query.`,
+      );
+    } else {
+      append(
+        `No high-confidence match in the company corpus for this turn. If you need a specific fact about the client (pricing, ICP, past scripts), call lookup_company_fact.`,
+      );
+    }
+
+    return out || null;
+  } catch (err) {
+    console.warn(
+      "[preamble] company corpus / per-agent RAG skipped:",
       (err as Error).message,
     );
     return null;
