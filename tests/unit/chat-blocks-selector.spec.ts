@@ -199,6 +199,60 @@ test("selectChatBlocks: mode filter + budget compose correctly", () => {
   assert.deepEqual(chat, ["req"]);
 });
 
+test("parity: selectChatBlocks == describeSelection.selected ids (iter 34 DRY guard)", () => {
+  // Iter 34 collapsed selectChatBlocks onto describeSelection. This
+  // spec pins the contract so a future refactor of either function
+  // can't silently drift apart - the composer relies on identical
+  // selection sets between the two paths.
+  const cases: Array<{
+    label: string;
+    options: { mode?: "chat" | "telegram" | "routine"; skippableBudgetTokens?: number };
+  }> = [
+    { label: "no options", options: {} },
+    { label: "infinite budget", options: { skippableBudgetTokens: Number.POSITIVE_INFINITY } },
+    { label: "zero budget", options: { skippableBudgetTokens: 0 } },
+    { label: "tight budget 200", options: { skippableBudgetTokens: 200 } },
+    { label: "tight budget 500", options: { skippableBudgetTokens: 500 } },
+    { label: "negative budget", options: { skippableBudgetTokens: -1 } },
+    { label: "mode chat only", options: { mode: "chat" } },
+    { label: "mode telegram only", options: { mode: "telegram" } },
+    { label: "mode + budget compose", options: { mode: "chat", skippableBudgetTokens: 200 } },
+  ];
+
+  const modedFixture: ChatBlock[] = [
+    { id: "req", build: noop, priority: "required", defaultCostTokens: 100 },
+    {
+      id: "chat-skip",
+      build: noop,
+      priority: "skippable",
+      defaultCostTokens: 150,
+      modes: ["chat"],
+    },
+    {
+      id: "tg-skip",
+      build: noop,
+      priority: "skippable",
+      defaultCostTokens: 150,
+      modes: ["telegram"],
+    },
+    { id: "any-skip", build: noop, priority: "skippable", defaultCostTokens: 300 },
+  ];
+
+  for (const { label, options } of cases) {
+    const selectIds = selectChatBlocks(modedFixture, options).map((b) => b.id);
+    const describeIds = describeSelection(modedFixture, options).selected.map(
+      (s) => s.id,
+    );
+    assert.deepEqual(
+      selectIds,
+      describeIds,
+      `parity drift on case "${label}": selector=${JSON.stringify(
+        selectIds,
+      )} describer=${JSON.stringify(describeIds)}`,
+    );
+  }
+});
+
 test("describeSelection: reports selected + skipped with reason", () => {
   const cheapMode: ChatBlock = {
     id: "cheap-chat",

@@ -436,25 +436,14 @@ export function selectChatBlocks(
   blocks: ChatBlock[] = CHAT_BLOCKS,
   options: ComposeChatPreambleOptions = {},
 ): ChatBlock[] {
-  const { mode } = options;
-  // Mode filter first: drop blocks whose `modes` allow-list excludes
-  // the current mode. Blocks without a `modes` field always pass.
-  const modeFiltered =
-    mode === undefined
-      ? blocks
-      : blocks.filter((b) => !b.modes || b.modes.includes(mode));
-
-  const budget = options.skippableBudgetTokens ?? Number.POSITIVE_INFINITY;
-  if (!Number.isFinite(budget) || budget < 0) return modeFiltered;
-  let spent = 0;
-  return modeFiltered.filter((b) => {
-    const priority = b.priority ?? "required";
-    if (priority === "required") return true;
-    const cost = b.defaultCostTokens ?? 0;
-    if (spent + cost > budget) return false;
-    spent += cost;
-    return true;
-  });
+  // Single source of truth: describeSelection owns the mode + budget
+  // algorithm. selectChatBlocks projects its `selected` ids back onto
+  // the input block objects, preserving registry order. Iter 34 DRY
+  // collapse - the two used to maintain parallel filter logic.
+  const selectedIds = new Set(
+    describeSelection(blocks, options).selected.map((s) => s.id),
+  );
+  return blocks.filter((b) => selectedIds.has(b.id));
 }
 
 export type SelectionEntry = {
