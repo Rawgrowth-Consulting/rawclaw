@@ -549,7 +549,15 @@ async function execToolCall(
   // any-case spelling of the keyword still matches.
   const destructive =
     /(?:^|[_\-]|(?<=[a-z]))(DELETE|DROP|PURGE|REMOVE|WIPE|TRUNCATE|TRASH|REVOKE)(?=[_\-]|[A-Z]|$)/i;
-  if (destructive.test(action)) {
+  // HOTFIX 10 (mirror of composio-router.ts SAFE_DESTRUCTIVE_OVERRIDES):
+  // a small allowlist of safe-by-design destructive-looking actions
+  // that the agent legitimately needs - cleaning its own unsent
+  // drafts. Drafts are never visible to a recipient so deleting one
+  // is the inverse of "ENVIAR" (Pedro's hard rule). Each entry is
+  // fully anchored to prevent suffix attacks like *_DELETE_DRAFT_*.
+  const safeDestructiveOverride =
+    /^(GMAIL_DELETE_DRAFT|GOOGLECALENDAR_DELETE_DRAFT|OUTLOOK_DELETE_DRAFT)$/i;
+  if (destructive.test(action) && !safeDestructiveOverride.test(action)) {
     return {
       ok: false,
       type: "tool_call",

@@ -339,6 +339,26 @@ const DESTRUCTIVE_ACTION_PATTERNS: RegExp[] = [
   /(?:^|[_\-])REVOKE(?:[_\-]|$)/i,
 ];
 
+// HOTFIX 10 (2026-05-17, Pedro 16:50 "TU PODE MEXER, SÓ NN ENVIAR
+// NADA SACA?" + R-COMPOSIO-1 walk): the destructive denylist
+// above false-positives on safe self-cleanup operations like
+// GMAIL_DELETE_DRAFT - an unsent draft is the AGENT'S OWN scratch
+// space, never an outbound action and never visible to a recipient.
+// The R-COMPOSIO-1 walk created a real draft in Marti's mailbox
+// and Marta could not clean it up because DELETE matched the
+// destructive verb. Allow specific safe-by-design ops through
+// EXPLICITLY (do not loosen the destructive regex - we want a
+// closed allowlist, not a wider hole).
+//
+// Each entry must match the FULL action enum (anchored ^ $) so a
+// crafted action like "GMAIL_DELETE_DRAFT_AND_SEND" cannot ride
+// the allowlist past the denylist.
+const SAFE_DESTRUCTIVE_OVERRIDES: RegExp[] = [
+  /^GMAIL_DELETE_DRAFT$/i,
+  /^GOOGLECALENDAR_DELETE_DRAFT$/i,
+  /^OUTLOOK_DELETE_DRAFT$/i,
+];
+
 // ─── Tool: composio_use_tool (invoke) ───────────────────────────────
 
 registerTool({
@@ -381,9 +401,18 @@ registerTool({
     // refuse destructive actions by name until an approval-prompt flow
     // ships. Agents can request UPDATE / ARCHIVE / etc as safe
     // alternatives.
-    const destructiveMatch = DESTRUCTIVE_ACTION_PATTERNS.find((p) =>
+    //
+    // HOTFIX 10: the explicit SAFE_DESTRUCTIVE_OVERRIDES allowlist
+    // runs first. Anything matching it skips the denylist (the agent
+    // legitimately needs to fire e.g. GMAIL_DELETE_DRAFT to clean its
+    // own scratch drafts per Pedro's "TU PODE MEXER, SÓ NN ENVIAR
+    // NADA" rule). Everything else still hits the deny rules below.
+    const safeOverride = SAFE_DESTRUCTIVE_OVERRIDES.some((p) =>
       p.test(action),
     );
+    const destructiveMatch = safeOverride
+      ? undefined
+      : DESTRUCTIVE_ACTION_PATTERNS.find((p) => p.test(action));
     if (destructiveMatch) {
       return textError(
         `composio_use_tool: action ${action} matches denylist ${destructiveMatch.source}; use a more specific safe action or invoke via the dedicated tool`,
