@@ -411,6 +411,13 @@ export type ComposeChatPreambleOptions = {
    * etc.) can land without touching every callsite.
    */
   mode?: AgentContextMode;
+  /**
+   * Opt-in console.info emission when the budget gate drops one or
+   * more skippable blocks. Off by default to keep test output quiet
+   * + parity surfaces silent. Chat route + telegram webhook enable
+   * it so production logs show which blocks the budget cut.
+   */
+  telemetry?: boolean;
 };
 
 /**
@@ -526,12 +533,36 @@ async function composeChatPreamble(
     orgId: input.orgId,
     agentId: input.agentId,
   });
-  const selected = selectChatBlocks(CHAT_BLOCKS, {
+  const effectiveOptions: ComposeChatPreambleOptions = {
     ...options,
     mode: options.mode ?? mode,
-  });
+  };
+  const decision = describeSelection(CHAT_BLOCKS, effectiveOptions);
+  const selectedIds = new Set(decision.selected.map((s) => s.id));
+
+  if (options.telemetry) {
+    const budgetDrops = decision.skipped.filter((s) => s.reason === "budget");
+    if (budgetDrops.length > 0) {
+      const budget = effectiveOptions.skippableBudgetTokens;
+      const budgetLabel = budget === undefined || !Number.isFinite(budget)
+        ? "inf"
+        : String(budget);
+      console.info(
+        `[chat-blocks-selector] mode=${
+          effectiveOptions.mode ?? "any"
+        } budget=${budgetLabel} dropped=${budgetDrops.length} ids=${budgetDrops
+          .map((d) => d.id)
+          .join(",")} tokens_saved=${budgetDrops.reduce(
+          (sum, d) => sum + d.cost,
+          0,
+        )}`,
+      );
+    }
+  }
+
   let out = "";
-  for (const block of selected) {
+  for (const block of CHAT_BLOCKS) {
+    if (!selectedIds.has(block.id)) continue;
     const piece = await block.build({
       ...input,
       ...flags,

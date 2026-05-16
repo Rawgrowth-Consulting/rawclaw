@@ -126,6 +126,103 @@ test("composeChatPreamble: infinite budget == omitted budget (parity)", async ()
   }
 });
 
+test("composeChatPreamble: telemetry off (default) emits no console.info", async () => {
+  installEmptyFetchRouter();
+  const originalInfo = console.info;
+  const calls: string[] = [];
+  console.info = (...args: unknown[]) => {
+    calls.push(args.map((a) => String(a)).join(" "));
+  };
+  try {
+    const { buildAgentChatPreambleV2 } = await import(
+      "../../src/lib/agent/context"
+    );
+    await buildAgentChatPreambleV2(
+      {
+        orgId: "org-1",
+        agentId: "agent-1",
+        orgName: "Test Org",
+        queryText: "x",
+        userRole: "owner",
+      },
+      { skippableBudgetTokens: 0 },
+    );
+    const selectorLogs = calls.filter((l) =>
+      l.includes("[chat-blocks-selector]"),
+    );
+    assert.equal(selectorLogs.length, 0, "no telemetry without opt-in");
+  } finally {
+    console.info = originalInfo;
+    restoreFetch();
+  }
+});
+
+test("composeChatPreamble: telemetry on + tight budget emits selector log", async () => {
+  installEmptyFetchRouter();
+  const originalInfo = console.info;
+  const calls: string[] = [];
+  console.info = (...args: unknown[]) => {
+    calls.push(args.map((a) => String(a)).join(" "));
+  };
+  try {
+    const { buildAgentChatPreambleV2 } = await import(
+      "../../src/lib/agent/context"
+    );
+    await buildAgentChatPreambleV2(
+      {
+        orgId: "org-1",
+        agentId: "agent-1",
+        orgName: "Test Org",
+        queryText: "x",
+        userRole: "owner",
+      },
+      { skippableBudgetTokens: 0, telemetry: true },
+    );
+    const selectorLogs = calls.filter((l) =>
+      l.includes("[chat-blocks-selector]"),
+    );
+    assert.equal(selectorLogs.length, 1, "exactly one telemetry line per call");
+    const line = selectorLogs[0];
+    assert.match(line, /budget=0/);
+    assert.match(line, /dropped=\d+/);
+    assert.match(line, /tokens_saved=\d+/);
+  } finally {
+    console.info = originalInfo;
+    restoreFetch();
+  }
+});
+
+test("composeChatPreamble: telemetry on + infinite budget emits NOTHING (no drops)", async () => {
+  installEmptyFetchRouter();
+  const originalInfo = console.info;
+  const calls: string[] = [];
+  console.info = (...args: unknown[]) => {
+    calls.push(args.map((a) => String(a)).join(" "));
+  };
+  try {
+    const { buildAgentChatPreambleV2 } = await import(
+      "../../src/lib/agent/context"
+    );
+    await buildAgentChatPreambleV2(
+      {
+        orgId: "org-1",
+        agentId: "agent-1",
+        orgName: "Test Org",
+        queryText: "x",
+        userRole: "owner",
+      },
+      { telemetry: true },
+    );
+    const selectorLogs = calls.filter((l) =>
+      l.includes("[chat-blocks-selector]"),
+    );
+    assert.equal(selectorLogs.length, 0, "no log when nothing dropped");
+  } finally {
+    console.info = originalInfo;
+    restoreFetch();
+  }
+});
+
 test("composeChatPreamble: non-owner user keeps client-facing brand framing", async () => {
   installEmptyFetchRouter();
   try {

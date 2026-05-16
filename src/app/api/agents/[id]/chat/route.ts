@@ -768,7 +768,7 @@ export async function POST(
         queryText: lastContent,
         userRole,
       },
-      { skippableBudgetTokens },
+      { skippableBudgetTokens, telemetry: true },
     )) + recallBlock;
 
   const encoder = new TextEncoder();

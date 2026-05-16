@@ -266,7 +266,7 @@ export async function POST(
         orgName: orgRow?.name ?? null,
         queryText: text,
       },
-      { skippableBudgetTokens: 2000 },
+      { skippableBudgetTokens: 2000, telemetry: true },
     ).catch(() => "");
 
     // The key difference vs the legacy webhook: agentId is passed so the
