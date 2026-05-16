@@ -1194,11 +1194,20 @@ export async function POST(
               // Strip a leading the/a/an article before matching so the
               // intermediate detector catches naturally-phrased
               // sentences too.
+              // HOTFIX 11d (2026-05-17, R-ORCH-3 follow-up): also
+              // strip a leading proper-noun + optional possessive
+              // ("Marta " / "Marta's ") so e.g. "Marta hit a rate-limit
+              // on the first try, retrying the dispatch now..." flips
+              // to "hit a rate-limit..." for the regex test. And add
+              // rate-limit / run-limit / dispatch-failed phrasings as
+              // new intermediate-state alternations - Scan's CEO-style
+              // retry sentences phrase the symptom not the verb.
               const visibleForIntermediate = visibleAfterStrip
                 .replace(/^(the|a|an)\s+/i, "")
+                .replace(/^([A-Z][a-z]+(?:'s)?)\s+/, "")
                 .trim();
               const looksLikeIntermediate =
-                /^(retrying|trying|attempting|let me retry|one moment|hold on|working on|let me try|let me pull|let me check|let me look|let me search|let me query|couldn't find|file (name )?didn't|missing|need to (look|find|check|pull|search|query)|searching|querying|pulling|checking|looking up|i'?ll (try|retry|check|pull|look|search|query))/i
+                /^(retrying|trying|attempting|let me retry|one moment|hold on|working on|let me try|let me pull|let me check|let me look|let me search|let me query|couldn't find|file (name )?didn't|missing|need to (look|find|check|pull|search|query)|searching|querying|pulling|checking|looking up|i'?ll (try|retry|check|pull|look|search|query)|hit (a|the|our) (rate|run|quota)[-\s]?limit|dispatch failed|delegation failed|run-limit|rate-limit)/i
                   .test(visibleForIntermediate);
               if (
                 pass2EmittedCommands &&
