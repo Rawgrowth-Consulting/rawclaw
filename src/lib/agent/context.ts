@@ -13,6 +13,7 @@ import {
   buildOrgRosterBlock,
   buildRecentActivityBlock,
   buildCeoTelegramEntryBlock,
+  buildAtlasDirectivesBlock,
   buildPastMemoriesBlock,
   buildRecentReasoningBlock,
   buildBrandProfileBlock,
@@ -238,6 +239,14 @@ export const CHAT_BLOCKS: ChatBlock[] = [
       buildCeoTelegramEntryBlock({
         orgId: ctx.orgId,
         agentId: ctx.agentId,
+        isCeo: ctx.isCeo,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "atlas-directives",
+    build: (ctx) =>
+      buildAtlasDirectivesBlock({
         isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),
