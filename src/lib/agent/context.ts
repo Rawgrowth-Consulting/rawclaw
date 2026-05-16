@@ -389,15 +389,62 @@ export const CHAT_BLOCKS: ChatBlock[] = [
   },
 ];
 
+export type ComposeChatPreambleOptions = {
+  /**
+   * Hard upper bound on the total rough-token cost of skippable
+   * blocks the composer is allowed to include. Required-priority
+   * blocks always render regardless of this value. Default =
+   * Number.POSITIVE_INFINITY (no skipping, parity with pre-iter-25
+   * behaviour). Set to a finite value (e.g. 2000) to drop the
+   * least-useful skippable blocks first under context pressure.
+   *
+   * The selector uses ChatBlock.defaultCostTokens as the cost
+   * estimate; if a block has no annotation it is treated as
+   * cost 0 (always include).
+   */
+  skippableBudgetTokens?: number;
+};
+
+/**
+ * Decide which CHAT_BLOCKS entries are eligible to render given the
+ * caller-supplied budget. Required blocks always pass. Skippable
+ * blocks are kept in registry order until the running total of
+ * skippable cost exceeds skippableBudgetTokens; remaining skippable
+ * blocks are dropped.
+ *
+ * Returned blocks preserve the original CHAT_BLOCKS order, so the
+ * "priorContent" separator chain inside helpers keeps working.
+ *
+ * Default budget = Infinity -> returns CHAT_BLOCKS unchanged.
+ */
+export function selectChatBlocks(
+  blocks: ChatBlock[] = CHAT_BLOCKS,
+  options: ComposeChatPreambleOptions = {},
+): ChatBlock[] {
+  const budget = options.skippableBudgetTokens ?? Number.POSITIVE_INFINITY;
+  if (!Number.isFinite(budget) || budget < 0) return blocks;
+  let spent = 0;
+  return blocks.filter((b) => {
+    const priority = b.priority ?? "required";
+    if (priority === "required") return true;
+    const cost = b.defaultCostTokens ?? 0;
+    if (spent + cost > budget) return false;
+    spent += cost;
+    return true;
+  });
+}
+
 async function composeChatPreamble(
   input: Omit<ChatInput, "mode">,
+  options: ComposeChatPreambleOptions = {},
 ): Promise<string> {
   const flags = await computeAgentCapabilityFlags({
     orgId: input.orgId,
     agentId: input.agentId,
   });
+  const selected = selectChatBlocks(CHAT_BLOCKS, options);
   let out = "";
-  for (const block of CHAT_BLOCKS) {
+  for (const block of selected) {
     const piece = await block.build({
       ...input,
       ...flags,
