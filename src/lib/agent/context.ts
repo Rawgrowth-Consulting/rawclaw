@@ -182,24 +182,34 @@ export const CHAT_BLOCKS: ChatBlock[] = [
   {
     id: "capabilities-trust",
     build: () => buildCapabilitiesAndTrustBlock(),
+    defaultCostTokens: 700,
+    priority: "required",
   },
   {
     id: "reasoning-protocol",
     build: () => buildReasoningProtocolBlock(),
+    defaultCostTokens: 900,
+    priority: "required",
   },
   {
     id: "shared-memory",
     build: (ctx) =>
       buildSharedMemoryBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
+    defaultCostTokens: 300,
+    priority: "skippable",
   },
   {
     id: "recent-signals",
     build: (ctx) => buildRecentSignalsBlock({ orgId: ctx.orgId }),
+    defaultCostTokens: 400,
+    priority: "skippable",
   },
   {
     id: "assigned-skills",
     build: (ctx) =>
       buildAssignedSkillsBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
+    defaultCostTokens: 150,
+    priority: "skippable",
   },
   {
     id: "authority-override",
@@ -208,6 +218,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         orgId: ctx.orgId,
         agentId: ctx.agentId,
       }),
+    defaultCostTokens: 200,
+    priority: "required",
   },
   {
     id: "persona-org-place",
@@ -217,6 +229,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         agentId: ctx.agentId,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 250,
+    priority: "required",
   },
   {
     id: "pending-tasks",
@@ -226,6 +240,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         agentId: ctx.agentId,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 200,
+    priority: "skippable",
   },
   {
     id: "identity",
@@ -235,6 +251,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         agentId: ctx.agentId,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 150,
+    priority: "required",
   },
   {
     id: "org-roster",
@@ -245,6 +263,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 800,
+    priority: "required",
   },
   {
     id: "recent-activity",
@@ -254,6 +274,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 600,
+    priority: "skippable",
   },
   {
     id: "ceo-telegram-entry",
@@ -264,6 +286,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 600,
+    priority: "required",
   },
   {
     id: "atlas-directives",
@@ -272,6 +296,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 2000,
+    priority: "required",
   },
   // legacy-tail CHAT_BLOCKS entry removed phase 1e iter 19. The
   // wrapper buildAgentChatPreambleTail had become a no-op after all
@@ -283,6 +309,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         canCommand: ctx.canCommand,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 3000,
+    priority: "required",
   },
   {
     id: "json-commands-composio",
@@ -292,6 +320,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         hasComposio: ctx.hasComposio,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 1500,
+    priority: "required",
   },
   {
     id: "past-memories",
@@ -301,6 +331,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         agentId: ctx.agentId,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 400,
+    priority: "skippable",
   },
   {
     id: "recent-reasoning",
@@ -310,6 +342,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         agentId: ctx.agentId,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 400,
+    priority: "skippable",
   },
   {
     id: "brand-profile",
@@ -321,6 +355,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
           ctx.userRole === "owner" || ctx.userRole === "admin",
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 250,
+    priority: "required",
   },
   {
     id: "agent-files",
@@ -330,6 +366,8 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         agentId: ctx.agentId,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 150,
+    priority: "skippable",
   },
   {
     id: "company-corpus",
@@ -340,10 +378,14 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         queryText: ctx.queryText,
         priorContent: ctx.priorContent,
       }),
+    defaultCostTokens: 600,
+    priority: "skippable",
   },
   {
     id: "trailing-protocols",
     build: (ctx) => buildTrailingProtocolsBlock(ctx.priorContent),
+    defaultCostTokens: 700,
+    priority: "required",
   },
 ];
 
