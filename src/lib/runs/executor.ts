@@ -852,7 +852,7 @@ function renderInboxSection(entries: InboxEntry[]): string | null {
   return capSection(lines.join("\n"));
 }
 
-function buildSystemPrompt(
+export function buildSystemPrompt(
   routineTitle: string,
   routineInstructions: string | null,
   agent: RunContext["agent"],
