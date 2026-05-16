@@ -233,6 +233,41 @@ export async function buildAgentChatPreamble(input: {
     priorContent: preamble,
   });
 
+  // Sub-agent JSON COMMANDS (composio-only). Extracted phase 1c
+  // iter 11. Needs canCommand + hasComposio flags - compute inline
+  // for the legacy entry point.
+  const subAgentCmds = await (async (): Promise<string | null> => {
+    try {
+      const db2 = supabaseAdmin();
+      const { data: agentRow2 } = await db2
+        .from("rgaios_agents")
+        .select("role, is_department_head")
+        .eq("id", agentId)
+        .eq("organization_id", orgId)
+        .maybeSingle();
+      const meta = agentRow2 as
+        | { role?: string; is_department_head?: boolean }
+        | null;
+      const canCommand =
+        meta?.role === "ceo" || meta?.is_department_head === true;
+      if (canCommand) return null;
+      const { count: connCount } = await db2
+        .from("rgaios_connections")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", orgId)
+        .eq("status", "connected");
+      const hasComposio = (connCount ?? 0) > 0;
+      return buildSubAgentComposioCommandsBlock({
+        canCommand,
+        hasComposio,
+        priorContent: preamble,
+      });
+    } catch {
+      return null;
+    }
+  })();
+  if (subAgentCmds) preamble += subAgentCmds;
+
   // Past memories - extracted phase 1c iter 9 into
   // buildPastMemoriesBlock.
   const pastMem = await buildPastMemoriesBlock({
@@ -795,81 +830,9 @@ export async function buildAgentChatPreambleTail(input: {
         "",
         "The system picks these up + posts a chat message to the operator + creates a Data Entry stub. DO NOT fabricate numbers.",
       ].join("\n");
-  } else if (hasComposio) {
-    // Sub-agents in orgs with at least one connected Composio app get
-    // the composio_use_tool half of the protocol only. agent_invoke /
-    // routine_create stay gated on CEO + dept heads above.
-    preamble +=
-      (preamble ? "\n\n" : "") +
-      [
-        "═══ JSON COMMANDS (composio_use_tool only) ═══",
-        "",
-        "Your org has at least one connected Composio app. You ARE authorised to emit <command type=\"tool_call\"> blocks that call composio_use_tool. The system parses them, runs the action server-side, and posts a system message back into chat with the result.",
-        "",
-        "Do NOT say 'I can't emit command blocks', 'I have no tools', 'I am a sub-agent so I can't', or 'no MCP'. Those refusals are FALSE here - the Composio bridge is wired.",
-        "",
-        "Format (exact - body must be valid JSON):",
-        "",
-        "  <command type=\"tool_call\">",
-        "  { \"tool\": \"composio_use_tool\",",
-        "    \"args\": { \"app\": \"slack\", \"action\": \"SLACK_SEND_MESSAGE\",",
-        "               \"input\": { \"channel\": \"#general\", \"text\": \"hi team\" } } }",
-        "  </command>",
-        "",
-        "Composio action input shapes (use EXACTLY these field names - Composio uses snake_case top-level fields):",
-        "",
-        "  GOOGLECALENDAR_CREATE_EVENT input:",
-        "    { \"calendar_id\": \"primary\",",
-        "      \"summary\": \"Coffee with Pedro\",",
-        "      \"start_datetime\": \"2026-05-15T10:00:00-03:00\",",
-        "      \"end_datetime\":   \"2026-05-15T10:30:00-03:00\",",
-        "      \"description\": \"15min sync\",",
-        "      \"attendees\": [\"pedro@rawgrowth.ai\"] }",
-        "",
-        "  GMAIL_SEND_EMAIL input:",
-        "    { \"to\": [\"pedro@rawgrowth.ai\"],",
-        "      \"subject\": \"hi\", \"body\": \"plain text body\" }",
-        "",
-        "  SLACK_SEND_MESSAGE input:",
-        "    { \"channel\": \"#general\", \"text\": \"hi team\" }",
-        "",
-        "If you don't know an action's exact name or input shape, discover it FIRST with composio_list_tools. It is its OWN tool - call it directly, do NOT wrap it as a composio_use_tool action:",
-        "  <command type=\"tool_call\">",
-        "  { \"tool\": \"composio_list_tools\", \"args\": { \"app\": \"gmail\" } }",
-        "  </command>",
-        "DO NOT guess action names.",
-        "",
-        "Rules:",
-        "  - tool_call: supports `composio_use_tool` (Gmail/Slack/Calendar/HubSpot/etc) AND `apify_run_actor` for web + Instagram scraping (Apify is NOT a Composio app - it's its own tool). To list/scrape Instagram posts, emit:",
-        "    <command type=\"tool_call\">",
-        "    { \"tool\": \"apify_run_actor\",",
-        "      \"args\": { \"actor_id\": \"apify/instagram-scraper\",",
-        "                 \"run_input\": { \"directUrls\": [\"https://www.instagram.com/USERNAME/\"], \"resultsType\": \"posts\", \"resultsLimit\": 10 },",
-        "                 \"limit\": 10 } }",
-        "    </command>",
-        "    APIFY PRESETS - pick the row that matches the scrape, copy the actor_id + run_input shape verbatim, fill only the <handle>/values. Do NOT invent run_input fields:",
-        "      • Instagram posts/profile -> actor_id \"apify/instagram-scraper\", run_input { \"directUrls\": [\"https://www.instagram.com/<handle>/\"], \"resultsType\": \"posts\", \"resultsLimit\": 30 }",
-        "      • Instagram top reels FROM A CREATOR LIST FILE (operator says \"my creator list\" / \"from my creators\" / \"from the list I uploaded\" / refers to any uploaded list of handles) -> USE `apify_top_reels_from_file`. THIS IS THE ONLY VALID TOOL FOR THAT INTENT. Do NOT use apify_race_scrape for file-based creator-list queries even if you happen to remember a few of the handles - the race path bypasses the file load and silently scrapes fewer handles. Example: { \"tool\": \"apify_top_reels_from_file\", \"args\": { \"file_name\": \"creator-list\", \"window_days\": 10, \"top_n\": 10, \"metric\": \"comments\" } }. The tool reads the file from your knowledge, extracts ALL @handles, scrapes them in parallel 5-handle batches, filters by window, ranks by metric, caps each creator at 2 reels for diversity, and returns a coverage_brief line + the top N. No handle-passing, no manual knowledge_query needed. ONE call, done. CRITICAL: after apify_top_reels_from_file returns, do NOT chain apify_race_scrape on the missing handles. The tool already accepted that some handles returned empty - that IS the answer (data ceiling, not a tool failure). Adding race calls multiplies wall-clock by 2-3x and trips the chat-route timeout. Deliver the partial result honestly with the coverage_brief, do not try to top-up.\n      • Instagram top posts/reels for an EXPLICIT handle list THAT THE OPERATOR PASTED INTO THE PROMPT (not from a file) -> USE `apify_race_scrape`. Example: { \"tool\": \"apify_race_scrape\", \"args\": { \"handles\": [...], \"results_per_handle\": 5 } }. Two scrapers race, winner picked by quality score; per-creator cap applied automatically. Post-scrape: filter timestamp >= now - <window>, sort globally by commentsCount desc, return top N. One creator must NOT dominate the top-N. This branch is ONLY for handles the operator typed inline - if the prompt says \"my list\" / \"the creators\" / anything referencing an uploaded file, the apify_top_reels_from_file branch above is the only valid choice.",
-        "      • Instagram hashtag -> actor_id \"apify/instagram-hashtag-scraper\", run_input { \"hashtags\": [\"<tag>\"], \"resultsLimit\": 30 }",
-        "      • TikTok profile -> actor_id \"clockworks/tiktok-scraper\", run_input { \"profiles\": [\"<handle>\"], \"resultsPerPage\": 30 }",
-        "      • Website content crawl -> actor_id \"apify/website-content-crawler\", run_input { \"startUrls\": [{ \"url\": \"<url>\" }], \"maxCrawlPages\": 10 }",
-        "    If the scrape is not in this list, keep run_input minimal and only use fields you are sure the actor documents - do not guess.",
-        "    Destructive actions (DELETE/PURGE/WIPE) are refused.",
-        "  - tool_call also routes `web_search` for live facts off the open web (news, docs, prices) - reach for it instead of guessing when the corpus + memory can't answer:",
-        "    <command type=\"tool_call\">",
-        "    { \"tool\": \"web_search\", \"args\": { \"query\": \"latest Instagram Reels best practices\", \"recency\": \"month\" } }",
-        "    </command>",
-        "  - You are NOT authorised to emit agent_invoke or routine_create from this surface - those route through Atlas / a department head.",
-        "  - DO NOT mention these blocks in your visible prose - the system strips them and posts a system summary itself.",
-        "  - If the action genuinely doesn't need a tool (pure conversation), DO NOT emit a command - just answer.",
-        "  - SAY-IT-MEANS-DO-IT: if your visible reply states you ARE taking an action right now ('running the scrape', 'sending the email', any present-tense 'doing it now'), you MUST emit the matching <command> block in THIS SAME reply. Narrating an action you did not emit is the worst failure - the operator believes it happened and it did not. If you are only proposing it, phrase it as an offer ('Want me to...?'), never as an action in progress.",
-        "  - NO-RETRY-NARRATION: if your reply says 'previous attempts failed', 'retrying', 'batches padały', '3rd attempt', 'running corrected version', 'as I tried earlier', or any variant of escalation/retry talk - you MUST cite a real run_id visible in YOUR RECENT REASONING / RECENT SIGNALS & METRICS (those rows come from rgaios_routine_runs). If you cannot point at a specific run_id, no prior attempt happened - so do not narrate one. Either emit the fresh <command> now, or say plainly 'I haven't tried yet'. Inventing a retry history to justify an empty reply is a hallucination.",
-        "  - PARTIAL-DATA-AUTO-EXECUTE: when the operator asks for a deliverable that references a list / file / corpus you can only partially access (you have 3 of ~30 handles in memory, the file is missing but you remember 2 entries, etc), do NOT ask the operator to paste the list or to confirm running on the partial set - RUN with what you have in this same reply. Emit the matching <command> for the partial data + add ONE sentence in the visible prose flagging the gap and what you would do with the full list. Asking permission to use 3/30 handles when the operator already asked for the deliverable wastes a turn. Caveat: if you have zero data at all (no handles in memory, no fragment in YOUR RECENT REASONING), then say so plainly and request the missing piece - do not invent handles.",
-        "  - EXACT-HANDLES: when copying identifiers (Instagram handles, email addresses, usernames, slugs) from a file or memory into a tool call, use the EXACT string verbatim. Do NOT abbreviate, paraphrase, or normalize - the handles `thejasminearielle` / `jasmine`, `sundaysolves` / `sundayboss`, `heyriley.ai` / `heyriley` are NOT interchangeable. A single missing character returns zero results, and you mistakenly report the user list as low engagement when you simply scraped the wrong account. If you are not sure of the exact spelling, RE-READ the source (knowledge_query the file, scroll the recent reasoning) - do not guess.",
-        "  - ONE-CALL-PER-LIST: for a list-scrape (e.g. \"top N reels by X from my creator list\"), emit ONE apify_run_actor call with ALL the handles in `username` and wait for it. Do NOT fire multiple parallel start_run + poll_run batches for the same list - that's slower than one sync call in practice and the multi-call flow confuses the synthesis step. After the sync call returns, filter by window, rank globally, deliver the top-N in the same reply.",
-        "  - RANKING-DISCIPLINE: when the operator asks for top-N by some metric across a list, you MUST: (a) PULL THE FULL LIST FIRST - if knowledge_query / lookup_my_files returns the full file with all entries, USE ALL of them, NEVER short-circuit to the 3 you remember from memory when the file has 13. The PARTIAL-DATA rule above is a fallback for when the file is missing, NOT a permission to skip the file when it loaded. (b) APPLY THE TIMEFRAME - operator says 'top 10 reels' without a window? default to last 7 days. They named one (10 days, this month, etc)? use that. Filter on `timestamp >= now - <window>` BEFORE ranking. (c) BATCH ALL ENTRIES - if the list is >5 handles, emit MULTIPLE <command type=\"tool_call\"> blocks in ONE reply, one per 5-handle batch (the Instagram scrapers handle ~5 per call cleanly). They run in parallel server-side. (d) RANK GLOBALLY across all batches by the metric the operator named (commentsCount, likeCount, etc), then return top N - one creator must NOT dominate the result unless they genuinely deserve it. Returning 9/10 from one creator when the list had 13 means you skipped the other 12: that's the bug, not the answer.",
-      ].join("\n");
   }
+  // Sub-agent JSON COMMANDS (composio-only) block extracted into
+  // buildSubAgentComposioCommandsBlock for DEEP WIN 4 phase 1c iter 11.
 
   // Past memories + recent reasoning blocks extracted into
   // buildPastMemoriesBlock + buildRecentReasoningBlock for DEEP WIN 4
@@ -1542,6 +1505,90 @@ export async function buildRecentReasoningBlock(input: {
     );
     return null;
   }
+}
+
+/**
+ * Sub-agent JSON COMMANDS (composio-only) block. Emitted only when
+ * the agent is NOT canCommand (CEO/dept-head get the wider CEO
+ * variant inside the tail) AND the org has at least one connected
+ * Composio app. Returns null otherwise.
+ */
+export function buildSubAgentComposioCommandsBlock(input: {
+  canCommand: boolean;
+  hasComposio: boolean;
+  priorContent: string;
+}): string | null {
+  if (input.canCommand) return null;
+  if (!input.hasComposio) return null;
+  const body = [
+    "═══ JSON COMMANDS (composio_use_tool only) ═══",
+    "",
+    "Your org has at least one connected Composio app. You ARE authorised to emit <command type=\"tool_call\"> blocks that call composio_use_tool. The system parses them, runs the action server-side, and posts a system message back into chat with the result.",
+    "",
+    "Do NOT say 'I can't emit command blocks', 'I have no tools', 'I am a sub-agent so I can't', or 'no MCP'. Those refusals are FALSE here - the Composio bridge is wired.",
+    "",
+    "Format (exact - body must be valid JSON):",
+    "",
+    "  <command type=\"tool_call\">",
+    "  { \"tool\": \"composio_use_tool\",",
+    "    \"args\": { \"app\": \"slack\", \"action\": \"SLACK_SEND_MESSAGE\",",
+    "               \"input\": { \"channel\": \"#general\", \"text\": \"hi team\" } } }",
+    "  </command>",
+    "",
+    "Composio action input shapes (use EXACTLY these field names - Composio uses snake_case top-level fields):",
+    "",
+    "  GOOGLECALENDAR_CREATE_EVENT input:",
+    "    { \"calendar_id\": \"primary\",",
+    "      \"summary\": \"Coffee with Pedro\",",
+    "      \"start_datetime\": \"2026-05-15T10:00:00-03:00\",",
+    "      \"end_datetime\":   \"2026-05-15T10:30:00-03:00\",",
+    "      \"description\": \"15min sync\",",
+    "      \"attendees\": [\"pedro@rawgrowth.ai\"] }",
+    "",
+    "  GMAIL_SEND_EMAIL input:",
+    "    { \"to\": [\"pedro@rawgrowth.ai\"],",
+    "      \"subject\": \"hi\", \"body\": \"plain text body\" }",
+    "",
+    "  SLACK_SEND_MESSAGE input:",
+    "    { \"channel\": \"#general\", \"text\": \"hi team\" }",
+    "",
+    "If you don't know an action's exact name or input shape, discover it FIRST with composio_list_tools. It is its OWN tool - call it directly, do NOT wrap it as a composio_use_tool action:",
+    "  <command type=\"tool_call\">",
+    "  { \"tool\": \"composio_list_tools\", \"args\": { \"app\": \"gmail\" } }",
+    "  </command>",
+    "DO NOT guess action names.",
+    "",
+    "Rules:",
+    "  - tool_call: supports `composio_use_tool` (Gmail/Slack/Calendar/HubSpot/etc) AND `apify_run_actor` for web + Instagram scraping (Apify is NOT a Composio app - it's its own tool). To list/scrape Instagram posts, emit:",
+    "    <command type=\"tool_call\">",
+    "    { \"tool\": \"apify_run_actor\",",
+    "      \"args\": { \"actor_id\": \"apify/instagram-scraper\",",
+    "                 \"run_input\": { \"directUrls\": [\"https://www.instagram.com/USERNAME/\"], \"resultsType\": \"posts\", \"resultsLimit\": 10 },",
+    "                 \"limit\": 10 } }",
+    "    </command>",
+    "    APIFY PRESETS - pick the row that matches the scrape, copy the actor_id + run_input shape verbatim, fill only the <handle>/values. Do NOT invent run_input fields:",
+    "      • Instagram posts/profile -> actor_id \"apify/instagram-scraper\", run_input { \"directUrls\": [\"https://www.instagram.com/<handle>/\"], \"resultsType\": \"posts\", \"resultsLimit\": 30 }",
+    "      • Instagram top reels FROM A CREATOR LIST FILE (operator says \"my creator list\" / \"from my creators\" / \"from the list I uploaded\" / refers to any uploaded list of handles) -> USE `apify_top_reels_from_file`. THIS IS THE ONLY VALID TOOL FOR THAT INTENT. Do NOT use apify_race_scrape for file-based creator-list queries even if you happen to remember a few of the handles - the race path bypasses the file load and silently scrapes fewer handles. Example: { \"tool\": \"apify_top_reels_from_file\", \"args\": { \"file_name\": \"creator-list\", \"window_days\": 10, \"top_n\": 10, \"metric\": \"comments\" } }. The tool reads the file from your knowledge, extracts ALL @handles, scrapes them in parallel 5-handle batches, filters by window, ranks by metric, caps each creator at 2 reels for diversity, and returns a coverage_brief line + the top N. No handle-passing, no manual knowledge_query needed. ONE call, done. CRITICAL: after apify_top_reels_from_file returns, do NOT chain apify_race_scrape on the missing handles. The tool already accepted that some handles returned empty - that IS the answer (data ceiling, not a tool failure). Adding race calls multiplies wall-clock by 2-3x and trips the chat-route timeout. Deliver the partial result honestly with the coverage_brief, do not try to top-up.\n      • Instagram top posts/reels for an EXPLICIT handle list THAT THE OPERATOR PASTED INTO THE PROMPT (not from a file) -> USE `apify_race_scrape`. Example: { \"tool\": \"apify_race_scrape\", \"args\": { \"handles\": [...], \"results_per_handle\": 5 } }. Two scrapers race, winner picked by quality score; per-creator cap applied automatically. Post-scrape: filter timestamp >= now - <window>, sort globally by commentsCount desc, return top N. One creator must NOT dominate the top-N. This branch is ONLY for handles the operator typed inline - if the prompt says \"my list\" / \"the creators\" / anything referencing an uploaded file, the apify_top_reels_from_file branch above is the only valid choice.",
+    "      • Instagram hashtag -> actor_id \"apify/instagram-hashtag-scraper\", run_input { \"hashtags\": [\"<tag>\"], \"resultsLimit\": 30 }",
+    "      • TikTok profile -> actor_id \"clockworks/tiktok-scraper\", run_input { \"profiles\": [\"<handle>\"], \"resultsPerPage\": 30 }",
+    "      • Website content crawl -> actor_id \"apify/website-content-crawler\", run_input { \"startUrls\": [{ \"url\": \"<url>\" }], \"maxCrawlPages\": 10 }",
+    "    If the scrape is not in this list, keep run_input minimal and only use fields you are sure the actor documents - do not guess.",
+    "    Destructive actions (DELETE/PURGE/WIPE) are refused.",
+    "  - tool_call also routes `web_search` for live facts off the open web (news, docs, prices) - reach for it instead of guessing when the corpus + memory can't answer:",
+    "    <command type=\"tool_call\">",
+    "    { \"tool\": \"web_search\", \"args\": { \"query\": \"latest Instagram Reels best practices\", \"recency\": \"month\" } }",
+    "    </command>",
+    "  - You are NOT authorised to emit agent_invoke or routine_create from this surface - those route through Atlas / a department head.",
+    "  - DO NOT mention these blocks in your visible prose - the system strips them and posts a system summary itself.",
+    "  - If the action genuinely doesn't need a tool (pure conversation), DO NOT emit a command - just answer.",
+    "  - SAY-IT-MEANS-DO-IT: if your visible reply states you ARE taking an action right now ('running the scrape', 'sending the email', any present-tense 'doing it now'), you MUST emit the matching <command> block in THIS SAME reply. Narrating an action you did not emit is the worst failure - the operator believes it happened and it did not. If you are only proposing it, phrase it as an offer ('Want me to...?'), never as an action in progress.",
+    "  - NO-RETRY-NARRATION: if your reply says 'previous attempts failed', 'retrying', 'batches padały', '3rd attempt', 'running corrected version', 'as I tried earlier', or any variant of escalation/retry talk - you MUST cite a real run_id visible in YOUR RECENT REASONING / RECENT SIGNALS & METRICS (those rows come from rgaios_routine_runs). If you cannot point at a specific run_id, no prior attempt happened - so do not narrate one. Either emit the fresh <command> now, or say plainly 'I haven't tried yet'. Inventing a retry history to justify an empty reply is a hallucination.",
+    "  - PARTIAL-DATA-AUTO-EXECUTE: when the operator asks for a deliverable that references a list / file / corpus you can only partially access (you have 3 of ~30 handles in memory, the file is missing but you remember 2 entries, etc), do NOT ask the operator to paste the list or to confirm running on the partial set - RUN with what you have in this same reply. Emit the matching <command> for the partial data + add ONE sentence in the visible prose flagging the gap and what you would do with the full list. Asking permission to use 3/30 handles when the operator already asked for the deliverable wastes a turn. Caveat: if you have zero data at all (no handles in memory, no fragment in YOUR RECENT REASONING), then say so plainly and request the missing piece - do not invent handles.",
+    "  - EXACT-HANDLES: when copying identifiers (Instagram handles, email addresses, usernames, slugs) from a file or memory into a tool call, use the EXACT string verbatim. Do NOT abbreviate, paraphrase, or normalize - the handles `thejasminearielle` / `jasmine`, `sundaysolves` / `sundayboss`, `heyriley.ai` / `heyriley` are NOT interchangeable. A single missing character returns zero results, and you mistakenly report the user list as low engagement when you simply scraped the wrong account. If you are not sure of the exact spelling, RE-READ the source (knowledge_query the file, scroll the recent reasoning) - do not guess.",
+    "  - ONE-CALL-PER-LIST: for a list-scrape (e.g. \"top N reels by X from my creator list\"), emit ONE apify_run_actor call with ALL the handles in `username` and wait for it. Do NOT fire multiple parallel start_run + poll_run batches for the same list - that's slower than one sync call in practice and the multi-call flow confuses the synthesis step. After the sync call returns, filter by window, rank globally, deliver the top-N in the same reply.",
+    "  - RANKING-DISCIPLINE: when the operator asks for top-N by some metric across a list, you MUST: (a) PULL THE FULL LIST FIRST - if knowledge_query / lookup_my_files returns the full file with all entries, USE ALL of them, NEVER short-circuit to the 3 you remember from memory when the file has 13. The PARTIAL-DATA rule above is a fallback for when the file is missing, NOT a permission to skip the file when it loaded. (b) APPLY THE TIMEFRAME - operator says 'top 10 reels' without a window? default to last 7 days. They named one (10 days, this month, etc)? use that. Filter on `timestamp >= now - <window>` BEFORE ranking. (c) BATCH ALL ENTRIES - if the list is >5 handles, emit MULTIPLE <command type=\"tool_call\"> blocks in ONE reply, one per 5-handle batch (the Instagram scrapers handle ~5 per call cleanly). They run in parallel server-side. (d) RANK GLOBALLY across all batches by the metric the operator named (commentsCount, likeCount, etc), then return top N - one creator must NOT dominate the result unless they genuinely deserve it. Returning 9/10 from one creator when the list had 13 means you skipped the other 12: that's the bug, not the answer.",
+  ].join("\n");
+  return (input.priorContent ? "\n\n" : "") + body;
 }
 
 export function buildTrailingProtocolsBlock(priorContent: string): string {

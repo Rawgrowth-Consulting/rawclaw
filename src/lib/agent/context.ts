@@ -14,6 +14,7 @@ import {
   buildBrandProfileBlock,
   buildAgentFilesBlock,
   buildCompanyCorpusBlock,
+  buildSubAgentComposioCommandsBlock,
   buildTrailingProtocolsBlock,
 } from "./preamble";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -207,6 +208,15 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         orgName: ctx.orgName,
         queryText: ctx.queryText,
         userRole: ctx.userRole,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "json-commands-composio",
+    build: (ctx) =>
+      buildSubAgentComposioCommandsBlock({
+        canCommand: ctx.canCommand,
+        hasComposio: ctx.hasComposio,
         priorContent: ctx.priorContent,
       }),
   },
