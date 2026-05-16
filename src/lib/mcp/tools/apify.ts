@@ -1466,7 +1466,7 @@ registerTool({
         : metricArg === "plays" || metricArg === "views"
           ? "playsCount"
           : "commentsCount";
-    const resultsPerHandle = Math.min(
+    let resultsPerHandle = Math.min(
       Math.max(Number(args.results_per_handle ?? 5) || 5, 1),
       50,
     );
@@ -1488,6 +1488,30 @@ registerTool({
 
     const resolved = await resolveApifyKey(ctx.organizationId);
     if ("error" in resolved) return textError(resolved.error);
+
+    // HOTFIX 9 OPT (c) (2026-05-17, R-MARTI-CANONICAL rph=10 11min
+    // hang + R-MARTI-2 v2 5+min spin): adaptive cap on
+    // resultsPerHandle bounded by total scrape count. Apify scrapes
+    // each URL serially within a run, so wall-clock scales with
+    // handles.length * resultsPerHandle. PER_BATCH_TIMEOUT_MS is 100s
+    // but real-world per-scrape is ~6-15s, so 13 handles × rph=10 =
+    // 130 scrapes × 10s = 1300s = 22min worst case, way over chat
+    // budget. Cap total scrape count at 50 (matches eval-16 sweet
+    // spot) - if (handles × rph) > 50, drop rph proportionally with
+    // a floor of 2 so we still get something rankable per handle.
+    // This bounds wall-clock to ~5min worst case (50 scrapes × 6s
+    // serial inside a batch, parallelised across 5-handle batches).
+    const requestedScrapes = handles.length * resultsPerHandle;
+    if (requestedScrapes > 50) {
+      const capped = Math.max(2, Math.floor(50 / handles.length));
+      console.warn(
+        `[apify_top_reels_from_file] HOTFIX 9c adaptive cap: ` +
+          `${handles.length} handles × rph=${resultsPerHandle} = ` +
+          `${requestedScrapes} scrapes exceeds 50-scrape budget. ` +
+          `Dropping rph to ${capped}.`,
+      );
+      resultsPerHandle = capped;
+    }
 
     // Single-batch by default: apify/instagram-scraper can handle the
     // whole handle list in one run-sync call. Splitting into parallel
