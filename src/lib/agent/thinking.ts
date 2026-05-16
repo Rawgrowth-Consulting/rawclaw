@@ -52,80 +52,14 @@ export type ExtractedThinking = {
 // is still persisted to rgaios_audit_log (kind chat_thinking) with the
 // raw text, so /trace + the developer view keep the technical content
 // for debugging. Only the operator-visible chip is rewritten.
-const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
-  { pattern: /\bcoercion error\b/gi, replacement: "had a small hiccup" },
-  { pattern: /\bUUID\b/g, replacement: "id" },
-  { pattern: /\blookup ambiguity\b/gi, replacement: "name resolution" },
-  { pattern: /\bdodge the\b/gi, replacement: "work around the" },
-  // \bMCP\b only - "MCP-direct" / "MCP tool" leak as bare protocol names
-  // that mean nothing to operators. Strip the prefix, keep the noun if any.
-  { pattern: /\bMCP-direct\b/g, replacement: "internal" },
-  { pattern: /\bMCP\b/g, replacement: "internal" },
-  { pattern: /\bpass-2\b/g, replacement: "second turn" },
-  { pattern: /\bpass-1\b/g, replacement: "first turn" },
-  { pattern: /\bschema\b/g, replacement: "shape" },
-  // HOTFIX 8b (2026-05-17, Pedro 16:36 + B 16:42): underscore-aware
-  // tool-name substitutions. \b doesn't fire on _ boundaries so the
-  // generic "composio" / "tool_call" patterns above missed
-  // "composio_use_tool" / "GMAIL_CREATE_EMAIL_DRAFT" etc. Match each
-  // raw tool name explicitly. Order matters - longer names first so
-  // the prefix-only generic patterns don't shadow them.
-  { pattern: /\bGMAIL_CREATE_EMAIL_DRAFT\b/gi, replacement: "save a Gmail draft" },
-  { pattern: /\bGMAIL_SEND_EMAIL\b/gi, replacement: "send the email" },
-  { pattern: /\bGMAIL_DELETE_DRAFT\b/gi, replacement: "delete the draft" },
-  { pattern: /\bGOOGLECALENDAR_CREATE_EVENT\b/gi, replacement: "create a calendar event" },
-  { pattern: /\bSLACK_SEND_MESSAGE\b/gi, replacement: "post in Slack" },
-  { pattern: /\bcomposio_use_tool\b/gi, replacement: "use the integration" },
-  { pattern: /\bcomposio_list_tools\b/gi, replacement: "list integration actions" },
-  { pattern: /\bapify_top_reels_from_file\b/gi, replacement: "scrape reels from the creator list" },
-  { pattern: /\bapify_run_actor\b/gi, replacement: "scrape" },
-  { pattern: /\bapify_race_scrape\b/gi, replacement: "scrape" },
-  { pattern: /\bapify_batch_scrape\b/gi, replacement: "scrape" },
-  { pattern: /\bapify_start_run\b/gi, replacement: "start the scrape" },
-  { pattern: /\bapify_poll_run\b/gi, replacement: "check the scrape" },
-  { pattern: /\bapify_list_actor_runs\b/gi, replacement: "list scrape runs" },
-  { pattern: /\bagents_update\b/gi, replacement: "update my settings" },
-  { pattern: /\bagents_create\b/gi, replacement: "hire a new agent" },
-  { pattern: /\bagents_fire\b/gi, replacement: "archive an agent" },
-  { pattern: /\bagent_invoke\b/gi, replacement: "delegate" },
-  { pattern: /\bagent_message\b/gi, replacement: "message a peer" },
-  { pattern: /\bagent_inbox\b/gi, replacement: "check the inbox" },
-  { pattern: /\bknowledge_query\b/gi, replacement: "search my files" },
-  { pattern: /\bcompany_query\b/gi, replacement: "search the company corpus" },
-  { pattern: /\blookup_my_files\b/gi, replacement: "list my files" },
-  { pattern: /\blist_knowledge_files\b/gi, replacement: "list my files" },
-  { pattern: /\bread_knowledge_file\b/gi, replacement: "read a file" },
-  { pattern: /\blookup_brand_voice\b/gi, replacement: "check the brand voice" },
-  { pattern: /\blookup_company_fact\b/gi, replacement: "check the company facts" },
-  { pattern: /\bworkspace_file_read\b/gi, replacement: "read a workspace file" },
-  { pattern: /\barchive_memory\b/gi, replacement: "archive a memory note" },
-  { pattern: /\bmark_memory_superseded\b/gi, replacement: "mark a note superseded" },
-  { pattern: /\bplan_create\b/gi, replacement: "create a plan" },
-  { pattern: /\bplan_update\b/gi, replacement: "update the plan" },
-  { pattern: /\bplan_get\b/gi, replacement: "read the plan" },
-  { pattern: /\bweb_search\b/gi, replacement: "search the web" },
-  // Bare \bcomposio\b (lowercase) - generic catch for naked mentions
-  // after the named-action patterns above have eaten the underscore
-  // forms.
-  { pattern: /\bcomposio\b/gi, replacement: "the integration" },
-  // Generic tool_call catch - after the named patterns.
-  { pattern: /\btool_call\b/g, replacement: "command" },
-];
+//
+// HOTFIX 15 (2026-05-17, R-BELL notification walk): the map +
+// humanizeJargon now live in src/lib/agent/jargon.ts (client-safe)
+// so the notification bell + other "use client" surfaces can reuse
+// it without dragging in supabaseAdmin (server-only).
+import { humanizeJargon } from "./jargon";
 
-// HOTFIX 8b super-prime (2026-05-17, R-ORCH-2 v2 walk):
-// Kasia's reply body contained "I load it via lookup_brand_voice
-// before writing" - raw tool name leaked into operator-visible
-// reply text. JARGON_MAP was only applied to the thinking
-// surface, so the visibleReply path was untouched. Apply the
-// same humanizer to both surfaces - operator should never see
-// internal tool names, regardless of which surface they leak on.
-export function humanizeJargon(raw: string): string {
-  let out = raw;
-  for (const { pattern, replacement } of JARGON_MAP) {
-    out = out.replace(pattern, replacement);
-  }
-  return out;
-}
+export { humanizeJargon };
 
 export function extractThinking(reply: string): ExtractedThinking {
   if (!reply) return { thinking: null, visibleReply: reply ?? "" };

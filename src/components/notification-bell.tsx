@@ -5,6 +5,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { Bell, MessageCircleQuestion, Sparkles, X } from "lucide-react";
 import { jsonFetcher } from "@/lib/swr";
+import { humanizeJargon } from "@/lib/agent/jargon";
 
 type Notification = {
   id: string;
@@ -185,7 +186,7 @@ export function NotificationBell() {
                           </time>
                         </div>
                         <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-                          {n.content}
+                          {humanizeJargon(n.content)}
                         </p>
                       </div>
                     </Link>
