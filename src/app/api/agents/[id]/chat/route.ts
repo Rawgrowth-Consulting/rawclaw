@@ -1186,9 +1186,20 @@ export async function POST(
               // phrases + generic "I'll <verb>" / "I need to <verb>"
               // so the synth fallback catches every common recovery
               // intermediate.
+              // HOTFIX 11c (2026-05-17, R-MARTI-2 v2 follow-up): the
+              // `^` anchor missed common article prefixes. Marta's
+              // actual visible was "The file name didn't match - let me
+              // pull..." starting with "The " - the regex never fired,
+              // synth fallback only triggered via the <20 char branch.
+              // Strip a leading the/a/an article before matching so the
+              // intermediate detector catches naturally-phrased
+              // sentences too.
+              const visibleForIntermediate = visibleAfterStrip
+                .replace(/^(the|a|an)\s+/i, "")
+                .trim();
               const looksLikeIntermediate =
                 /^(retrying|trying|attempting|let me retry|one moment|hold on|working on|let me try|let me pull|let me check|let me look|let me search|let me query|couldn't find|file (name )?didn't|missing|need to (look|find|check|pull|search|query)|searching|querying|pulling|checking|looking up|i'?ll (try|retry|check|pull|look|search|query))/i
-                  .test(visibleAfterStrip);
+                  .test(visibleForIntermediate);
               if (
                 pass2EmittedCommands &&
                 (visibleAfterStrip.length < 20 || looksLikeIntermediate)
