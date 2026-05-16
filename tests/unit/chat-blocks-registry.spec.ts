@@ -152,3 +152,21 @@ test("CHAT_BLOCKS config JSON: every entry has valid required fields (iter 37)",
     );
   }
 });
+
+test("CHAT_BLOCKS: array + each entry are Object.frozen (iter 38)", () => {
+  // Iter 38 hardening: registry is built once at module load from
+  // the JSON config, then frozen. Accidental .push, .splice, or
+  // mutating a single entry's defaultCostTokens at runtime would
+  // silently desync the selector + describer; freezing makes that
+  // throw loudly under strict mode.
+  assert.ok(
+    Object.isFrozen(CHAT_BLOCKS),
+    "CHAT_BLOCKS array must be Object.frozen",
+  );
+  for (const block of CHAT_BLOCKS) {
+    assert.ok(
+      Object.isFrozen(block),
+      `CHAT_BLOCKS entry "${block.id}" must be Object.frozen`,
+    );
+  }
+});

@@ -300,23 +300,28 @@ import CHAT_BLOCKS_CONFIG from "./chat-blocks.config.json";
  * builders. Throws at module init if any config id has no matching
  * builder (loud failure beats silent dropouts).
  */
-export const CHAT_BLOCKS: ChatBlock[] = (
-  CHAT_BLOCKS_CONFIG as ChatBlockConfigEntry[]
-).map((entry) => {
-  const build = CHAT_BLOCK_BUILDERS[entry.id];
-  if (!build) {
-    throw new Error(
-      `chat-blocks.config.json entry "${entry.id}" has no builder in CHAT_BLOCK_BUILDERS`,
-    );
-  }
-  return {
-    id: entry.id,
-    build,
-    priority: entry.priority,
-    defaultCostTokens: entry.defaultCostTokens,
-    ...(entry.modes ? { modes: entry.modes } : {}),
-  };
-});
+// Type stays as ChatBlock[] (selector/describer signatures already
+// accept it) but runtime is frozen: Object.freeze on the array AND
+// each entry so accidental .push / mutation throws at runtime. Iter
+// 38 hardening on the iter-37 JSON-loaded registry.
+export const CHAT_BLOCKS: ChatBlock[] = Object.freeze(
+  (CHAT_BLOCKS_CONFIG as ChatBlockConfigEntry[]).map((entry) => {
+    const build = CHAT_BLOCK_BUILDERS[entry.id];
+    if (!build) {
+      throw new Error(
+        `chat-blocks.config.json entry "${entry.id}" has no builder in CHAT_BLOCK_BUILDERS`,
+      );
+    }
+    const block: ChatBlock = {
+      id: entry.id,
+      build,
+      priority: entry.priority,
+      defaultCostTokens: entry.defaultCostTokens,
+      ...(entry.modes ? { modes: [...entry.modes] } : {}),
+    };
+    return Object.freeze(block);
+  }),
+) as ChatBlock[];
 
 export type ComposeChatPreambleOptions = {
   /**
