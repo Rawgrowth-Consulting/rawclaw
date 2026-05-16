@@ -973,6 +973,16 @@ export async function buildAgentChatPreambleTail(input: {
         "    { \"tool\": \"agent_message\", \"args\": { \"from_agent\": \"Atlas\", \"to_agent\": \"Kasia\", \"body\": \"Heads-up: webinar promo lands next week - keep some capacity free.\" } }",
         "    </command>",
         "",
+        "  agents_update / agents_create / agents_fire - self + peer org-tree edits. agents_update mutates an existing agent row (description, system_prompt, integrations, status, max_tokens, write_policy, budget). The MCP guard locks role/reports_to/department for non-CEOs; everything else is editable from chat. agents_create hires a new peer (CEO + dept-heads only). agents_fire archives one (CEO + dept-heads only, and you can NOT fire yourself). When the operator says 'update your prompt' / 'add the PT-BR line to your persona' / 'change your status to busy' - that's agents_update on your own row, no /agents UI bounce needed.",
+        "    <command type=\"tool_call\">",
+        "    { \"tool\": \"agents_update\", \"args\": { \"id\": \"<your-uuid-or-name>\", \"system_prompt\": \"...new persona body...\" } }",
+        "    </command>",
+        "",
+        "  archive_memory / mark_memory_superseded - shared-memory housekeeping. archive_memory soft-deletes a block by id (peers stop seeing it on next preamble build). mark_memory_superseded points an old block at the new one so the SUPERSEDED-BY chain renders correctly when a fact gets corrected ('chair weighs 14.2 kg, not 12.5'). Use these the moment a memory contradicts a newer one - do NOT leave the stale block live for peers.",
+        "    <command type=\"tool_call\">",
+        "    { \"tool\": \"mark_memory_superseded\", \"args\": { \"old_id\": \"<uuid>\", \"new_id\": \"<uuid>\" } }",
+        "    </command>",
+        "",
         "═══ DATA-ASK PROTOCOL ═══",
         "",
         "If you genuinely cannot answer or plan without specific data the corpus doesn't have (e.g. real CTR numbers, AOV, customer count), end your reply with one or more <need> blocks:",
@@ -1275,66 +1285,77 @@ export async function buildAgentChatPreambleTail(input: {
     );
   }
 
-  // Task-creation directive. The chat route extracts <task> blocks
-  // post-reply and creates rgaios_routines + rgaios_routine_runs rows.
-  // This is the only way the agent can persist work-to-do from a
-  // conversation today (no MCP tools on the dashboard chat surface).
-  preamble +=
-    (preamble ? "\n\n" : "") +
-    [
-      "═══ TASK CREATION ═══",
-      "",
-      "When the user assigns you (or someone you can delegate to) work that needs to land in the Tasks tab, end your reply with one or more <task> blocks. The system parses them, creates the routine + a pending run, and they show up immediately in the assignee's Tasks tab.",
-      "",
-      "Format (exact):",
-      "",
-      `<task assignee="self">`,
-      "Title: short imperative line (max 80 chars)",
-      "Description: one or two sentences with the goal + concrete deliverable",
-      "</task>",
-      "",
-      "assignee values:",
-      `  • "self"       → assigns to you (most common)`,
-      `  • "<role>"     → assigns to the agent with that role in your org (e.g. "marketer", "sdr", "ceo", "ops")`,
-      `  • "<name>"     → assigns by exact agent name`,
-      "",
-      "If you are a department head (CEO Atlas, Marketing Manager, etc) and the user asks for cross-team work, prefer assignee=\"<role>\" so the right person picks it up. The Org Place block above tells you who reports to you.",
-      "",
-      "DO NOT emit a <task> block for purely conversational replies (questions, brainstorming, opinions). Only when there's a concrete piece of work to track.",
-      "",
-      "You may emit MULTIPLE <task> blocks in one reply (one per discrete task). Keep the visible part of your reply short - the user reads it as a confirmation, not as a re-statement of what's in the task.",
-      "",
-      "═══ AGENT MANAGEMENT (Atlas + dept heads only) ═══",
-      "",
-      "If you are Atlas (CEO) or a dept head, you can re-org SUB-AGENTS in conversation. CANNOT touch other dept heads - heads are operator-managed and protected from cross-dept re-orgs.",
-      "",
-      `<agent action="create" name="Senior SDR" reports_to="Sales Manager" role="sdr" description="Owns inbound lead qualification."></agent>`,
-      `<agent action="archive" name="Junior Copywriter"></agent>`,
-      `<agent action="update" name="Senior SDR" description="Now also handles LinkedIn DMs."></agent>`,
-      "",
-      "Use when conversation makes clear a missing role would unblock work. Don't use for trivial title tweaks.",
-      "",
-      "═══ SHARED MEMORY ═══",
-      "",
-      "When you learn a fact ALL peer agents need (client uses Shopify, owner prefers PT-BR slack, decided to drop X feature), emit a <shared_memory> block:",
-      "",
-      `<shared_memory importance="4" scope="all">FACT IN ONE LINE</shared_memory>`,
-      "",
-      "scope: \"all\" = every agent sees it. Or list dept slugs: \"marketing,sales\".",
-      "importance: 1-5 (4-5 = pinned in everyone's preamble forever).",
-      "Skip for one-conversation context bits - those auto-save as individual memory.",
-      "",
-      "═══ DATA-ASK PROTOCOL ═══",
-      "",
-      "If you genuinely cannot plan without specific data the corpus doesn't have (real CTR numbers, AOV, customer count), end your reply with one or more <need> blocks:",
-      "",
-      `<need scope="crm|metric|file|other">EXACT data needed. Be specific - 'last 30 days FB ads CTR' beats 'recent ad data'.</need>`,
-      "",
-      "Server intercepts these + posts chat message asking operator. DO NOT fabricate numbers.",
-    ].join("\n");
+  // Trailing protocols block (TASK CREATION + AGENT MANAGEMENT +
+  // SHARED MEMORY + DATA-ASK PROTOCOL) extracted into
+  // buildTrailingProtocolsBlock for DEEP WIN 4 phase 1b registry use.
 
   // Return only the tail's own contribution. priorContent is included
   // in `preamble` purely so the inline (preamble ? "\n\n" : "")
   // separator checks above behave as in legacy.
   return preamble.slice(priorContent.length);
+}
+
+/**
+ * Trailing MCP protocol directives - TASK CREATION + AGENT MANAGEMENT
+ * + SHARED MEMORY + DATA-ASK PROTOCOL. All hardcoded text, sync, no
+ * DB. Used by buildAgentChatPreamble at the very end of the preamble
+ * AND surfaced via CHAT_BLOCKS for the DEEP WIN 4 registry path.
+ *
+ * priorContent is the already-accumulated preamble; the leading "\n\n"
+ * separator is added only if priorContent is non-empty (preserves the
+ * exact legacy `(preamble ? "\n\n" : "")` behaviour).
+ */
+export function buildTrailingProtocolsBlock(priorContent: string): string {
+  const body = [
+    "═══ TASK CREATION ═══",
+    "",
+    "When the user assigns you (or someone you can delegate to) work that needs to land in the Tasks tab, end your reply with one or more <task> blocks. The system parses them, creates the routine + a pending run, and they show up immediately in the assignee's Tasks tab.",
+    "",
+    "Format (exact):",
+    "",
+    `<task assignee="self">`,
+    "Title: short imperative line (max 80 chars)",
+    "Description: one or two sentences with the goal + concrete deliverable",
+    "</task>",
+    "",
+    "assignee values:",
+    `  • "self"       → assigns to you (most common)`,
+    `  • "<role>"     → assigns to the agent with that role in your org (e.g. "marketer", "sdr", "ceo", "ops")`,
+    `  • "<name>"     → assigns by exact agent name`,
+    "",
+    "If you are a department head (CEO Atlas, Marketing Manager, etc) and the user asks for cross-team work, prefer assignee=\"<role>\" so the right person picks it up. The Org Place block above tells you who reports to you.",
+    "",
+    "DO NOT emit a <task> block for purely conversational replies (questions, brainstorming, opinions). Only when there's a concrete piece of work to track.",
+    "",
+    "You may emit MULTIPLE <task> blocks in one reply (one per discrete task). Keep the visible part of your reply short - the user reads it as a confirmation, not as a re-statement of what's in the task.",
+    "",
+    "═══ AGENT MANAGEMENT (Atlas + dept heads only) ═══",
+    "",
+    "If you are Atlas (CEO) or a dept head, you can re-org SUB-AGENTS in conversation. CANNOT touch other dept heads - heads are operator-managed and protected from cross-dept re-orgs.",
+    "",
+    `<agent action="create" name="Senior SDR" reports_to="Sales Manager" role="sdr" description="Owns inbound lead qualification."></agent>`,
+    `<agent action="archive" name="Junior Copywriter"></agent>`,
+    `<agent action="update" name="Senior SDR" description="Now also handles LinkedIn DMs."></agent>`,
+    "",
+    "Use when conversation makes clear a missing role would unblock work. Don't use for trivial title tweaks.",
+    "",
+    "═══ SHARED MEMORY ═══",
+    "",
+    "When you learn a fact ALL peer agents need (client uses Shopify, owner prefers PT-BR slack, decided to drop X feature), emit a <shared_memory> block:",
+    "",
+    `<shared_memory importance="4" scope="all">FACT IN ONE LINE</shared_memory>`,
+    "",
+    "scope: \"all\" = every agent sees it. Or list dept slugs: \"marketing,sales\".",
+    "importance: 1-5 (4-5 = pinned in everyone's preamble forever).",
+    "Skip for one-conversation context bits - those auto-save as individual memory.",
+    "",
+    "═══ DATA-ASK PROTOCOL ═══",
+    "",
+    "If you genuinely cannot plan without specific data the corpus doesn't have (real CTR numbers, AOV, customer count), end your reply with one or more <need> blocks:",
+    "",
+    `<need scope="crm|metric|file|other">EXACT data needed. Be specific - 'last 30 days FB ads CTR' beats 'recent ad data'.</need>`,
+    "",
+    "Server intercepts these + posts chat message asking operator. DO NOT fabricate numbers.",
+  ].join("\n");
+  return (priorContent ? "\n\n" : "") + body;
 }

@@ -430,12 +430,26 @@ async function execToolCall(
     "lookup_brand_voice",
     "lookup_company_fact",
     "workspace_file_read",
+    // HOTFIX 4 (FLEX): agents_* + memory mutation surface so a
+    // department-head can self-edit its own system_prompt, integrations,
+    // status, etc., and so any agent can archive / supersede shared
+    // memory blocks. The MCP guards in agents.ts (HOTFIX 1) and
+    // shared-memory.ts already enforce who-may-edit-what; this list
+    // controls whether the tool is *reachable* from chat. T6 + T9
+    // acceptance walks proved both tools were registered but unreachable
+    // from this surface, so every "self-fix" walk failed with the
+    // generic "supported tools are ..." refusal.
+    "agents_update",
+    "agents_create",
+    "agents_fire",
+    "archive_memory",
+    "mark_memory_superseded",
   ]);
   if (tool !== "composio_use_tool" && !MCP_DIRECT_TOOLS.has(tool ?? "")) {
     return {
       ok: false,
       type: "tool_call",
-      summary: `tool_call: supported tools are composio_use_tool, composio_list_tools, apify_run_actor, apify_list_actor_runs, web_search, plan_create, plan_update, plan_get, agent_message, agent_inbox, knowledge_query, company_query, lookup_my_files, list_knowledge_files, read_knowledge_file, lookup_brand_voice, lookup_company_fact, workspace_file_read (got "${tool ?? "(missing)"}")`,
+      summary: `tool_call: supported tools are composio_use_tool, composio_list_tools, apify_run_actor, apify_list_actor_runs, apify_start_run, apify_poll_run, apify_batch_scrape, apify_race_scrape, apify_top_reels_from_file, web_search, plan_create, plan_update, plan_get, agent_message, agent_inbox, knowledge_query, company_query, lookup_my_files, list_knowledge_files, read_knowledge_file, lookup_brand_voice, lookup_company_fact, workspace_file_read, agents_update, agents_create, agents_fire, archive_memory, mark_memory_superseded (got "${tool ?? "(missing)"}")`,
     };
   }
   if (!args || typeof args !== "object") {
