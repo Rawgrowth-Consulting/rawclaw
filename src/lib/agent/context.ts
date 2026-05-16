@@ -1,5 +1,4 @@
 import {
-  buildAgentChatPreamble,
   buildCapabilitiesAndTrustBlock,
   buildReasoningProtocolBlock,
   buildSharedMemoryBlock,
@@ -533,8 +532,9 @@ export async function buildInvokePreambleV2(
   return buildAgentContext({ mode: "invoke", ...input });
 }
 
-// `buildAgentChatPreamble` re-export so legacy callers can continue to
-// import the monolithic entry point unchanged while the V2 wrappers
-// run through the registry. Phase 2 flips the chat route to V2 +
-// drops this re-export.
-export { buildAgentChatPreamble };
+// `buildAgentChatPreamble` re-export dropped phase 2 iter 31. Every
+// production callsite swapped to buildAgentChatPreambleV2 in iter 20
+// (chat route) and iter 22 (insights / atlas-router / mcp-tools /
+// tasks / generators). The legacy entry point still lives in
+// preamble.ts for the iter-0 parity test fixture, but nothing in
+// context.ts re-exports it.
