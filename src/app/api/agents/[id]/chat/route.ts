@@ -11,7 +11,7 @@ import { applyBrandFilter } from "@/lib/brand/apply-filter";
 import { buildAgentChatPreambleV2 } from "@/lib/agent/context";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
-import { extractThinking } from "@/lib/agent/thinking";
+import { extractThinking, humanizeJargon } from "@/lib/agent/thinking";
 import { persistSharedMemoryFromReply } from "@/lib/memory/shared";
 import { badUuidResponse } from "@/lib/utils";
 
@@ -945,14 +945,24 @@ export async function POST(
             // gmail" the moment each command starts, before the slow
             // tool call or delegated run returns.
             onProgress: (ev) => {
+              // HOTFIX 8b prime (2026-05-17, B 17:08 SPEC): spinner
+              // label leaked the raw tool name (e.g.
+              // "Running apify_top_reels_from_file…") to the
+              // operator. JARGON_MAP only applied to thinking and
+              // visibleReply via humanizeJargon; the live spinner
+              // verb was constructed here and emitted untouched.
+              // Humanize the label through the same map so the
+              // spinner says "Running scrape reels from the
+              // creator list…" instead.
+              const niceLabel = humanizeJargon(ev.label);
               const verb =
                 ev.type === "agent_invoke"
-                  ? `${ev.label} is answering now`
+                  ? `${niceLabel} is answering now`
                   : ev.type === "tool_call"
-                    ? `Running ${ev.label}`
+                    ? `Running ${niceLabel}`
                     : ev.type === "routine_create"
-                      ? `Creating routine "${ev.label}"`
-                      : `Working on ${ev.label}`;
+                      ? `Creating routine "${niceLabel}"`
+                      : `Working on ${niceLabel}`;
               emit({ type: "command_running", verb, label: ev.label });
             },
           });
@@ -1083,14 +1093,18 @@ export async function POST(
                   reply: pass2.reply,
                   callerUserId: userId,
                   onProgress: (ev) => {
+                    // HOTFIX 8b prime: humanize spinner label on
+                    // pass-2 onProgress path too. Same rationale as
+                    // the pass-1 site above.
+                    const niceLabel = humanizeJargon(ev.label);
                     const verb =
                       ev.type === "agent_invoke"
-                        ? `${ev.label} is answering now`
+                        ? `${niceLabel} is answering now`
                         : ev.type === "tool_call"
-                          ? `Running ${ev.label}`
+                          ? `Running ${niceLabel}`
                           : ev.type === "routine_create"
-                            ? `Creating routine "${ev.label}"`
-                            : `Working on ${ev.label}`;
+                            ? `Creating routine "${niceLabel}"`
+                            : `Working on ${niceLabel}`;
                     emit({ type: "command_running", verb, label: ev.label });
                   },
                 });

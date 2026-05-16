@@ -119,7 +119,7 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
 // surface, so the visibleReply path was untouched. Apply the
 // same humanizer to both surfaces - operator should never see
 // internal tool names, regardless of which surface they leak on.
-function humanizeJargon(raw: string): string {
+export function humanizeJargon(raw: string): string {
   let out = raw;
   for (const { pattern, replacement } of JARGON_MAP) {
     out = out.replace(pattern, replacement);
