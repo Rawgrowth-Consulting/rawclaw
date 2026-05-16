@@ -7,6 +7,8 @@ import {
   buildRecentSignalsBlock,
   buildAssignedSkillsBlock,
   buildAuthorityOverrideBlock,
+  buildPersonaAndOrgPlaceBlock,
+  buildPendingTasksBlock,
   buildBrandProfileBlock,
   buildAgentFilesBlock,
   buildCompanyCorpusBlock,
@@ -115,6 +117,24 @@ export const CHAT_BLOCKS: ChatBlock[] = [
       buildAuthorityOverrideBlock({
         orgId: ctx.orgId,
         agentId: ctx.agentId,
+      }),
+  },
+  {
+    id: "persona-org-place",
+    build: (ctx) =>
+      buildPersonaAndOrgPlaceBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "pending-tasks",
+    build: (ctx) =>
+      buildPendingTasksBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
+        priorContent: ctx.priorContent,
       }),
   },
   {
