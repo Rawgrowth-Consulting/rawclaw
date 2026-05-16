@@ -457,17 +457,21 @@ async function composeChatPreamble(
 
 export async function buildAgentContext(
   input: AgentContextInput,
+  options: ComposeChatPreambleOptions = {},
 ): Promise<string> {
   switch (input.mode) {
     case "chat":
     case "telegram":
-      return composeChatPreamble({
-        orgId: input.orgId,
-        agentId: input.agentId,
-        orgName: input.orgName,
-        queryText: input.queryText,
-        userRole: input.userRole,
-      });
+      return composeChatPreamble(
+        {
+          orgId: input.orgId,
+          agentId: input.agentId,
+          orgName: input.orgName,
+          queryText: input.queryText,
+          userRole: input.userRole,
+        },
+        options,
+      );
     case "routine":
     case "invoke":
       return buildSystemPrompt(
@@ -483,14 +487,16 @@ export async function buildAgentContext(
 
 export async function buildAgentChatPreambleV2(
   input: Omit<ChatInput, "mode">,
+  options: ComposeChatPreambleOptions = {},
 ): Promise<string> {
-  return buildAgentContext({ mode: "chat", ...input });
+  return buildAgentContext({ mode: "chat", ...input }, options);
 }
 
 export async function buildTelegramPreambleV2(
   input: Omit<ChatInput, "mode">,
+  options: ComposeChatPreambleOptions = {},
 ): Promise<string> {
-  return buildAgentContext({ mode: "telegram", ...input });
+  return buildAgentContext({ mode: "telegram", ...input }, options);
 }
 
 export async function buildExecutorSystemPromptV2(
