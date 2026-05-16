@@ -12,6 +12,7 @@ import {
   buildIdentityBlock,
   buildOrgRosterBlock,
   buildRecentActivityBlock,
+  buildCeoTelegramEntryBlock,
   buildPastMemoriesBlock,
   buildRecentReasoningBlock,
   buildBrandProfileBlock,
@@ -227,6 +228,16 @@ export const CHAT_BLOCKS: ChatBlock[] = [
     build: (ctx) =>
       buildRecentActivityBlock({
         orgId: ctx.orgId,
+        isCeo: ctx.isCeo,
+        priorContent: ctx.priorContent,
+      }),
+  },
+  {
+    id: "ceo-telegram-entry",
+    build: (ctx) =>
+      buildCeoTelegramEntryBlock({
+        orgId: ctx.orgId,
+        agentId: ctx.agentId,
         isCeo: ctx.isCeo,
         priorContent: ctx.priorContent,
       }),

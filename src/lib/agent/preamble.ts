@@ -261,6 +261,13 @@ export async function buildAgentChatPreamble(input: {
         priorContent: preamble + acc,
       });
       if (recentActivity) acc += recentActivity;
+      const telegram = await buildCeoTelegramEntryBlock({
+        orgId,
+        agentId,
+        isCeo,
+        priorContent: preamble + acc,
+      });
+      if (telegram) acc += telegram;
     } catch {
       // best-effort - skip
     }
@@ -471,50 +478,8 @@ export async function buildAgentChatPreambleTail(input: {
       // Recent agent activity (CEO) extracted into
       // buildRecentActivityBlock for DEEP WIN 4 phase 1e iter 15.
 
-      // Telegram entry-point directive. If the CEO has a Telegram bot
-      // wired, they are the primary DM surface for the operator and
-      // must delegate to dept heads via agent_invoke. Best-effort
-      // lookup: missing table / RLS surprise just skips the block.
-      try {
-        const { data: ceoBot } = await db
-          .from("rgaios_agent_telegram_bots")
-          .select("id")
-          .eq("organization_id", orgId)
-          .eq("agent_id", agentId)
-          .eq("status", "connected")
-          .maybeSingle();
-        if (ceoBot) {
-          preamble +=
-            (preamble ? "\n\n" : "") +
-            [
-              "═══ TELEGRAM ENTRY POINT (CEO) ═══",
-              "",
-              "You are the primary Telegram entry point for this org. When the operator DMs you on Telegram, decide:",
-              "- If the task fits one dept, emit <command type=\"agent_invoke\"> to that department's head and tell the operator who you handed it to. Pick the head by reading the ORG ROSTER above - match on DEPARTMENT + RESPONSIBILITY, then copy that head's exact NAME into the command. Do NOT rely on a memorized name->dept mapping; assignments change and the roster is the only source of truth.",
-              // Why this line exists (Marti, 2026-05-14): Scan kept naming
-              // the wrong agent or describing an agent's job from their
-              // name. Force it to quote the roster's RESPONSIBILITY field.
-              "- If the operator asks 'who handles X' or 'what does <Name> do', answer straight from the roster's RESPONSIBILITY + DEPARTMENT fields for that agent. Never guess the job from the agent's name.",
-              "- If the task is cross-cutting or you can answer directly, reply yourself.",
-              "- Keep it concise: Telegram is mobile-first.",
-              "",
-              "═══ STRICT LANGUAGE RULE (CEO bot DM) ═══",
-              "",
-              "Mirror the operator's input language silently. Whatever natural language they wrote in, reply in the same one. Code-mixed -> match the dominant language. If unsure, default to English.",
-              "",
-              "NEVER name the language you are using. NEVER list languages you will or will not use. NEVER explain the language-mirror rule to the operator. NEVER cite the brand profile back at them. Just speak the right language and answer the question.",
-              "",
-              "Client-facing output (reels, outbound DMs to leads) follows the brand profile's native language - but your operator-DM replies always mirror the operator, not the brand.",
-              "",
-              "A dept head can take over a Telegram thread by emitting <command type=\"take_over\"> in its chat thread (followed up later by Scan resuming with <command type=\"resume\">). Until then, you own the thread.",
-            ].join("\n");
-        }
-      } catch (err) {
-        console.warn(
-          "[preamble] telegram entry point skipped:",
-          (err as Error).message,
-        );
-      }
+      // Telegram entry-point directive extracted into
+      // buildCeoTelegramEntryBlock for DEEP WIN 4 phase 1e iter 16.
 
       // Atlas command directive - commanding the dept heads
       preamble +=
@@ -1294,6 +1259,59 @@ export async function buildRecentReasoningBlock(input: {
  * variant inside the tail) AND the org has at least one connected
  * Composio app. Returns null otherwise.
  */
+/**
+ * CEO Telegram entry-point block. Emitted only when isCeo AND the
+ * CEO has a connected Telegram bot. Returns the TELEGRAM ENTRY
+ * POINT + STRICT LANGUAGE RULE text verbatim (HOTFIX 8d-stripped
+ * version) or null.
+ */
+export async function buildCeoTelegramEntryBlock(input: {
+  orgId: string;
+  agentId: string;
+  isCeo: boolean;
+  priorContent: string;
+}): Promise<string | null> {
+  const { orgId, agentId, isCeo, priorContent } = input;
+  if (!isCeo) return null;
+  try {
+    const db = supabaseAdmin();
+    const { data: ceoBot } = await db
+      .from("rgaios_agent_telegram_bots")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("agent_id", agentId)
+      .eq("status", "connected")
+      .maybeSingle();
+    if (!ceoBot) return null;
+    const body = [
+      "═══ TELEGRAM ENTRY POINT (CEO) ═══",
+      "",
+      "You are the primary Telegram entry point for this org. When the operator DMs you on Telegram, decide:",
+      "- If the task fits one dept, emit <command type=\"agent_invoke\"> to that department's head and tell the operator who you handed it to. Pick the head by reading the ORG ROSTER above - match on DEPARTMENT + RESPONSIBILITY, then copy that head's exact NAME into the command. Do NOT rely on a memorized name->dept mapping; assignments change and the roster is the only source of truth.",
+      "- If the operator asks 'who handles X' or 'what does <Name> do', answer straight from the roster's RESPONSIBILITY + DEPARTMENT fields for that agent. Never guess the job from the agent's name.",
+      "- If the task is cross-cutting or you can answer directly, reply yourself.",
+      "- Keep it concise: Telegram is mobile-first.",
+      "",
+      "═══ STRICT LANGUAGE RULE (CEO bot DM) ═══",
+      "",
+      "Mirror the operator's input language silently. Whatever natural language they wrote in, reply in the same one. Code-mixed -> match the dominant language. If unsure, default to English.",
+      "",
+      "NEVER name the language you are using. NEVER list languages you will or will not use. NEVER explain the language-mirror rule to the operator. NEVER cite the brand profile back at them. Just speak the right language and answer the question.",
+      "",
+      "Client-facing output (reels, outbound DMs to leads) follows the brand profile's native language - but your operator-DM replies always mirror the operator, not the brand.",
+      "",
+      "A dept head can take over a Telegram thread by emitting <command type=\"take_over\"> in its chat thread (followed up later by Scan resuming with <command type=\"resume\">). Until then, you own the thread.",
+    ].join("\n");
+    return (priorContent ? "\n\n" : "") + body;
+  } catch (err) {
+    console.warn(
+      "[preamble] telegram entry point skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 /**
  * Recent agent activity (CEO) block. Last 20 routine runs across the
  * whole org with assignee names resolved. Emitted only when isCeo.
