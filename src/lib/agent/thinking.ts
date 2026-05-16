@@ -112,7 +112,14 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\btool_call\b/g, replacement: "command" },
 ];
 
-function humanizeThinking(raw: string): string {
+// HOTFIX 8b super-prime (2026-05-17, R-ORCH-2 v2 walk):
+// Kasia's reply body contained "I load it via lookup_brand_voice
+// before writing" - raw tool name leaked into operator-visible
+// reply text. JARGON_MAP was only applied to the thinking
+// surface, so the visibleReply path was untouched. Apply the
+// same humanizer to both surfaces - operator should never see
+// internal tool names, regardless of which surface they leak on.
+function humanizeJargon(raw: string): string {
   let out = raw;
   for (const { pattern, replacement } of JARGON_MAP) {
     out = out.replace(pattern, replacement);
@@ -140,14 +147,14 @@ export function extractThinking(reply: string): ExtractedThinking {
       );
       const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
       return {
-        thinking: raw ? humanizeThinking(raw).slice(0, 600) : null,
-        visibleReply: reply.slice(0, idx).trim(),
+        thinking: raw ? humanizeJargon(raw).slice(0, 600) : null,
+        visibleReply: humanizeJargon(reply.slice(0, idx).trim()),
       };
     }
     // No thinking markup at all - but still strip any stray lone tag.
     return {
       thinking: null,
-      visibleReply: reply.replace(/<\/?thinking>/gi, "").trim(),
+      visibleReply: humanizeJargon(reply.replace(/<\/?thinking>/gi, "").trim()),
     };
   }
 
@@ -159,15 +166,18 @@ export function extractThinking(reply: string): ExtractedThinking {
   // safe - thinking is narrative, not a command surface.
   const cleaned = stripOrchestrationMarkup(m[1] ?? "");
   const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
-  const thinking = raw ? humanizeThinking(raw).slice(0, 600) : null;
+  const thinking = raw ? humanizeJargon(raw).slice(0, 600) : null;
 
   // Strip ALL <thinking> blocks (the matched one + any extras) PLUS any
   // stray unpaired <thinking>/</thinking> tag so no raw XML survives
-  // into the visible reply.
-  const visibleReply = reply
-    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-    .replace(/<\/?thinking>/gi, "")
-    .trim();
+  // into the visible reply. Then humanize tool-name jargon so the
+  // operator never sees raw internal identifiers in the reply body.
+  const visibleReply = humanizeJargon(
+    reply
+      .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+      .replace(/<\/?thinking>/gi, "")
+      .trim(),
+  );
 
   return { thinking, visibleReply };
 }
