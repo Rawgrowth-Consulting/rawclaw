@@ -3,6 +3,7 @@ import {
   buildAgentChatPreambleTail,
   buildCapabilitiesAndTrustBlock,
   buildReasoningProtocolBlock,
+  buildTrailingProtocolsBlock,
 } from "./preamble";
 import {
   buildSystemPrompt,
@@ -98,6 +99,10 @@ export const CHAT_BLOCKS: ChatBlock[] = [
         userRole: ctx.userRole,
         priorContent: ctx.priorContent,
       }),
+  },
+  {
+    id: "trailing-protocols",
+    build: (ctx) => buildTrailingProtocolsBlock(ctx.priorContent),
   },
 ];
 

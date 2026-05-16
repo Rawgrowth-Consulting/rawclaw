@@ -184,6 +184,12 @@ export async function buildAgentChatPreamble(input: {
     priorContent: preamble,
   });
 
+  // Trailing MCP protocols (TASK CREATION + AGENT MANAGEMENT +
+  // SHARED MEMORY + DATA-ASK PROTOCOL). Extracted in phase 1b for
+  // CHAT_BLOCKS registry; here it's appended verbatim so legacy
+  // callers of buildAgentChatPreamble still get the full preamble.
+  preamble += buildTrailingProtocolsBlock(preamble);
+
   return preamble;
 }
 
