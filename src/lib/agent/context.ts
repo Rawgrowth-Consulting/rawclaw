@@ -4,6 +4,7 @@ import {
   buildCapabilitiesAndTrustBlock,
   buildReasoningProtocolBlock,
   buildSharedMemoryBlock,
+  buildRecentSignalsBlock,
   buildTrailingProtocolsBlock,
 } from "./preamble";
 import {
@@ -93,6 +94,10 @@ export const CHAT_BLOCKS: ChatBlock[] = [
     id: "shared-memory",
     build: (ctx) =>
       buildSharedMemoryBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
+  },
+  {
+    id: "recent-signals",
+    build: (ctx) => buildRecentSignalsBlock({ orgId: ctx.orgId }),
   },
   {
     id: "legacy-tail",

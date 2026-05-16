@@ -181,6 +181,11 @@ export async function buildAgentChatPreamble(input: {
   const sharedMem = await buildSharedMemoryBlock({ orgId, agentId });
   if (sharedMem) preamble += sharedMem;
 
+  // Recent signals & metrics - extracted phase 1b iter 3 into
+  // buildRecentSignalsBlock. Same wiring pattern.
+  const recentSignals = await buildRecentSignalsBlock({ orgId });
+  if (recentSignals) preamble += recentSignals;
+
   preamble += await buildAgentChatPreambleTail({
     orgId,
     agentId,
@@ -230,104 +235,8 @@ export async function buildAgentChatPreambleTail(input: {
   // Shared org memory block extracted into buildSharedMemoryBlock for
   // DEEP WIN 4 phase 1b iter 2 registry use.
 
-  // 0-pre-a2. Recent signals & metrics. The whole point of "be proactive"
-  //   is that a flag must point at something REAL - a live agent once
-  //   hallucinated a 15-failure infra incident because the preamble gave
-  //   it no actual numbers to anchor on. Inject a TIGHT snapshot of what
-  //   the system has already computed/scraped for this org: the few open
-  //   rgaios_insights anomalies (dept + metric + what moved) and the
-  //   latest scrape-snapshot engagement metrics. Capped hard like the
-  //   shared-memory block - this is per-turn context, not a report.
-  //   Best-effort: a failed query just skips the block.
-  try {
-    const signalLines: string[] = [];
-
-    // Open insights = the system's own anomaly/opportunity detector.
-    // Pull a handful of the most recent still-open rows, newest first.
-    const { data: insightRows } = await db
-      .from("rgaios_insights")
-      .select(
-        "department, metric, title, severity, current_value, prior_value, delta_pct, status, created_at",
-      )
-      .eq("organization_id", orgId)
-      .in("status", ["open", "acknowledged", "executing"])
-      .order("created_at", { ascending: false })
-      .limit(5);
-    const insights = (insightRows ?? []) as Array<{
-      department: string | null;
-      metric: string;
-      title: string;
-      severity: string;
-      current_value: number | null;
-      prior_value: number | null;
-      delta_pct: number | null;
-      status: string;
-    }>;
-    for (const r of insights) {
-      const dept = r.department ?? "org-wide";
-      const move =
-        r.prior_value != null && r.current_value != null
-          ? ` (${r.prior_value} -> ${r.current_value}${
-              r.delta_pct != null
-                ? `, ${r.delta_pct > 0 ? "+" : ""}${Math.round(
-                    r.delta_pct * 100,
-                  )}%`
-                : ""
-            })`
-          : "";
-      signalLines.push(
-        `  - [${r.severity}/${r.status}] ${dept}: ${r.title}${move}`,
-      );
-    }
-
-    // Latest scrape snapshots with engagement metrics - what the org's
-    // own content / ads actually pulled. Keep it to the newest few.
-    const { data: snapRows } = await db
-      .from("rgaios_scrape_snapshots")
-      .select("kind, title, metrics, scraped_at, created_at")
-      .eq("organization_id", orgId)
-      .eq("status", "succeeded")
-      .order("created_at", { ascending: false })
-      .limit(4);
-    const snaps = (snapRows ?? []) as Array<{
-      kind: string;
-      title: string | null;
-      metrics: Record<string, unknown> | null;
-      scraped_at: string | null;
-    }>;
-    for (const s of snaps) {
-      const m = s.metrics ?? {};
-      const num = (k: string): string | null => {
-        const v = m[k];
-        return typeof v === "number" ? String(v) : null;
-      };
-      const parts = [
-        num("view_count") && `${num("view_count")} views`,
-        num("like_count") && `${num("like_count")} likes`,
-        num("comment_count") && `${num("comment_count")} comments`,
-        num("engagement_score") && `eng ${num("engagement_score")}`,
-      ].filter(Boolean) as string[];
-      if (parts.length === 0) continue;
-      const label = (s.title ?? "").replace(/\s+/g, " ").slice(0, 50);
-      signalLines.push(
-        `  - [${s.kind}]${label ? ` ${label}:` : ""} ${parts.join(", ")}`,
-      );
-    }
-
-    if (signalLines.length > 0) {
-      preamble +=
-        "\n\n═══ RECENT SIGNALS & METRICS (real, system-computed) ═══\n\n" +
-        "These are REAL signals the system has already computed or scraped for this org - open anomaly cards and the latest content/ads engagement numbers. They are your source for proactive flags: if you raise something proactively, anchor it to a line here (or to shared memory / a tool result / the corpus) and cite it. Do NOT invent signals that are not in this list.\n" +
-        signalLines.join("\n") +
-        "\n";
-    }
-  } catch (err) {
-    // best-effort - a signals-lookup failure never blocks the reply
-    console.warn(
-      "[preamble] recent signals & metrics skipped:",
-      (err as Error).message,
-    );
-  }
+  // Recent signals & metrics block extracted into
+  // buildRecentSignalsBlock for DEEP WIN 4 phase 1b iter 3.
 
   // 0-pre-b. Assigned skills. The hire flow + skills_assign write rows to
   //   rgaios_agent_skills, the /skills UI renders them, and skills_for_agent
@@ -1321,6 +1230,103 @@ export async function buildSharedMemoryBlock(input: {
   } catch (err) {
     console.warn(
       "[preamble] shared org memory skipped:",
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
+/**
+ * Recent signals & metrics block - pulls open rgaios_insights anomalies
+ * + latest scrape-snapshot engagement numbers + renders the RECENT
+ * SIGNALS section (with leading "\n\n") or null if both queries
+ * produce zero rows. Best-effort: any thrown error logs + returns null.
+ */
+export async function buildRecentSignalsBlock(input: {
+  orgId: string;
+}): Promise<string | null> {
+  try {
+    const db = supabaseAdmin();
+    const signalLines: string[] = [];
+
+    const { data: insightRows } = await db
+      .from("rgaios_insights")
+      .select(
+        "department, metric, title, severity, current_value, prior_value, delta_pct, status, created_at",
+      )
+      .eq("organization_id", input.orgId)
+      .in("status", ["open", "acknowledged", "executing"])
+      .order("created_at", { ascending: false })
+      .limit(5);
+    const insights = (insightRows ?? []) as Array<{
+      department: string | null;
+      metric: string;
+      title: string;
+      severity: string;
+      current_value: number | null;
+      prior_value: number | null;
+      delta_pct: number | null;
+      status: string;
+    }>;
+    for (const r of insights) {
+      const dept = r.department ?? "org-wide";
+      const move =
+        r.prior_value != null && r.current_value != null
+          ? ` (${r.prior_value} -> ${r.current_value}${
+              r.delta_pct != null
+                ? `, ${r.delta_pct > 0 ? "+" : ""}${Math.round(
+                    r.delta_pct * 100,
+                  )}%`
+                : ""
+            })`
+          : "";
+      signalLines.push(
+        `  - [${r.severity}/${r.status}] ${dept}: ${r.title}${move}`,
+      );
+    }
+
+    const { data: snapRows } = await db
+      .from("rgaios_scrape_snapshots")
+      .select("kind, title, metrics, scraped_at, created_at")
+      .eq("organization_id", input.orgId)
+      .eq("status", "succeeded")
+      .order("created_at", { ascending: false })
+      .limit(4);
+    const snaps = (snapRows ?? []) as Array<{
+      kind: string;
+      title: string | null;
+      metrics: Record<string, unknown> | null;
+      scraped_at: string | null;
+    }>;
+    for (const s of snaps) {
+      const m = s.metrics ?? {};
+      const num = (k: string): string | null => {
+        const v = m[k];
+        return typeof v === "number" ? String(v) : null;
+      };
+      const parts = [
+        num("view_count") && `${num("view_count")} views`,
+        num("like_count") && `${num("like_count")} likes`,
+        num("comment_count") && `${num("comment_count")} comments`,
+        num("engagement_score") && `eng ${num("engagement_score")}`,
+      ].filter(Boolean) as string[];
+      if (parts.length === 0) continue;
+      const label = (s.title ?? "").replace(/\s+/g, " ").slice(0, 50);
+      signalLines.push(
+        `  - [${s.kind}]${label ? ` ${label}:` : ""} ${parts.join(", ")}`,
+      );
+    }
+
+    if (signalLines.length === 0) return null;
+    return (
+      "\n\n═══ RECENT SIGNALS & METRICS (real, system-computed) ═══\n\n" +
+      "These are REAL signals the system has already computed or scraped for this org - open anomaly cards and the latest content/ads engagement numbers. They are your source for proactive flags: if you raise something proactively, anchor it to a line here (or to shared memory / a tool result / the corpus) and cite it. Do NOT invent signals that are not in this list.\n" +
+      signalLines.join("\n") +
+      "\n"
+    );
+  } catch (err) {
+    console.warn(
+      "[preamble] recent signals & metrics skipped:",
       (err as Error).message,
     );
     return null;
