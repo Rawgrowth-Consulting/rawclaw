@@ -1,0 +1,81 @@
+{
+  "scenario": "R-MARTI-CANONICAL v22 FLAGSHIP - 100/100 jargon clean walk",
+  "source": "screenshot: /home/pedroafonso/Downloads/screenshots/test-R-MARTI-CANONICAL-v22-FLAGSHIP-100-jargon.png (2026-05-17 04:04)",
+  "agent": "scan",
+  "agent_role": "AI COO",
+  "tier_badge": "Proactive (CEO)",
+  "message_count_at_capture": 6,
+  "user_prompt": "Run the canonical creator-list scrape and bring back the top 10 reels by comments.",
+  "events": [
+    {
+      "kind": "reasoning_chip",
+      "order": 1,
+      "label": "Reasoning",
+      "text": "User asks the canonical scrape. Fire scrape reels from the creator list directly with the known name."
+    },
+    {
+      "kind": "delegate_card",
+      "order": 2,
+      "header": "Delegated to Kasia failed",
+      "detail_toggle": "View delegated output"
+    },
+    {
+      "kind": "reasoning_chip",
+      "order": 3,
+      "label": "Reasoning",
+      "text": "The file doesn't live with me - creator lists are on Kasia (marketing). My direct call failed because no creator-list file is attached to my side. Delegating to Kasia with the exact task."
+    },
+    {
+      "kind": "delegate_card",
+      "order": 4,
+      "header": "Orchestration",
+      "detail_toggle": "View orchestration detail"
+    },
+    {
+      "kind": "assistant_reply",
+      "order": 5,
+      "text": "Creator list lives with Kasia - dispatching her to run the scrape and return the ranked top 10."
+    }
+  ],
+  "banned_tokens_anywhere": [
+    "apify_top_reels_from_file",
+    "lookup_my_files",
+    "agent_invoke",
+    "knowledge_query",
+    "find_file_owner",
+    "file_name",
+    "tool_call",
+    "tool_result",
+    "subagent",
+    "FLEX MODE",
+    "shared memory",
+    "Pedro",
+    "Kasia's tasks",
+    "Kasia's files",
+    "Kasia's data",
+    "race_scrape",
+    "coverage_brief",
+    "window_days=",
+    "top_n=",
+    "metric=",
+    "results_per_handle",
+    "/connections",
+    "rgaios_",
+    "organization_id",
+    "command",
+    "MCP"
+  ],
+  "must_contain_in_visible_reply": [
+    "Creator list",
+    "Kasia",
+    "top 10"
+  ],
+  "reasoning_chip_must_be_human": [
+    "creator list",
+    "Kasia"
+  ],
+  "delegate_card_headers_must_be_human": [
+    "Delegated to Kasia failed",
+    "Orchestration"
+  ]
+}
