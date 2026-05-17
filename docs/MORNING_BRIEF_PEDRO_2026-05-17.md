@@ -166,3 +166,28 @@ Per `gh pr list --state merged --base v3 --search "merged:>=2026-05-17T03:00"`. 
 - **CI migration apply guard**: #2.
 - **Jargon coverage extend (21 uncovered tool tokens)**: #14.
 - **H24 strip contract spec**: #4.
+
+## CLOSE-OUT (appended 05:23 - cycle wind-down per B 05:22)
+
+C session winding down. Final state:
+
+- **15 C-PRs shipped** this cycle (P15-P37). 1 merged tonight (#45 fix/jargon-replacement-type-widen, sha b14df01); 14 remain OPEN ready for Pedro morning merge.
+- **27 OPEN PRs** total on v3 (C plus earlier in the run).
+- **2 PROD-code fixes** landed via this seat: PR #43 (telegram-send.ts timeout), PR #44 (oauth-first.ts Path B->C cascade). Plus PR #45 (jargon type widen, MERGED).
+- **4 audit reports** on disk in `/home/pedroafonso/Downloads/`:
+  - `bug-triage-2026-05-17.md` (P27)
+  - `oauth-audit-2026-05-17.md` (P29)
+  - `mcp-timeout-audit-2026-05-17.md` (P31)
+  - `security-audit-2026-05-17.md` (P32) - 0 CRITICAL / 0 HIGH
+  - `final-qc-2026-05-17.md` (P34 + P37 re-run, both appended, all-green)
+  - `preamble-simplify-scan.md` (P36, deferred)
+- **v3 HEAD state**: `b14df01` (post-#45 merge). `npm run test:unit` 431/431, `npx tsc --noEmit` CLEAN, `npm run lint` 0 errors.
+- **HOLDs are intentional + documented**: PR #38 (jargon-dedupe) waits for v30+ walk validation; PRs #3 #5 #7 #8 wait for Pedro migration review. No unaddressed blockers.
+
+**Deferred for Pedro morning**:
+- OAuth audit Findings #1, #2, #4, #5 (see oauth-audit doc).
+- Security audit Findings #1-#5 (defense-in-depth, see security-audit doc).
+- Preamble FILENAME-RESOLVE duplication extraction (~50 LOC reduction, see preamble-simplify-scan).
+- CI hardening: add dedicated `typecheck` job to `ci.yml`. `next.config.ts:22` masks tsc errors in build job (this is how H-ARCH-5e type bug slipped past CI).
+
+[C 05:23] cycle close-out complete. Standing down to idle.
