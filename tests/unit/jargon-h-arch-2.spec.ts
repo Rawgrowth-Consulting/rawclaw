@@ -46,6 +46,27 @@ test("single internal-config preserved", () => {
   );
 });
 
+test("H-ARCH-2b: file-based tool → file-based scrape", () => {
+  assert.equal(
+    humanizeJargon("The file-based tool didn't find it"),
+    "The file-based scrape didn't find it",
+  );
+});
+
+test("H-ARCH-2b: actual file names → my files", () => {
+  assert.equal(
+    humanizeJargon("check my actual file names first"),
+    "check my my files first",
+  );
+});
+
+test("H-ARCH-2b: the right filename → the right one", () => {
+  assert.equal(
+    humanizeJargon("find the right filename to scrape"),
+    "find the right one to scrape",
+  );
+});
+
 test("idempotent on H-ARCH-2 patterns", () => {
   const noisy =
     "Kasia's files have scan_agent.yaml, scan__CLAUDE.md, CLAUDE.md attached";

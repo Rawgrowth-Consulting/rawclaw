@@ -141,8 +141,14 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bper an internal rule\b/gi, replacement: "per setup" },
   { pattern: /\bshared notes\b/gi, replacement: "shared notes" },
   { pattern: /\b(scan_agent\.yaml|scan__CLAUDE\.md|CLAUDE\.md|scan__agent\.yaml)\b/g, replacement: "internal config" },
-  { pattern: /\bKasia(?:'s)? (?:tasks|files|folder|data|memory|notes)\b/g, replacement: "Kasia" },
-  { pattern: /\b(Atlas|Scan|Zosia|Marti|Anya)(?:'s)? (?:files|folder|data|tasks|memory)\b/g, replacement: "$1" },
+  { pattern: /\bKasia(?:'s)? (?:tasks|files|folder|data|memory|notes|content|stuff)\b/g, replacement: "Kasia" },
+  { pattern: /\b(Atlas|Scan|Zosia|Marti|Anya)(?:'s)? (?:files|folder|data|tasks|memory|notes|content|stuff)\b/g, replacement: "$1" },
+  // H-ARCH-2b (B 02:17 spec extras): residual "tool" + "filename"
+  // word leaks in v7 reply body.
+  { pattern: /\bfile-based tool\b/gi, replacement: "file-based scrape" },
+  { pattern: /\bactual file names\b/gi, replacement: "my files" },
+  { pattern: /\bthe right filename\b/gi, replacement: "the right one" },
+  { pattern: /\bright filename\b/gi, replacement: "right one" },
   // H-ARCH-2 (v7 review 02:17): when multiple internal filenames are
   // listed in a single sentence and all map to "internal config", the
   // resulting "internal config, internal config, internal config" reads
