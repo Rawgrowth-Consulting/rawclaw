@@ -249,6 +249,11 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   // so future regex authors don't need to repeat the prefix guard. Legitimate
   // "the the" in English prose is essentially nonexistent.
   { pattern: /\bthe\s+the\b/gi, replacement: "the" },
+  // P44 (2026-05-17, A v120): even after P43 collapsed "the the",
+  // "the resolution rule rule" survived because P41's greedy rule
+  // suffix doesn't reach across compound emits. Symmetric end-of-map
+  // safety net for the duplicated "rule" suffix.
+  { pattern: /\brule\s+rule\b/gi, replacement: "rule" },
 ];
 
 export function humanizeJargon(raw: string): string {
