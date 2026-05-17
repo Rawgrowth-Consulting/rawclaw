@@ -165,6 +165,15 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bfile lookup\b/gi, replacement: "file search" },
   { pattern: /\bfile fetch\b/gi, replacement: "file search" },
   { pattern: /\battached file name\b/gi, replacement: "attached file" },
+  // H-ARCH-2e (v9 02:37 review): bare "<verb> tool" still leaks
+  // when the noun isn't "failed"/"errored" (e.g. "the scrape tool
+  // needs", "the scrape tool returned"). Strip the suffix in safe
+  // verb contexts.
+  { pattern: /\bscrape tool needs\b/gi, replacement: "scrape needs" },
+  { pattern: /\bscrape tool returned\b/gi, replacement: "scrape returned" },
+  { pattern: /\bscrape tool can(?:not|'t)\b/gi, replacement: "scrape can't" },
+  { pattern: /\bthe scrape tool\b/gi, replacement: "the scrape" },
+  { pattern: /\bare internal config\b/gi, replacement: "are internal" },
   // H-ARCH-2 (v7 review 02:17): when multiple internal filenames are
   // listed in a single sentence and all map to "internal config", the
   // resulting "internal config, internal config, internal config" reads
