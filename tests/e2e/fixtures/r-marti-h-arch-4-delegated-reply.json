@@ -1,0 +1,31 @@
+{
+  "scenario": "H-ARCH-4 auto-delegate (FILENAME-RESOLVE)",
+  "request": "Give me the top 3 reels by comments from the creator list, last 10 days.",
+  "expected_pre_delegate_thinking": "User asks for top reels by comments from creator-list. file_owner: Kasia owns creator-list. Delegating to Kasia rather than asking user.",
+  "expected_delegate_call": {
+    "tool": "agent_invoke",
+    "to": "kasia",
+    "task": "Run scrape on creator-list, return top 3 by comments, 10-day window."
+  },
+  "expected_kasia_reply_to_operator": "Top 3 reels from the creator list (last 10 days, ranked by comments):\n1. @martifox.official capsule-drop teaser - 612 comments\n2. @martifox.official soft launch reel - 401 comments\n3. @kasiacopy behind-the-brief - 287 comments",
+  "banned_tokens_anywhere": [
+    "lookup_my_files",
+    "apify_top_reels_from_file",
+    "agent_invoke",
+    "knowledge_query",
+    "find_file_owner",
+    "Operator wants",
+    "FLEX MODE",
+    "shared memory",
+    "Pedro",
+    "file_name",
+    "Kasia's tasks",
+    "Kasia's files",
+    "Kasia's data"
+  ],
+  "must_contain_in_visible_reply": [
+    "@martifox.official",
+    "comments",
+    "3 reels"
+  ]
+}
