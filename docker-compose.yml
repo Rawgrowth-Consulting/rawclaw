@@ -52,7 +52,8 @@ services:
     # to pin a specific sha-tagged build, or unset and use --build to
     # build locally for dev.
     image: ${RAWCLAW_IMAGE:-ghcr.io/rawgrowth-consulting/rawclaw:v3}
-    pull_policy: always
+    build: .
+    pull_policy: never
     restart: unless-stopped
     # Allow the container to reach the host's rawclaw-drain server at
     # http://host.docker.internal:9876 — that systemd service spawns
@@ -96,6 +97,7 @@ services:
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Admin}
     volumes:
       - app-storage:/app/storage
+      - /opt/rawclaw-agent-workspaces:/tmp/rawclaw-agents
 
   caddy:
     image: caddy:2-alpine

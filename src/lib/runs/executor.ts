@@ -37,6 +37,10 @@ import {
 // Load every tool module so they register into the in-memory registry.
 import "@/lib/mcp/tools";
 
+// Agent SDK runner — replaces the dual-path CLI spawn / generateText approach.
+// Agents run as full Claude Code instances with native tools.
+import { runAgentSdk, writeMcpConfig, cleanupMcpConfig, ensureAgentWorkspace } from "@/lib/agent/sdk-runner";
+
 // Hard cap per CTO brief §02 + §P07 + day1-reply §1.
 const MAX_STEPS = 10;
 // Wall-clock cap per CTO brief §02 + R05. Drains cleanly via AbortController.
@@ -124,38 +128,44 @@ export async function executeRun(
     const wallClockTimer = setTimeout(() => abortCtl.abort(), WALL_CLOCK_MS);
     let result: NormalisedRunResult;
     try {
-      // Runtime selector per CTO brief §02 Decision 2:
-      //   Path A (RUNTIME_PATH=cli): Claude Code CLI subprocess. Reuses the
-      //     operator's Max OAuth token in ~/.claude. No ANTHROPIC_API_KEY
-      //     needed. MCP tool use only fires if the operator has registered
-      //     this v3 MCP server in claude_desktop_config (operational).
-      //   Path B (default): raw fetch to /v1/messages with the org's
-      //     Claude Max OAuth pool (mirrors lib/agent/chat.ts wire shape;
-      //     bypasses @ai-sdk/anthropic's opaque "Failed after N attempts.
-      //     Last error: Error" wrapper that hid real status codes).
-      //     Falls back to @ai-sdk/anthropic + ANTHROPIC_API_KEY when the
-      //     pool is empty or fully exhausted, so VPSes with a commercial
-      //     key still get a working executor.
-      // One env var flips per-VPS. Both paths build from the same systemPrompt
-      // + userMessage so prompt drift can't sneak between them.
-      if (process.env.RUNTIME_PATH === "cli") {
-        const text = await generateViaClaudeCli(
+      // Agent SDK path: spawn Claude Code with full native capabilities.
+      // MCP tools (Composio, knowledge, etc.) are additive via /api/mcp.
+      let mcpConfigPath: string | null = null;
+      try {
+        const { data: orgRow } = await supabaseAdmin()
+          .from("rgaios_organizations")
+          .select("mcp_token")
+          .eq("id", run.organization_id)
+          .maybeSingle();
+        const mcpToken = orgRow?.mcp_token;
+        if (mcpToken) {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+          mcpConfigPath = await writeMcpConfig(appUrl, mcpToken);
+        }
+      } catch { /* best-effort */ }
+
+      const agentDir = await ensureAgentWorkspace(
+        agent?.id ?? "default",
+        systemPrompt,
+      );
+
+      try {
+        const sdkResult = await runAgentSdk({
+          message: userMessage,
           systemPrompt,
-          userMessage,
-          abortCtl.signal,
-          run.organization_id,
-        );
-        result = { text, stepCount: 0, toolCalls: [] };
-      } else {
-        result = await generateWithOauthOrApiKey({
-          organizationId: run.organization_id,
+          cwd: agentDir,
           model: runtimeToModel(agent?.runtime),
-          systemPrompt,
-          userMessage,
-          aiSdkTools,
-          oauthTools,
-          abortSignal: abortCtl.signal,
+          abortController: abortCtl,
+          mcpConfigPath: mcpConfigPath ?? undefined,
+          timeoutMs: WALL_CLOCK_MS,
         });
+        result = {
+          text: sdkResult.text ?? "",
+          stepCount: 0,
+          toolCalls: [],
+        };
+      } finally {
+        if (mcpConfigPath) cleanupMcpConfig(mcpConfigPath).catch(() => {});
       }
     } finally {
       clearTimeout(wallClockTimer);
