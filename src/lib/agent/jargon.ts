@@ -62,6 +62,17 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bweb_search\b/gi, replacement: "search the web" },
   { pattern: /\bcomposio\b/gi, replacement: "the integration" },
   { pattern: /\btool_call\b/g, replacement: "command" },
+  // HOTFIX 24 (2026-05-17, R-MARTI-1 v3 walk): reasoning chip leaked
+  // named users + internal rule names directly into Marti reply ("Pedro"
+  // 3x + "shared memory" + "FLEX MODE" in the live Reasoning surface).
+  // Strip the operator's personal name + normalise developer protocol
+  // names to plain phrasing the operator can read.
+  { pattern: /\bPedro\b/g, replacement: "the operator" },
+  { pattern: /\bshared memory\b/gi, replacement: "an internal rule" },
+  { pattern: /\bFLEX MODE\b/gi, replacement: "the priority rule" },
+  { pattern: /\bsystem_prompt\b/g, replacement: "behavior settings" },
+  { pattern: /\btype mismatch\b/gi, replacement: "format issue" },
+  { pattern: /\bcommand structure\b/gi, replacement: "request format" },
   // HOTFIX 15 (2026-05-17, R-BELL walk): persisted Coordination-check
   // notifications from before HOTFIX 8c shipped still carry raw
   // infra error strings. Rewrite the worst offender so the bell

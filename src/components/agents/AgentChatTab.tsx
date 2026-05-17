@@ -28,6 +28,22 @@ import { Response } from "@/components/ui/response";
 import { Button } from "@/components/ui/button";
 import AgentPlanPanel from "@/components/agents/AgentPlanPanel";
 import { AGENT_ROLES } from "@/lib/agents/constants";
+import { humanizeJargon } from "@/lib/agent/jargon";
+
+// HOTFIX 22 (2026-05-17): map raw command-type enums to operator-readable
+// labels in the tool-card fallback. The generic-card path used to emit
+// the raw enum string ("command", "tool_call") which surfaced as ugly
+// jargon next to a FAILED chip in R-MARTI-CANONICAL v2.
+function humanizeCmdType(cmdType: string): string {
+  switch (cmdType) {
+    case "command":
+      return "Internal";
+    case "tool_call":
+      return "Action";
+    default:
+      return humanizeJargon(cmdType);
+  }
+}
 
 // One executed <command> block: a Composio tool call, an agent
 // delegation, or a routine creation. Carried on the system ChatMessage
@@ -1981,10 +1997,10 @@ function OrchestrationStep({
     const action = sysStr(detail.action);
     const isApify = tool.startsWith("apify");
     const label = isApify
-      ? tool
+      ? humanizeJargon(tool)
       : app && action
-        ? `${app} · ${action}`
-        : "tool call";
+        ? `${app} · ${humanizeJargon(action)}`
+        : "Action";
     return (
       <TimelineRow
         icon={Wrench}
@@ -2046,7 +2062,7 @@ function OrchestrationStep({
       dataKind="commands"
       dataCard="generic"
     >
-      <StepHeadline label={cmd.type} status={<StatusDot ok={cmd.ok} />} />
+      <StepHeadline label={humanizeCmdType(cmd.type)} status={<StatusDot ok={cmd.ok} />} />
       {cmd.summary ? (
         <StepDetail summary="View result">
           <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--text-body)]">
