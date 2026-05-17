@@ -45,3 +45,27 @@ test("regression: no 'the the resolution rule rule' artifact", () => {
     );
   }
 });
+
+/**
+ * P41 regression: greedy capture must collapse pre-doubled input
+ * ("the the FILENAME-RESOLVE rule rule") that the P39 ? (optional)
+ * left half-stripped. A v93 surfaced this at 2026-05-17 07:29.
+ */
+const P41_CASES: Array<{ input: string; expected: string }> = [
+  // The exact A v93 reasoning leak.
+  { input: "per the the FILENAME-RESOLVE rule rule", expected: "per the resolution rule" },
+  // Pre-doubled "the the" only.
+  { input: "the the FILENAME-RESOLVE", expected: "the resolution rule" },
+  // Pre-doubled "rule rule" only.
+  { input: "FILENAME-RESOLVE rule rule", expected: "the resolution rule" },
+  // Triple "the" + triple "rule" - greedy * eats all.
+  { input: "the the the FILENAME-RESOLVE rule rule rule", expected: "the resolution rule" },
+  // Name-RESOLVE variant doubled.
+  { input: "the the name-RESOLVE rule rule", expected: "the resolution rule" },
+];
+
+for (const c of P41_CASES) {
+  test(`P41 greedy: "${c.input}" -> "${c.expected}"`, () => {
+    assert.equal(humanizeJargon(c.input), c.expected);
+  });
+}

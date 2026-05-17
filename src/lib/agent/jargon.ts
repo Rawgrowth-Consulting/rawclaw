@@ -173,13 +173,15 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   { pattern: /\bmetric=likes\b/gi, replacement: "by likes" },
   { pattern: /\bmetric=views\b/gi, replacement: "by views" },
   { pattern: /\bArgs:\s*/g, replacement: "" },
-  // Capture optional surrounding "the " prefix + " rule" suffix so all
-  // four input shapes ("FILENAME-RESOLVE", "the FILENAME-RESOLVE",
-  // "FILENAME-RESOLVE rule", "the FILENAME-RESOLVE rule") map to the
-  // single replacement "the resolution rule" instead of leaking "the the
-  // resolution rule rule" doubles (v78 walk regression 2026-05-17 06:59).
-  { pattern: /\b(?:the\s+)?name-RESOLVE(?:\s+rule)?\b/gi, replacement: "the resolution rule" },
-  { pattern: /\b(?:the\s+)?FILENAME-RESOLVE(?:\s+rule)?\b/gi, replacement: "the resolution rule" },
+  // Greedy capture: zero-or-more "the " prefix + zero-or-more " rule"
+  // suffix so even pre-doubled upstream text ("the the FILENAME-RESOLVE
+  // rule rule" surfaced by A v93 2026-05-17 07:29) collapses to the
+  // single replacement. P39 used ? (optional), which left one extra
+  // "the" + one extra "rule" uncaught when the input was already
+  // doubled before reaching humanizeJargon. Root cause of the upstream
+  // doubling is a separate trace.
+  { pattern: /\b(?:the\s+)*name-RESOLVE(?:\s+rule)*\b/gi, replacement: "the resolution rule" },
+  { pattern: /\b(?:the\s+)*FILENAME-RESOLVE(?:\s+rule)*\b/gi, replacement: "the resolution rule" },
   { pattern: /\brun limit\b/gi, replacement: "brief pause" },
   { pattern: /\s*(?:at\s+)?\/connections\b\.?/gi, replacement: "" },
   { pattern: /\badd another account\b/gi, replacement: "contact support" },
