@@ -67,12 +67,26 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   // 3x + "shared memory" + "FLEX MODE" in the live Reasoning surface).
   // Strip the operator's personal name + normalise developer protocol
   // names to plain phrasing the operator can read.
-  { pattern: /\bPedro\b/g, replacement: "the operator" },
   { pattern: /\bshared memory\b/gi, replacement: "an internal rule" },
   { pattern: /\bFLEX MODE\b/gi, replacement: "the priority rule" },
   { pattern: /\bsystem_prompt\b/g, replacement: "behavior settings" },
   { pattern: /\btype mismatch\b/gi, replacement: "format issue" },
   { pattern: /\bcommand structure\b/gi, replacement: "request format" },
+  // HOTFIX 26 (2026-05-17, R-MARTI-CANONICAL v3 review by B 01:30):
+  // "the operator" replacement from H24 was awkward in reasoning grammar
+  // ("the an internal rule"); revert to direct phrasing. Operator-name
+  // strip moves to thinking.ts at write time. Also collapse "command"
+  // jargon in reasoning narrative to "request" / "task" so the spinner
+  // copy reads natural.
+  { pattern: /\bOperator wants\b/g, replacement: "User asks" },
+  { pattern: /\bThe operator wants\b/g, replacement: "User asks" },
+  { pattern: /\bthe operator\b/g, replacement: "the user" },
+  { pattern: /\bOperator\b/g, replacement: "User" },
+  { pattern: /\boperator\b/g, replacement: "user" },
+  { pattern: /\bcommand type\b/gi, replacement: "request format" },
+  { pattern: /\bcommand was wrong\b/gi, replacement: "request was malformed" },
+  { pattern: /\berrored on command\b/gi, replacement: "errored on request" },
+  { pattern: /\bWorking on command\b/gi, replacement: "Working on it" },
   // HOTFIX 15 (2026-05-17, R-BELL walk): persisted Coordination-check
   // notifications from before HOTFIX 8c shipped still carry raw
   // infra error strings. Rewrite the worst offender so the bell
