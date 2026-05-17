@@ -40,6 +40,8 @@ const REASONING_RULES = [
   "GOAL-REANCHOR", // PR #64
   "NEXT-ACTION-COMMIT", // PR #69
   "SURFACE-ASSUMPTIONS", // PR #72
+  "TOOL-NECESSITY-CHECK", // PR #74
+  "STRAIGHT-REFUSAL", // PR #76
 ];
 
 for (const rule of REASONING_RULES) {
@@ -90,6 +92,23 @@ test(
     assert.ok(
       HAS_REPLY_LENGTH,
       "REPLY-LENGTH-PROPORTIONAL missing from both reasoning + trailing blocks",
+    );
+  },
+);
+
+// STYLISTIC-INVARIANCE (PR #77) is pending merge. Same skip pattern as
+// REPLY-LENGTH-PROPORTIONAL: flips to real assert once #77 hits v3.
+const HAS_STYLISTIC_INVARIANCE =
+  REASONING.includes("STYLISTIC-INVARIANCE") ||
+  TRAILING.includes("STYLISTIC-INVARIANCE");
+
+test(
+  "STYLISTIC-INVARIANCE present (PR #77)",
+  { skip: !HAS_STYLISTIC_INVARIANCE ? "PR #77 not yet merged to v3" : false },
+  () => {
+    assert.ok(
+      HAS_STYLISTIC_INVARIANCE,
+      "STYLISTIC-INVARIANCE missing from both reasoning + trailing blocks",
     );
   },
 );
