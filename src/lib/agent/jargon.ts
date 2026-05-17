@@ -173,6 +173,8 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   // "report"). Also catch apify API field names that bleed through.
   { pattern: /\b([a-z0-9][a-z0-9_-]*)(?:[-_](?:v\d+))?\.(?:md|csv|json|ya?ml|xml|txt|tsv|jsonl)\b/gi, replacement: (_m, base: string) => base.replace(/[-_]/g, " ") },
   { pattern: /\bcommentsCount\b/g, replacement: "comments count" },
+  { pattern: /\bfile_name\s*=\s*"?[^"\s,]*"?/gi, replacement: "" },
+  { pattern: /\bfile_name\b/gi, replacement: "the file" },
   { pattern: /\blikeCount\b/g, replacement: "likes" },
   { pattern: /\bplayCount\b/g, replacement: "plays" },
   { pattern: /\bviewCount\b/g, replacement: "views" },
