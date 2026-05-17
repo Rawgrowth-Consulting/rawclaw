@@ -1230,6 +1230,37 @@ registerTool({
  * coverage_brief line so it can declare ranked_by / window / source in
  * its OBSERVATION step exactly like the RANKED-GROUNDING preamble asks.
  */
+// H32 (B 02:31 investigator return): tool-side fuzzy resolution
+// instead of prompt-only FILENAME-RESOLVE. The substring path stays
+// the preferred match - cheap and correct for the common case. If
+// nothing hits, fall back to a normalised Levenshtein ratio against
+// the filename minus extension. If still no winner above the 0.6
+// confidence floor, return a STRUCTURED error listing the top 3
+// closest filenames so the model self-corrects in one retry instead
+// of looping through lookup_my_files + retry as a separate turn.
+//
+// Hand-rolled Levenshtein - 15 lines is cheaper than another npm dep
+// for one call site.
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 0; i < a.length; i++) {
+    const curr = [i + 1];
+    for (let j = 0; j < b.length; j++) {
+      const cost = a[i] === b[j] ? 0 : 1;
+      curr.push(Math.min(curr[j] + 1, prev[j + 1] + 1, prev[j] + cost));
+    }
+    prev = curr;
+  }
+  return prev[b.length];
+}
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 async function readAgentFileBody(
   ctx: ToolContext,
   fileName: string,
@@ -1247,22 +1278,40 @@ async function readAgentFileBody(
     .maybeSingle();
   if (!agent) return { error: "agent not found in this organization" };
 
-  // Loose filename match - the agent often passes the bare name without
-  // extension (e.g. "creator-list" instead of "creator-list-v2.md"). Pick
-  // the most recently uploaded file whose name contains the substring.
+  // Pull all files (no ILIKE filter) so the fuzzy fallback can rank
+  // every candidate when the substring path misses.
   const { data: files } = await db
     .from("rgaios_agent_files")
     .select("id, filename, uploaded_at")
     .eq("organization_id", ctx.organizationId)
     .eq("agent_id", agentId)
-    .ilike("filename", `%${fileName}%`)
-    .order("uploaded_at", { ascending: false })
-    .limit(1);
-  const file = (files ?? [])[0] as
-    | { id: string; filename: string }
-    | undefined;
+    .order("uploaded_at", { ascending: false });
+  const all = (files ?? []) as Array<{ id: string; filename: string }>;
+
+  const needle = normalize(fileName);
+  const ranked = all
+    .map((f) => {
+      const hay = normalize(f.filename.replace(/\.[a-z0-9]+$/i, ""));
+      const sub = hay.includes(needle) || needle.includes(hay) ? 1 : 0;
+      const dist = levenshtein(hay, needle);
+      const ratio =
+        1 - dist / Math.max(needle.length, hay.length, 1);
+      return { f, score: sub + ratio };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const top = ranked[0];
+  const file = top && top.score >= 0.6 ? top.f : undefined;
   if (!file) {
-    return { error: `no agent file matched "${fileName}"` };
+    const closest = ranked
+      .slice(0, 3)
+      .map((r) => r.f.filename)
+      .join(", ");
+    return {
+      error: `no file matched "${fileName}"${
+        closest ? ` - closest available: ${closest}` : ""
+      }`,
+    };
   }
   const { data: chunks } = await db
     .from("rgaios_agent_file_chunks")

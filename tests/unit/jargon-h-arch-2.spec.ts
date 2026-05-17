@@ -53,10 +53,25 @@ test("H-ARCH-2b: file-based tool → file-based scrape", () => {
   );
 });
 
-test("H-ARCH-2b: actual file names → my files", () => {
+test("H-ARCH-2b/f: 'my actual file names' → 'my file list' (no double-my)", () => {
+  // H-ARCH-2f (C 02:37 BUG P1): previous mapping created "my my files".
   assert.equal(
     humanizeJargon("check my actual file names first"),
-    "check my my files first",
+    "check my file list first",
+  );
+});
+
+test("H-ARCH-2f: 'the actual file names' → 'the file list'", () => {
+  assert.equal(
+    humanizeJargon("look up the actual file names"),
+    "look up the file list",
+  );
+});
+
+test("H-ARCH-2f: bare 'actual file names' → 'the file list'", () => {
+  assert.equal(
+    humanizeJargon("verify actual file names"),
+    "verify the file list",
   );
 });
 

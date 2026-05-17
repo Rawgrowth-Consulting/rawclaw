@@ -146,7 +146,11 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   // H-ARCH-2b (B 02:17 spec extras): residual "tool" + "filename"
   // word leaks in v7 reply body.
   { pattern: /\bfile-based tool\b/gi, replacement: "file-based scrape" },
-  { pattern: /\bactual file names?\b/gi, replacement: "my files" },
+  // H-ARCH-2f (C 02:37 BUG P1): article-stripped "actual file names"
+  // → "my files" created double-article ("my my files", "the my
+  // files"). Anchor on the preceding article and replace whole span.
+  { pattern: /\b(my|the|your|our|its) actual file names?\b/gi, replacement: "$1 file list" },
+  { pattern: /\bactual file names?\b/gi, replacement: "the file list" },
   { pattern: /\bthe right filename\b/gi, replacement: "the right one" },
   { pattern: /\bright filename\b/gi, replacement: "right one" },
   // H-ARCH-2c (v8 02:26 review): singular "filename" + variants
