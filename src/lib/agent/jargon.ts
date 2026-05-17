@@ -164,7 +164,7 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bname-RESOLVE\b/gi, replacement: "the resolution rule" },
   { pattern: /\bFILENAME-RESOLVE\b/gi, replacement: "the resolution rule" },
   { pattern: /\brun limit\b/gi, replacement: "brief pause" },
-  { pattern: /\b\/connections\b/g, replacement: "" },
+  { pattern: /\s*(?:at\s+)?\/connections\b\.?/gi, replacement: "" },
   { pattern: /\badd another account\b/gi, replacement: "contact support" },
   { pattern: /\bif this keeps happening, contact support\b/gi, replacement: "ping me if it keeps happening" },
   // H-ARCH-2b (B 02:17 spec extras): residual "tool" + "filename"
