@@ -44,7 +44,11 @@ export async function applyBrandFilter(
     lang?: string;
   },
 ): Promise<ApplyBrandFilterResult> {
-  const raw = text.trim();
+  // Lang-agnostic punctuation scrub: em-dash (U+2014), en-dash (U+2013),
+  // minus (U+2212) → ASCII " - ". AGENTS.md §12 + Pedro style ban em-dashes
+  // across every language; banned-word regen pass below cannot enforce this
+  // since dashes are not words.
+  const raw = text.trim().replace(/[—–−]/g, " - ");
   if (!raw) {
     return { ok: true, text: raw, regenerated: false };
   }
