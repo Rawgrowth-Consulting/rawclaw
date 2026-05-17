@@ -68,10 +68,13 @@ test("Pedro as standalone name stripped", () => {
   assert.doesNotMatch(out, /\bPedro\b/);
 });
 
-test("operator-allowed phrasing unchanged (no false positives)", () => {
-  const clean = "Operator wants me to append the new line and ship.";
-  const out = humanizeJargon(clean);
-  assert.equal(out, clean);
+test("operator-allowed phrasing humanized to user-facing voice (H27)", () => {
+  // H27 (sha 7b2d25a) added /Operator wants/gi → "User asks" so the
+  // operator-facing surface speaks to the end-user, not the developer.
+  // PATH A update per [B 01:45]: assert the post-humanize shape.
+  const input = "Operator wants me to append the new line and ship.";
+  const out = humanizeJargon(input);
+  assert.equal(out, "User asks me to append the new line and ship.");
 });
 
 test("idempotent on H24 patterns", () => {
