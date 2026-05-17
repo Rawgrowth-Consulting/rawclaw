@@ -1978,7 +1978,7 @@ function OrchestrationStep({
         {task ? (
           <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-muted)]">
             <span className="font-medium text-[var(--text-body)]">Task:</span>{" "}
-            {task}
+            {humanizeJargon(task)}
           </p>
         ) : null}
         {output ? (
