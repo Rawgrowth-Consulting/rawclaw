@@ -177,6 +177,17 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   // model uses a pronoun instead of the agent's name. Strip the
   // storage suffix entirely - operator never wants the routing.
   { pattern: /\b(her|his|their) (?:tasks|files|folder|data|memory|notes|content|stuff|knowledge|side|space|workspace)\b/g, replacement: "their notes" },
+  // HOTFIX 24 reasoning-chip sweep (2026-05-17, C dispatch): operator-
+  // facing Reasoning chip leaks model self-ref + meta-jargon when the
+  // <thinking> block narrates protocol ("Claude is thinking", "the
+  // model will...", "chain of thought", "claude-sonnet-4-6"). PR #65
+  // covered tool_call / sub-agents; this batch is chip-prose specific.
+  { pattern: /\bclaude-(?:sonnet|opus|haiku)-[\w.-]+\b/gi, replacement: "the agent" },
+  { pattern: /\bClaude is (?:thinking|reasoning)\b/gi, replacement: "working on it" },
+  { pattern: /\b(?:the )?(?:assistant|model)\s+(?:is\s+)?(?:thinking|reasoning)\b/gi, replacement: "working on it" },
+  { pattern: /\bchain[- ]of[- ]thought\b/gi, replacement: "plan" },
+  { pattern: /\breasoning trace\b/gi, replacement: "plan" },
+  { pattern: /\bthinking step\b/gi, replacement: "step" },
   // H-ARCH-5 (B 03:26 spec): delegation card "Task: ..." body
   // still leaks raw tool names + arg kvs ("apify_top_reels_from_file
   // window_days=10 top_n=10 metric=comments"). Strip those + the
