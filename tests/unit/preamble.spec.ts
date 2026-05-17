@@ -13,10 +13,20 @@ const PREAMBLE_SRC = readFileSync(
 );
 
 test("preamble contains NO-RETRY-NARRATION rule (GAP #5)", () => {
+  // Single source of truth lives in buildTrailingProtocolsBlock under
+  // "═══ RETRY-DISCIPLINE (all agents) ═══". The trailing block always
+  // appends last, so the rule is visible to CEO + sub-agent surfaces
+  // without per-block duplication (which previously got buried mid-preamble).
   const occurrences = (PREAMBLE_SRC.match(/NO-RETRY-NARRATION:/g) ?? []).length;
-  assert.ok(
-    occurrences >= 2,
-    `expected NO-RETRY-NARRATION block in BOTH the CEO/dept-head surface and the composio sub-agent surface (>=2 occurrences), got ${occurrences}`,
+  assert.equal(
+    occurrences,
+    1,
+    `expected exactly ONE NO-RETRY-NARRATION rule (consolidated in trailing block), got ${occurrences}`,
+  );
+  assert.match(
+    PREAMBLE_SRC,
+    /RETRY-DISCIPLINE \(all agents\)[\s\S]*NO-RETRY-NARRATION/,
+    "NO-RETRY-NARRATION must live inside the RETRY-DISCIPLINE trailing section",
   );
 });
 
