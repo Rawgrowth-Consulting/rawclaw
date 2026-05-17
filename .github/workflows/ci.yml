@@ -7,6 +7,21 @@ on:
     branches: [v3, main]
 
 jobs:
+  migration-safety:
+    # Pre-merge gate per P17. Scans supabase/migrations/*.sql for
+    # destructive ops (DROP TABLE, DELETE FROM, TRUNCATE, etc).
+    # Baseline allowlist at scripts/migration-safety-baseline.txt
+    # records pre-approved legacy hits so this only fails on NEW
+    # unapproved destructive ops. See script header for the full
+    # pattern list + the comment-stripping + word-boundary rules
+    # that prevent false positives on the English word "truncated"
+    # in SQL comments.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Migration safety scan
+        run: bash scripts/migration-safety-check.sh
+
   lint:
     runs-on: ubuntu-latest
     steps:

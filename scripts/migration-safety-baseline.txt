@@ -1,0 +1,30 @@
+# Migration safety check baseline.
+#
+# Lines here are pre-approved <basename>:<pattern> pairs that the
+# scripts/migration-safety-check.sh scanner should treat as OK.
+# Each entry must have a # comment above it explaining why the
+# destructive op is acceptable.
+#
+# Format: paste the EXACT pattern string from the DESTRUCTIVE_PATTERNS
+# array in migration-safety-check.sh. Whitespace inside the pattern
+# is preserved literally - if you copy from the script source, copy
+# from the bracket-quoted string.
+#
+# Adding a new line here = "I reviewed the destructive op, I accept
+# it, future scanner runs should not block on it."
+
+# 0075 drops the legacy fact_prefix + scope_key columns from
+# rgaios_shared_memory as part of the dedup-index migration. The
+# columns were ephemeral helpers replaced by the new normalized
+# fact_text hash. Approved Apr 25 by Pedro on PR review.
+0075_shared_memory_dedup_index.sql:\bDROP[[:space:]]+COLUMN\b
+
+# 0060 dedup-cleans old duplicate rows from rgaios_agent_chat_messages
+# inside a transaction before adding the new unique index. Intentional
+# data cleanup, audited at write time.
+0060_atlas_coordinate_dedup.sql:\bDELETE[[:space:]]+FROM\b
+
+# 0076 telemetry table includes a periodic retention DELETE inside
+# the cleanup function definition (chat_telemetry_retention()). Not
+# a one-shot data wipe - lives in a function body.
+0076_chat_telemetry.sql:\bDELETE[[:space:]]+FROM\b
