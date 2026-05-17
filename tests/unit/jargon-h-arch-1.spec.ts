@@ -38,10 +38,12 @@ test("Per an internal rule rewritten", () => {
   );
 });
 
-test("Kasia's tasks rewritten to notes", () => {
+test("Kasia's tasks rewritten (H-ARCH-2 collapsed to Kasia)", () => {
+  // H-ARCH-2 supersedes: storage-suffix dropped entirely so
+  // the operator just sees the peer's name, never the routing.
   assert.equal(
     humanizeJargon("Pull it from Kasia's tasks."),
-    "Pull it from Kasia's notes.",
+    "Pull it from Kasia.",
   );
 });
 
@@ -56,7 +58,7 @@ test("compound v6 leak fully scrubbed", () => {
   assert.doesNotMatch(out, /Tool failed/);
   assert.doesNotMatch(out, /internal rule/);
   assert.doesNotMatch(out, /\.yaml/);
-  assert.doesNotMatch(out, /Kasia's tasks/);
+  assert.doesNotMatch(out, /Kasia's (?:tasks|files|folder|notes|data)/);
   assert.doesNotMatch(out, /shared memory/);
 });
 
