@@ -77,7 +77,16 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   { pattern: /\bplan_get\b/gi, replacement: "read the plan" },
   { pattern: /\bweb_search\b/gi, replacement: "search the web" },
   { pattern: /\bcomposio\b/gi, replacement: "the integration" },
-  { pattern: /\btool_call\b/g, replacement: "command" },
+  // HOTFIX 22 (2026-05-17, C dispatch): raw enum + protocol terms still
+  // leaked into tool-card summaries ("tool_call payload must be a JSON
+  // object", "unknown command type", "sub-agent slipped past"). Mirror
+  // the AgentChatTab humanizeCmdType "Action" mapping at the jargon
+  // layer so every operator surface (cards, bell, notifications) renders
+  // the same humanized noun. Earlier line mapped tool_call → "command",
+  // which itself is operator-facing leak (request, not command).
+  { pattern: /\btool_call\b/g, replacement: "action" },
+  { pattern: /\btool call\b/gi, replacement: "action" },
+  { pattern: /\bsub-?agents?\b/gi, replacement: "specialist" },
   // HOTFIX 24 (2026-05-17, R-MARTI-1 v3 walk): reasoning chip leaked
   // named users + internal rule names directly into Marti reply ("Pedro"
   // 3x + "shared memory" + "FLEX MODE" in the live Reasoning surface).
