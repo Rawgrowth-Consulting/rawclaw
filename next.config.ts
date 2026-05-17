@@ -26,6 +26,7 @@ const nextConfig: NextConfig = {
   // server package so it stays a plain Node module loaded at runtime.
   serverExternalPackages: [
     "fastembed",
+    "@anthropic-ai/claude-agent-sdk",
     "onnxruntime-node",
     "@anush008/tokenizers",
     "tar",
