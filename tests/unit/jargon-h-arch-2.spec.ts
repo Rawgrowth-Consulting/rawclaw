@@ -121,6 +121,21 @@ test("H-ARCH-2d: attached file name → attached file", () => {
   );
 });
 
+test("H-ARCH-2g: 'her tasks' → 'their notes'", () => {
+  assert.equal(
+    humanizeJargon("last I logged it was in her tasks"),
+    "last I logged it was in their notes",
+  );
+});
+
+test("H-ARCH-2g: 'his folder' → 'their notes'", () => {
+  assert.equal(humanizeJargon("over in his folder"), "over in their notes");
+});
+
+test("H-ARCH-2g: 'their files' → 'their notes'", () => {
+  assert.equal(humanizeJargon("check their files"), "check their notes");
+});
+
 test("idempotent on H-ARCH-2 patterns", () => {
   const noisy =
     "Kasia's files have scan_agent.yaml, scan__CLAUDE.md, CLAUDE.md attached";
