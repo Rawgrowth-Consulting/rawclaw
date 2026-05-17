@@ -15,6 +15,7 @@ import {
 import { persistChatTelemetry } from "@/lib/agent/telemetry";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
+import { stripBareJsonCommands } from "@/lib/agent/markup";
 import { extractThinking, extractThinkingRaw, humanizeJargon } from "@/lib/agent/thinking";
 import { persistSharedMemoryFromReply } from "@/lib/memory/shared";
 import { badUuidResponse } from "@/lib/utils";
@@ -1426,6 +1427,18 @@ export async function POST(
             (err as Error).message,
           );
         }
+
+        // 4a-quinquies. Final bare-JSON safety net. When extractAndExecute-
+        // Commands runs the bare-JSON dispatch path but the command fails
+        // (Kasia rate-limited, agent_invoke validation rejected, etc), the
+        // rawSpan can survive in preFilterText and ride through brand
+        // filter into the visible delta. stripBareJsonCommands uses the
+        // SAME classifyBareJsonObject signature so it only strips spans
+        // that *would* have been valid commands. Cosmetic-only: the
+        // command intent is intentionally lost because dispatch already
+        // ran (or failed) upstream. Protects against the post-refusal
+        // "{ agent: Kasia, task: ... }" dump observed in v161/v163/v165.
+        preFilterText = stripBareJsonCommands(preFilterText);
 
         // 4b. Brand-voice filter on the visible text only. Audit row is
         // written inside applyBrandFilter for both regenerated and
