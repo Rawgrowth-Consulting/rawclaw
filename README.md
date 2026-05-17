@@ -83,6 +83,46 @@ token, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, the Figma file with the
 design tokens, and the `RawgrowthOS/brand/voice.md` source. All listed
 in the CTO brief §06.
 
+## Architecture
+
+The operator-vocab humanize gateway is the load-bearing piece
+for everything Marti operators see. Read these two before
+touching anything in `src/lib/agent/jargon.ts` or any of the
+six render-boundary surfaces:
+
+- `docs/ARCHITECTURE_HUMANIZE_GATEWAY.md` - long-form spec
+  inventory, per-surface contracts, walk evidence.
+- `docs/ARCHITECTURE_DIAGRAM.md` - 30-second mermaid +
+  ASCII layer breakdown with `file:line` pairings.
+
+For the system-level v3 picture (request flow, RLS shape,
+migration map) the original `ARCHITECTURE-V3.md` is still
+authoritative.
+
+## Production
+
+Live deploy: `https://marti.rawgrowth.ai` (Marti VPS on
+Hetzner CX22). v3 branch ships here. Operator credentials
++ smoke procedure live in `docs/RUNBOOK_PRODUCTION.md`.
+
+The two-path Claude runtime: Path A (Claude Code CLI under
+the client's Max OAuth) is primary. Path B (Anthropic
+Commercial API via `ANTHROPIC_API_KEY` env var) is the
+fallback when the 5h rolling quota window saturates. Apply
+runbook: `docs/PROVISIONING_ANTHROPIC_API_KEY.md`.
+
+## Operations
+
+Day-to-day operator handbook lives in
+`docs/RUNBOOK_PRODUCTION.md`. Three incident playbooks
+(Marti 502 / Claude Max quota 429 / Migration rollback) +
+monitoring scripts + standard deploy steps.
+
+Overnight delivery notes for any given day land in
+`docs/MORNING_SUMMARY_<date>.md`. Migration-batch review
+notes in `docs/MIGRATION_REVIEW_NOTES_<date>.md`. Stakeholder
+demo briefs in `docs/DEMO_CHRIS_WEST_<date>.md`.
+
 ## How to review
 
 1. Read the CTO brief PDF (`rawclaw-v3-cto-brief.pdf`) first — it
