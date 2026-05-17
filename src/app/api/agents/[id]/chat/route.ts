@@ -15,7 +15,7 @@ import {
 import { persistChatTelemetry } from "@/lib/agent/telemetry";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
-import { extractThinking, humanizeJargon } from "@/lib/agent/thinking";
+import { extractThinking, extractThinkingRaw, humanizeJargon } from "@/lib/agent/thinking";
 import { persistSharedMemoryFromReply } from "@/lib/memory/shared";
 import { badUuidResponse } from "@/lib/utils";
 
@@ -854,7 +854,11 @@ export async function POST(
         // so /trace shows it. If the model didn't emit a block (older
         // persona, terse turn), fall back to the heuristic brief so the
         // operator still sees SOMETHING above the reply.
-        const extractedThinking = extractThinking(result.reply);
+        // HOTFIX 30: use the RAW extract so the persisted-to-DB reply
+        // keeps canonical tool names; humanize only at emit/render
+        // boundary (line 1432 SSE + tool-card label paths) so the
+        // operator surface stays clean. See thinking.ts comment.
+        const extractedThinking = extractThinkingRaw(result.reply);
         const replyBody = extractedThinking.visibleReply;
         try {
           const brief =
@@ -1120,7 +1124,7 @@ export async function POST(
                   (err as Error).message,
                 );
               }
-              const pass2Thinking = extractThinking(pass2Visible);
+              const pass2Thinking = extractThinkingRaw(pass2Visible);
               // Pass 2's <thinking> is the Observation step - emit it as
               // a second reasoning trace so the operator sees the full
               // ReAct chain: plan (pass 1) -> tool cards -> observation
@@ -1429,7 +1433,11 @@ export async function POST(
               final_attempt_excerpt: filtered.finalAttempt.slice(0, 500),
             };
 
-        emit({ type: "text", delta: visibleText });
+        // HOTFIX 30: humanize tool-name + protocol jargon at the SSE
+        // boundary so the operator surface stays clean while the
+        // persisted message body (line 1479) keeps the canonical raw
+        // text the next-turn agent context needs.
+        emit({ type: "text", delta: humanizeJargon(visibleText) });
         if (createdTasks.length > 0) {
           emit({ type: "tasks_created", tasks: createdTasks });
         }

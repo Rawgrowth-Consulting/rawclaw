@@ -61,6 +61,52 @@ import { humanizeJargon } from "./jargon";
 
 export { humanizeJargon };
 
+/**
+ * HOTFIX 30 (2026-05-17): split the thinking-strip and the jargon-
+ * humanize so callers can persist the RAW (stripped but un-humanized)
+ * reply text. Persisting the humanized form back to
+ * rgaios_agent_chat_messages bled the humanized tool names into the
+ * next-turn agent context window, the agent then emitted tool_call
+ * payloads with the humanized phrase as `tool` (e.g. "scrape reels
+ * from the creator list") and the execToolCall whitelist refused
+ * because the canonical enum is "apify_top_reels_from_file". The
+ * R-MARTI-CANONICAL v3..v5 walks all looped on this.
+ *
+ * extractThinkingRaw is the persistence-side variant: same XML strip,
+ * no humanize. extractThinking (below) still wraps + humanizes for the
+ * render-side callers that need an operator-clean string.
+ */
+export function extractThinkingRaw(reply: string): ExtractedThinking {
+  if (!reply) return { thinking: null, visibleReply: reply ?? "" };
+  const m = reply.match(THINKING_RE);
+  if (!m) {
+    const openOnly = reply.match(/<thinking>/i);
+    if (openOnly && !/<\/thinking>/i.test(reply)) {
+      const idx = openOnly.index ?? 0;
+      const cleaned = stripOrchestrationMarkup(
+        reply.slice(idx + openOnly[0].length),
+      );
+      const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
+      return {
+        thinking: raw ? raw.slice(0, 600) : null,
+        visibleReply: reply.slice(0, idx).trim(),
+      };
+    }
+    return {
+      thinking: null,
+      visibleReply: reply.replace(/<\/?thinking>/gi, "").trim(),
+    };
+  }
+  const cleaned = stripOrchestrationMarkup(m[1] ?? "");
+  const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
+  const thinking = raw ? raw.slice(0, 600) : null;
+  const visibleReply = reply
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+    .replace(/<\/?thinking>/gi, "")
+    .trim();
+  return { thinking, visibleReply };
+}
+
 export function extractThinking(reply: string): ExtractedThinking {
   if (!reply) return { thinking: null, visibleReply: reply ?? "" };
 
