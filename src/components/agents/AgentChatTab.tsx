@@ -1987,12 +1987,12 @@ function OrchestrationStep({
               {to} delivered
             </div>
             <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--text-body)]">
-              {output}
+              {humanizeJargon(output)}
             </p>
           </StepDetail>
         ) : !delivered ? (
           <p className="mt-0.5 text-[11px] text-amber-600 dark:text-amber-300">
-            {sysStr(detail.delegated_error) || cmd.summary}
+            {humanizeJargon(sysStr(detail.delegated_error) || cmd.summary)}
           </p>
         ) : null}
         <div className="mt-1 flex items-center gap-1 text-[9px] text-[var(--text-muted)]">
@@ -2034,7 +2034,7 @@ function OrchestrationStep({
         {cmd.summary ? (
           <StepDetail summary="View result">
             <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--text-body)]">
-              {cmd.summary}
+              {humanizeJargon(cmd.summary)}
             </p>
           </StepDetail>
         ) : null}
@@ -2056,7 +2056,7 @@ function OrchestrationStep({
         <StepHeadline label="Routine created" status={<StatusDot ok={cmd.ok} />} />
         {cmd.summary ? (
           <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-body)]">
-            {cmd.summary}
+            {humanizeJargon(cmd.summary)}
           </p>
         ) : null}
       </TimelineRow>
@@ -2077,7 +2077,7 @@ function OrchestrationStep({
       {cmd.summary ? (
         <StepDetail summary="View result">
           <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--text-body)]">
-            {cmd.summary}
+            {humanizeJargon(cmd.summary)}
           </p>
         </StepDetail>
       ) : null}
