@@ -167,6 +167,15 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\s*(?:at\s+)?\/connections\b\.?/gi, replacement: "" },
   { pattern: /\badd another account\b/gi, replacement: "contact support" },
   { pattern: /\bif this keeps happening, contact support\b/gi, replacement: "ping me if it keeps happening" },
+  // H-ARCH-5e (v24 review): generic .md/.yaml/.csv/.json/.xml/.txt
+  // filename extension leak. Strip the bare filename in operator
+  // reply ("creator-list-v2.md" -> "creator list", "report.csv" ->
+  // "report"). Also catch apify API field names that bleed through.
+  { pattern: /\b([a-z0-9][a-z0-9_-]*)(?:[-_](?:v\d+))?\.(?:md|csv|json|ya?ml|xml|txt|tsv|jsonl)\b/gi, replacement: (_m, base: string) => base.replace(/[-_]/g, " ") },
+  { pattern: /\bcommentsCount\b/g, replacement: "comments count" },
+  { pattern: /\blikeCount\b/g, replacement: "likes" },
+  { pattern: /\bplayCount\b/g, replacement: "plays" },
+  { pattern: /\bviewCount\b/g, replacement: "views" },
   // H-ARCH-2b (B 02:17 spec extras): residual "tool" + "filename"
   // word leaks in v7 reply body.
   { pattern: /\bfile-based tool\b/gi, replacement: "file-based scrape" },
