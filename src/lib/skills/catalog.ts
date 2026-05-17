@@ -116,8 +116,8 @@ export const SKILLS_CATALOG: Skill[] = [
   {
     "id": "rawclaw-ads-audit",
     "name": "RawClaw Ads Audit",
-    "tagline": "Full multi-platform paid advertising audit with parallel subagent delegation.",
-    "description": "Full multi-platform paid advertising audit with parallel subagent delegation. Analyzes Google Ads, Meta Ads, LinkedIn Ads, TikTok Ads, and Microsoft Ads accounts. Generates health score per platform and aggregate score. Use when user says audit, full ad check, analyze my ads, account health check, or PPC audit.",
+    "tagline": "Full ads audit across Google, Meta, LinkedIn, TikTok, and Microsoft — your specialist team runs each in parallel.",
+    "description": "Full ads audit across Google Ads, Meta Ads, LinkedIn Ads, TikTok Ads, and Microsoft Ads. Each platform is checked by a specialist on your team, then rolled up into a per-platform health score plus an aggregate score. Use when operator says audit, full ad check, analyze my ads, account health check, or PPC audit.",
     "category": "marketing",
     "sourceRepo": "https://github.com/scanbott/claude-skills",
     "sourceSkill": "ads-audit",
