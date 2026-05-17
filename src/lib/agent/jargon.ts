@@ -52,6 +52,10 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   { pattern: /\bapify_start_run\b/gi, replacement: "start the scrape" },
   { pattern: /\bapify_poll_run\b/gi, replacement: "check the scrape" },
   { pattern: /\bapify_list_actor_runs\b/gi, replacement: "list scrape runs" },
+  // P42 (2026-05-17, A v100): bare "apify" leaked into Task body prose
+  // ("ONE call to apify"). All apify_* underscore patterns above must run
+  // first so they consume their tokens; this catches any leftover bare word.
+  { pattern: /\bapify\b/gi, replacement: "the scraper" },
   { pattern: /\bagents_update\b/gi, replacement: "update my settings" },
   { pattern: /\bagents_create\b/gi, replacement: "hire a new agent" },
   { pattern: /\bagents_fire\b/gi, replacement: "archive an agent" },
