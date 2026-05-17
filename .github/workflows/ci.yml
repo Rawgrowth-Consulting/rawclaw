@@ -29,6 +29,31 @@ jobs:
       - run: npm ci
       - run: npm run test:unit
 
+  jargon-gate:
+    # Pre-deploy operator-vocabulary regression gate per P8c
+    # [B 03:31 → C]. Runs the focused jargon spec set as a
+    # separate check so a humanizer regression flips one
+    # named light in the PR UI instead of being buried in the
+    # general test job. Same suite is also run by `test` above
+    # - this job exists for visibility, not duplication.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - name: Jargon contract specs
+        run: |
+          npx tsx --test \
+            tests/unit/jargon.spec.ts \
+            tests/unit/jargon-strip.spec.ts \
+            tests/unit/jargon-h27.spec.ts \
+            tests/unit/jargon-h-arch-1.spec.ts \
+            tests/unit/jargon-h-arch-2.spec.ts \
+            tests/unit/jargon-coverage-extend.spec.ts
+
   build:
     runs-on: ubuntu-latest
     steps:
