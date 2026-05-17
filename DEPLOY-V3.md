@@ -140,6 +140,39 @@ CHAT_ID=... \
 Success = every message answered inside the 15s SLA. Failures surface
 with the unanswered count.
 
+## 7b. Path B fallback (ANTHROPIC_API_KEY)
+
+Added 2026-05-17. When connected Claude Max OAuth tokens hit
+the 5h-window quota, the agent halts with "Hit our brief pause"
+unless `ANTHROPIC_API_KEY` is set on the VPS.
+
+See `docs/PROVISIONING_ANTHROPIC_API_KEY.md` for the apply
+runbook. TL;DR:
+
+```bash
+ssh root@marti.rawgrowth.ai
+cd /opt/rawclaw
+nano .env  # add: ANTHROPIC_API_KEY=sk-ant-api03-...
+docker compose -f docker-compose.v3.yml up -d --force-recreate
+```
+
+Fallback path lives in `src/lib/llm/oauth-first.ts:171-176`.
+The log line `[oauth-first] all OAuth tokens exhausted, falling
+back to ANTHROPIC_API_KEY` confirms Path B is live.
+
+## 7c. Operator-vocab humanize gateway
+
+H-ARCH-1 → H-ARCH-5d cascade shipped 2026-05-17 consolidates
+the operator-facing humanize logic into a single gateway
+module. See `docs/ARCHITECTURE_HUMANIZE_GATEWAY.md` for the
+two-layer pattern (RAW persistence + humanize at render
+boundary) + the 5-surface table.
+
+Any new operator-visible render path MUST import
+`humanizeJargon` from `src/lib/agent/jargon.ts` - never inline.
+CI gate `jargon-gate` (`.github/workflows/ci.yml`) runs 82+
+assertion specs to catch a regression on push.
+
 ## 8. Rollback
 
 v3 runs on a `v3` branch off `main`. To roll back to v2:

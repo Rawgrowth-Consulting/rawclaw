@@ -83,6 +83,38 @@ token, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, the Figma file with the
 design tokens, and the `RawgrowthOS/brand/voice.md` source. All listed
 in the CTO brief §06.
 
+## Operator-vocab humanize gateway (2026-05-17)
+
+Marti chat surface used to leak raw tool names + agent identifiers
++ infra terms into operator-visible reply / reasoning chip /
+notification bell. The H-ARCH-1 → H-ARCH-5d cascade shipped 2026-05-17
+consolidated the scrub into a two-layer gateway:
+
+- **RAW persistence**: `rgaios_agent_chat_messages` stores the
+  model's verbatim output so the next-turn context window still
+  resolves canonical tool enums.
+- **Humanize at render boundary**: every operator-visible surface
+  passes through `humanizeJargon()` (`src/lib/agent/jargon.ts`) at
+  emit time. Five surfaces (SSE stream, chat-history reload,
+  reasoning chip, notification bell, delegation card) all import
+  from one module.
+
+Full architecture doc: `docs/ARCHITECTURE_HUMANIZE_GATEWAY.md`.
+Quota / fallback runbook: `docs/PROVISIONING_ANTHROPIC_API_KEY.md`.
+Spec inventory: 7 jargon spec files under `tests/unit/jargon*.spec.ts`
+(82+ contract assertions), gated on CI via the dedicated
+`jargon-gate` job in `.github/workflows/ci.yml`.
+
+Walk regression: 4 e2e specs under `tests/e2e/` covering the
+canonical 3-reel walk, 3-tier mocked scenarios, H-ARCH-4
+delegation contract, and delegate-verify suite (live walks
+test.fixme until Claude Max quota refill + Marti-shaped seed
+fixture).
+
+R-MARTI-CANONICAL v22 achieved **100/100 jargon flagship** at
+sha aa0b1a3+; v23 100% jargon WITH Task body included at
+sha f807572.
+
 ## How to review
 
 1. Read the CTO brief PDF (`rawclaw-v3-cto-brief.pdf`) first — it
