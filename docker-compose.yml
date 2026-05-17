@@ -65,12 +65,20 @@ services:
         condition: service_healthy
       postgrest:
         condition: service_started
+    # Load full .env into container so LLM_PROVIDER, EXECUTOR,
+    # ONBOARDING, BRAND_VOICE and any future host-env settings reach the
+    # app without needing per-key wiring below. Per-key entries still
+    # win when both are set (compose semantics).
+    env_file:
+      - .env
     environment:
       DEPLOY_MODE: self_hosted
       RAWCLAW_DRAIN_URL: http://host.docker.internal:9876
-      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rawgrowth}
-      # supabase-js expects /rest/v1/* paths — Caddy on :3100 strips that prefix and forwards to PostgREST.
-      NEXT_PUBLIC_SUPABASE_URL: http://caddy:3100
+      # Cloud-by-default per CLAUDE-ONBOARDING.md §5. Falls back to local
+      # postgres + caddy proxy only if /opt/rawclaw/.env leaves these unset
+      # (legacy self-hosted dev path).
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rawgrowth}}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://caddy:3100}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       # Used for app-level secret-at-rest encryption (lib/crypto.ts) AND
       # for entrypoint.sh to mint SUPABASE_SERVICE_ROLE_KEY when missing.
