@@ -6,6 +6,27 @@ import type {
 } from "./context";
 
 /**
+ * Shape returned by fetchRecentChatTelemetry. Stays in sync with the
+ * select column list below so the admin page + API route cannot
+ * drift.
+ */
+export type ChatTelemetryRow = {
+  id: string;
+  agent_id: string | null;
+  mode: string;
+  selected_block_ids: string[];
+  skipped_block_ids: string[];
+  estimated_tokens: number;
+  budget_tokens: number;
+  skipped_by_budget: boolean;
+  message_count: number | null;
+  created_at: string;
+};
+
+const TELEMETRY_SELECT_COLUMNS =
+  "id, agent_id, mode, selected_block_ids, skipped_block_ids, estimated_tokens, budget_tokens, skipped_by_budget, message_count, created_at";
+
+/**
  * Identity scope for a single composeChatPreamble call. orgId is
  * required (RLS key); agentId is optional because some preamble
  * builds happen before an agent is bound (e.g. owner-chat onboarding
@@ -56,4 +77,30 @@ export function persistChatTelemetry(
       console.error("[chat-telemetry] insert failed", error);
     }
   };
+}
+
+/**
+ * Reads the last N composeChatPreamble decisions from
+ * rgaios_chat_telemetry, optionally filtered by agent_id. Used by
+ * the admin /telemetry page (SSR first paint) + /api/admin/telemetry
+ * (SWR polling). Both call sites share this helper so the column
+ * list, ordering, and limit clamp live in one place.
+ */
+export async function fetchRecentChatTelemetry(opts: {
+  limit: number;
+  agentId?: string | null;
+}): Promise<{ rows: ChatTelemetryRow[]; error: string | null }> {
+  let q = supabaseAdmin()
+    .from("rgaios_chat_telemetry" as never)
+    .select(TELEMETRY_SELECT_COLUMNS)
+    .order("created_at", { ascending: false })
+    .limit(opts.limit);
+  if (opts.agentId) {
+    q = q.eq("agent_id", opts.agentId);
+  }
+  const { data, error } = await q;
+  if (error) {
+    return { rows: [], error: error.message };
+  }
+  return { rows: (data ?? []) as unknown as ChatTelemetryRow[], error: null };
 }

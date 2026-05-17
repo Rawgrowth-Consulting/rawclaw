@@ -597,9 +597,6 @@ async function composeChatPreamble(
         skippedByBudget: budgetDrops.length > 0,
         roleFlags: flags,
       };
-      // Fire and forget: a slow / failing telemetry sink must NOT
-      // delay or break the LLM call. Errors land in console.error
-      // so an outage still shows up in logs.
       Promise.resolve(options.telemetry(payload)).catch((err) => {
         console.error("[chat-telemetry] callback failed", err);
       });

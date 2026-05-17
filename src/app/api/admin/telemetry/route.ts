@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
-import { supabaseAdmin } from "@/lib/supabase/server";
+import { isUuid } from "@/lib/utils";
+import { fetchRecentChatTelemetry } from "@/lib/agent/telemetry";
 
 export const runtime = "nodejs";
 
@@ -21,26 +22,23 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const agentFilter = url.searchParams.get("agent");
-  const limit = Math.min(
-    Number.parseInt(url.searchParams.get("limit") ?? "100", 10) || 100,
-    500,
-  );
-
-  let q = supabaseAdmin()
-    .from("rgaios_chat_telemetry" as never)
-    .select(
-      "id, agent_id, mode, selected_block_ids, skipped_block_ids, estimated_tokens, budget_tokens, skipped_by_budget, message_count, created_at",
-    )
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (agentFilter) {
-    q = q.eq("agent_id", agentFilter);
+  if (agentFilter && !isUuid(agentFilter)) {
+    return NextResponse.json(
+      { error: "agent must be a uuid" },
+      { status: 400 },
+    );
   }
+  const rawLimit = Number.parseInt(url.searchParams.get("limit") ?? "100", 10);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 100;
 
-  const { data, error } = await q;
+  const { rows, error } = await fetchRecentChatTelemetry({
+    limit,
+    agentId: agentFilter,
+  });
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error }, { status: 500 });
   }
 
-  return NextResponse.json({ rows: data ?? [] });
+  return NextResponse.json({ rows });
 }
