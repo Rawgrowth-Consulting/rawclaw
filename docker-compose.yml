@@ -96,6 +96,10 @@ services:
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Admin}
     volumes:
+      - /home/rawclaw/.local/share/claude:/home/node/.local/share/claude:ro
+      - /home/rawclaw/.local/bin/claude:/usr/local/bin/claude:ro
+      - /home/rawclaw/.claude:/home/node/.claude:ro
+      - /home/rawclaw/.claude.json:/home/node/.claude.json:ro
       - app-storage:/app/storage
       - /opt/rawclaw-agent-workspaces:/tmp/rawclaw-agents
 
