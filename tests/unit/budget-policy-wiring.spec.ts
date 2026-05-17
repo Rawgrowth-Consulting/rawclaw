@@ -50,11 +50,16 @@ test("chat route budgetPolicy delegates to computeChatBudget", () => {
   );
 });
 
-test("chat route passes telemetry: true to V2 preamble", () => {
+test("chat route wires telemetry to V2 preamble (true or persistChatTelemetry)", () => {
+  // F-5 upgraded the legacy `telemetry: true` console.info wiring to a
+  // persistChatTelemetry({ orgId, agentId, messageCount }) callback that
+  // writes to rgaios_chat_telemetry. Either shape keeps the budget-drop
+  // signal flowing. A future refactor that drops both would silently
+  // regress prod observability of which blocks the budget gate cuts.
   assert.match(
     CHAT_ROUTE_SRC,
-    /telemetry:\s*true/,
-    "chat route must keep telemetry: true so prod logs show budget drops",
+    /telemetry:\s*(true|persistChatTelemetry\()/,
+    "chat route must pass telemetry (true OR persistChatTelemetry(...))",
   );
 });
 
@@ -77,10 +82,10 @@ test("telegram webhook uses ROLE_BASED_BUDGET_POLICY directly as budgetPolicy", 
   );
 });
 
-test("telegram webhook passes telemetry: true", () => {
+test("telegram webhook wires telemetry to V2 preamble (true or persistChatTelemetry)", () => {
   assert.match(
     TELEGRAM_ROUTE_SRC,
-    /telemetry:\s*true/,
-    "telegram webhook must keep telemetry: true",
+    /telemetry:\s*(true|persistChatTelemetry\()/,
+    "telegram webhook must pass telemetry (true OR persistChatTelemetry(...))",
   );
 });

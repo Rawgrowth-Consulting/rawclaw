@@ -17,6 +17,7 @@ import {
   buildTelegramPreambleV2,
   ROLE_BASED_BUDGET_POLICY,
 } from "@/lib/agent/context";
+import { persistChatTelemetry } from "@/lib/agent/telemetry";
 import { transcribeVoice } from "@/lib/agent/voice-transcribe";
 import { describeImage } from "@/lib/agent/image-describe";
 
@@ -269,7 +270,10 @@ export async function POST(
         orgName: orgRow?.name ?? null,
         queryText: text,
       },
-      { budgetPolicy: ROLE_BASED_BUDGET_POLICY, telemetry: true },
+      {
+        budgetPolicy: ROLE_BASED_BUDGET_POLICY,
+        telemetry: persistChatTelemetry({ orgId: organizationId, agentId }),
+      },
     ).catch(() => "");
 
     // The key difference vs the legacy webhook: agentId is passed so the
