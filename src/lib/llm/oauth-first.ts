@@ -172,7 +172,18 @@ export async function chatCompleteOAuthFirst(
     console.warn(
       "[oauth-first] all OAuth tokens exhausted, falling back to ANTHROPIC_API_KEY",
     );
-    return chatComplete({ ...req, provider: "anthropic-api" });
+    try {
+      return await chatComplete({ ...req, provider: "anthropic-api" });
+    } catch (err) {
+      // Path B failed (key saturated / paused / invalid). If Path C
+      // (OPENAI_API_KEY) is configured, degrade gracefully instead of
+      // surfacing the Anthropic error. Matches the documented
+      // fallback chain in the header comment (lines 24-28).
+      if (!process.env.OPENAI_API_KEY) throw err;
+      console.warn(
+        `[oauth-first] ANTHROPIC_API_KEY failed, falling back to OPENAI: ${(err as Error).message}`,
+      );
+    }
   }
 
   if (process.env.OPENAI_API_KEY) {
