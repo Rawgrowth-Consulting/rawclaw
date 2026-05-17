@@ -77,6 +77,7 @@ registerTool({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ chat_id: chatId, text: body }),
+        signal: AbortSignal.timeout(15000),
       });
     } catch (err) {
       return textError(`telegram_send_message: ${(err as Error).message}`);
