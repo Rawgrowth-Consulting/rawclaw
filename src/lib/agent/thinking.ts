@@ -20,6 +20,15 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { stripOrchestrationMarkup } from "@/lib/agent/markup";
 
 const THINKING_RE = /<thinking>\s*([\s\S]*?)\s*<\/thinking>/i;
+const THINKING_OPEN_RE = /<thinking>/i;
+const THINKING_CLOSE_RE = /<\/thinking>/i;
+const THINKING_FULL_BLOCK_RE = /<thinking>[\s\S]*?<\/thinking>/gi;
+const THINKING_UNPAIRED_TAG_RE = /<\/?thinking>/gi;
+// P4 batch 1 (per B 02:53 → C, from C 02:40 simplify):
+// regex `/\s*\n\s*/g` appeared 4x inline; hoist to one module const.
+const NEWLINE_COLLAPSE = /\s*\n\s*/g;
+
+const MAX_THINKING_CHARS = 600;
 
 export type ExtractedThinking = {
   /** The reasoning text, trimmed + collapsed, or null if no block found. */
@@ -29,6 +38,25 @@ export type ExtractedThinking = {
 };
 
 /**
+ * Drop stray bare <thinking>/</thinking> tags. Used after we have
+ * already stripped the matched paired block - this catches any
+ * lone open/close that survived (model truncation, partial XML).
+ */
+function stripUnpairedThinkingTags(text: string): string {
+  return text.replace(THINKING_UNPAIRED_TAG_RE, "");
+}
+
+/**
+ * Trim, single-line collapse, length-cap. Used everywhere the
+ * extracted reasoning trace is about to be surfaced; centralising
+ * the shape keeps the chat / Telegram / audit row consistent.
+ */
+function normaliseThinking(raw: string): string | null {
+  const collapsed = raw.replace(NEWLINE_COLLAPSE, " ").trim();
+  return collapsed ? collapsed.slice(0, MAX_THINKING_CHARS) : null;
+}
+
+/**
  * Pull the first <thinking> block out of a model reply.
  *
  * - Only the FIRST block is treated as the reasoning trace; any further
@@ -36,8 +64,8 @@ export type ExtractedThinking = {
  *   leaks, but they are not surfaced.
  * - Newlines inside the block collapse to single spaces - the trace
  *   renders as one line in chat / Telegram / audit.
- * - Caps the surfaced text at 600 chars so a runaway block can't blow up
- *   an audit row or a Telegram message.
+ * - Caps the surfaced text at MAX_THINKING_CHARS so a runaway block
+ *   can't blow up an audit row or a Telegram message.
  */
 // HOTFIX 8 (2026-05-17, FLEX MODE OPERATOR UX): swap developer jargon
 // in the operator-visible reasoning trace for plain operator language.
@@ -80,31 +108,27 @@ export function extractThinkingRaw(reply: string): ExtractedThinking {
   if (!reply) return { thinking: null, visibleReply: reply ?? "" };
   const m = reply.match(THINKING_RE);
   if (!m) {
-    const openOnly = reply.match(/<thinking>/i);
-    if (openOnly && !/<\/thinking>/i.test(reply)) {
+    const openOnly = reply.match(THINKING_OPEN_RE);
+    if (openOnly && !THINKING_CLOSE_RE.test(reply)) {
       const idx = openOnly.index ?? 0;
       const cleaned = stripOrchestrationMarkup(
         reply.slice(idx + openOnly[0].length),
       );
-      const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
       return {
-        thinking: raw ? raw.slice(0, 600) : null,
+        thinking: normaliseThinking(cleaned),
         visibleReply: reply.slice(0, idx).trim(),
       };
     }
     return {
       thinking: null,
-      visibleReply: reply.replace(/<\/?thinking>/gi, "").trim(),
+      visibleReply: stripUnpairedThinkingTags(reply).trim(),
     };
   }
   const cleaned = stripOrchestrationMarkup(m[1] ?? "");
-  const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
-  const thinking = raw ? raw.slice(0, 600) : null;
-  const visibleReply = reply
-    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-    .replace(/<\/?thinking>/gi, "")
-    .trim();
-  return { thinking, visibleReply };
+  const visibleReply = stripUnpairedThinkingTags(
+    reply.replace(THINKING_FULL_BLOCK_RE, ""),
+  ).trim();
+  return { thinking: normaliseThinking(cleaned), visibleReply };
 }
 
 export function extractThinking(reply: string): ExtractedThinking {
@@ -119,22 +143,24 @@ export function extractThinking(reply: string): ExtractedThinking {
     // into the operator-visible reply. Detect a lone open tag with no
     // close: everything after it is the (truncated) thinking, whatever
     // preceded it is the visible reply.
-    const openOnly = reply.match(/<thinking>/i);
-    if (openOnly && !/<\/thinking>/i.test(reply)) {
+    const openOnly = reply.match(THINKING_OPEN_RE);
+    if (openOnly && !THINKING_CLOSE_RE.test(reply)) {
       const idx = openOnly.index ?? 0;
       const cleaned = stripOrchestrationMarkup(
         reply.slice(idx + openOnly[0].length),
       );
-      const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
+      const trace = normaliseThinking(cleaned);
       return {
-        thinking: raw ? humanizeJargon(raw).slice(0, 600) : null,
+        thinking: trace ? humanizeJargon(trace) : null,
         visibleReply: humanizeJargon(reply.slice(0, idx).trim()),
       };
     }
     // No thinking markup at all - but still strip any stray lone tag.
     return {
       thinking: null,
-      visibleReply: humanizeJargon(reply.replace(/<\/?thinking>/gi, "").trim()),
+      visibleReply: humanizeJargon(
+        stripUnpairedThinkingTags(reply).trim(),
+      ),
     };
   }
 
@@ -145,18 +171,17 @@ export function extractThinking(reply: string): ExtractedThinking {
   // and the JSON rendered inline in the Reasoning card. The strip is
   // safe - thinking is narrative, not a command surface.
   const cleaned = stripOrchestrationMarkup(m[1] ?? "");
-  const raw = cleaned.replace(/\s*\n\s*/g, " ").trim();
-  const thinking = raw ? humanizeJargon(raw).slice(0, 600) : null;
+  const trace = normaliseThinking(cleaned);
+  const thinking = trace ? humanizeJargon(trace) : null;
 
   // Strip ALL <thinking> blocks (the matched one + any extras) PLUS any
   // stray unpaired <thinking>/</thinking> tag so no raw XML survives
   // into the visible reply. Then humanize tool-name jargon so the
   // operator never sees raw internal identifiers in the reply body.
   const visibleReply = humanizeJargon(
-    reply
-      .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-      .replace(/<\/?thinking>/gi, "")
-      .trim(),
+    stripUnpairedThinkingTags(
+      reply.replace(THINKING_FULL_BLOCK_RE, ""),
+    ).trim(),
   );
 
   return { thinking, visibleReply };
