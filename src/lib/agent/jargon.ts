@@ -87,6 +87,12 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bcommand was wrong\b/gi, replacement: "request was malformed" },
   { pattern: /\berrored on command\b/gi, replacement: "errored on request" },
   { pattern: /\bWorking on command\b/gi, replacement: "Working on it" },
+  // HOTFIX 27 (2026-05-17, R-MARTI-CANONICAL v4 review B 01:39):
+  // operator-name strip + remaining narrative jargon.
+  { pattern: /\bPedro(?:'s)?\b/g, replacement: "" },
+  { pattern: /\bwrong tool name\b/gi, replacement: "wrong action name" },
+  { pattern: /\bcanonical args\b/gi, replacement: "canonical inputs" },
+  { pattern: /\btool name\b/gi, replacement: "action name" },
   // HOTFIX 15 (2026-05-17, R-BELL walk): persisted Coordination-check
   // notifications from before HOTFIX 8c shipped still carry raw
   // infra error strings. Rewrite the worst offender so the bell
