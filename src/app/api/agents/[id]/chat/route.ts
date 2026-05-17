@@ -12,6 +12,7 @@ import {
   buildAgentChatPreambleV2,
   computeChatBudget,
 } from "@/lib/agent/context";
+import { persistChatTelemetry } from "@/lib/agent/telemetry";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
 import { extractThinking, humanizeJargon } from "@/lib/agent/thinking";
@@ -768,7 +769,7 @@ export async function POST(
       },
       {
         budgetPolicy: (flags) => computeChatBudget(flags, messageCount),
-        telemetry: true,
+        telemetry: persistChatTelemetry({ orgId, agentId, messageCount }),
       },
     )) + recallBlock;
 

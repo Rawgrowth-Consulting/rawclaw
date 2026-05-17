@@ -323,6 +323,34 @@ export const CHAT_BLOCKS: ChatBlock[] = Object.freeze(
   }),
 ) as ChatBlock[];
 
+/**
+ * Telemetry payload passed to a ChatTelemetryCallback after the
+ * selector decides. Captures everything the admin /telemetry page
+ * needs to answer "why was block X skipped for agent Y" without
+ * re-running the preamble. role_flags is the AgentCapabilityFlags
+ * snapshot at decision time so a later role-change does not
+ * retroactively rewrite history.
+ */
+export type ChatTelemetryDecisionPayload = {
+  mode: AgentContextMode | undefined;
+  selectedIds: string[];
+  skippedIds: string[];
+  estimatedTokens: number;
+  budgetTokens: number;
+  skippedByBudget: boolean;
+  roleFlags: AgentCapabilityFlags;
+};
+
+/**
+ * Telemetry callback. Returns void or Promise<void>; the composer
+ * fires it without awaiting so a slow telemetry sink does NOT
+ * delay the LLM call. Callback errors are caught + logged at the
+ * call site so a telemetry outage cannot break chat itself.
+ */
+export type ChatTelemetryCallback = (
+  decision: ChatTelemetryDecisionPayload,
+) => void | Promise<void>;
+
 export type ComposeChatPreambleOptions = {
   /**
    * Hard upper bound on the total rough-token cost of skippable
@@ -347,12 +375,18 @@ export type ComposeChatPreambleOptions = {
    */
   mode?: AgentContextMode;
   /**
-   * Opt-in console.info emission when the budget gate drops one or
-   * more skippable blocks. Off by default to keep test output quiet
-   * + parity surfaces silent. Chat route + telegram webhook enable
-   * it so production logs show which blocks the budget cut.
+   * Opt-in telemetry surface for the selector decision. Two shapes:
+   *   - `true`: console.info one line per turn when the budget gate
+   *     drops one or more skippable blocks (legacy iter-36 behaviour).
+   *   - callback: invoked once per turn with the full decision payload
+   *     (selected/skipped ids, role flags, estimated tokens vs cap).
+   *     The persistChatTelemetry helper in src/lib/agent/telemetry.ts
+   *     returns a callback that writes the row to
+   *     rgaios_chat_telemetry; the admin /telemetry page reads from
+   *     that table. Off by default so tests + parity surfaces stay
+   *     silent and storage-free.
    */
-  telemetry?: boolean;
+  telemetry?: boolean | ChatTelemetryCallback;
   /**
    * Optional role-aware budget resolver. When set, the composer
    * computes AgentCapabilityFlags once (single DB round-trip) and
@@ -550,11 +584,28 @@ async function composeChatPreamble(
 
   if (options.telemetry) {
     const budgetDrops = decision.skipped.filter((s) => s.reason === "budget");
-    if (budgetDrops.length > 0) {
-      const budget = effectiveOptions.skippableBudgetTokens;
-      const budgetLabel = budget === undefined || !Number.isFinite(budget)
-        ? "inf"
-        : String(budget);
+    const budget = effectiveOptions.skippableBudgetTokens;
+    if (typeof options.telemetry === "function") {
+      const budgetTokens =
+        budget === undefined || !Number.isFinite(budget) ? -1 : budget;
+      const payload: ChatTelemetryDecisionPayload = {
+        mode: effectiveOptions.mode,
+        selectedIds: decision.selected.map((s) => s.id),
+        skippedIds: decision.skipped.map((s) => s.id),
+        estimatedTokens: decision.totalSelectedCost,
+        budgetTokens,
+        skippedByBudget: budgetDrops.length > 0,
+        roleFlags: flags,
+      };
+      // Fire and forget: a slow / failing telemetry sink must NOT
+      // delay or break the LLM call. Errors land in console.error
+      // so an outage still shows up in logs.
+      Promise.resolve(options.telemetry(payload)).catch((err) => {
+        console.error("[chat-telemetry] callback failed", err);
+      });
+    } else if (budgetDrops.length > 0) {
+      const budgetLabel =
+        budget === undefined || !Number.isFinite(budget) ? "inf" : String(budget);
       console.info(
         `[chat-blocks-selector] mode=${
           effectiveOptions.mode ?? "any"
