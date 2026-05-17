@@ -67,7 +67,7 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   // 3x + "shared memory" + "FLEX MODE" in the live Reasoning surface).
   // Strip the operator's personal name + normalise developer protocol
   // names to plain phrasing the operator can read.
-  { pattern: /\bshared memory\b/gi, replacement: "an internal rule" },
+  { pattern: /\bshared memory\b/gi, replacement: "shared notes" },
   { pattern: /\bFLEX MODE\b/gi, replacement: "the priority rule" },
   { pattern: /\bsystem_prompt\b/g, replacement: "behavior settings" },
   { pattern: /\btype mismatch\b/gi, replacement: "format issue" },
@@ -127,6 +127,21 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
     pattern: /\bOAuth tokens?\b/gi,
     replacement: "credentials",
   },
+  // HOTFIX H-ARCH-1 (2026-05-17, B 02:04 root-cause review of v6 walk):
+  // operator-visible reply leaked filenames + internal storage refs +
+  // raw "tool errored" / "Tool failed" jargon. Stop the bleed at the
+  // jargon layer (negative preamble rules now block emission upstream;
+  // this is the safety net for any phrase that still slips through).
+  { pattern: /\bThe scrape tool errored\b/gi, replacement: "The scrape action failed" },
+  { pattern: /\bscrape tool errored\b/gi, replacement: "scrape action failed" },
+  { pattern: /\btool errored\b/gi, replacement: "action failed" },
+  { pattern: /\bTool failed\b/g, replacement: "Action failed" },
+  { pattern: /\btool failed\b/g, replacement: "action failed" },
+  { pattern: /\bPer an internal rule\b/gi, replacement: "Per setup" },
+  { pattern: /\bper an internal rule\b/gi, replacement: "per setup" },
+  { pattern: /\bshared notes\b/gi, replacement: "shared notes" },
+  { pattern: /\b(scan_agent\.yaml|scan__CLAUDE\.md|CLAUDE\.md|scan__agent\.yaml)\b/g, replacement: "internal config" },
+  { pattern: /\bKasia(?:'s)? tasks\b/g, replacement: "Kasia's notes" },
 ];
 
 export function humanizeJargon(raw: string): string {

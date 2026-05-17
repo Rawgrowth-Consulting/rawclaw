@@ -694,10 +694,30 @@ export async function POST(
       const results = Array.isArray(meta?.results)
         ? (meta!.results as RecallResult[])
         : [];
+      // HOTFIX H-ARCH-1 (2026-05-17): redact filesystem-listing tool
+      // results before folding them back into the agent's preamble
+      // context. The model was reading the raw dir enumeration on
+      // turn N+1 and parroting filenames ("scan__agent.yaml",
+      // "CLAUDE.md") into the operator-visible reply (v6 walk root
+      // cause). Operator never needs to see internal config names -
+      // the model only needs to know "I have access to my files" so
+      // it picks the right tool, not which exact files exist.
+      const REDACT_ACTIONS = new Set([
+        "lookup_my_files",
+        "list_knowledge_files",
+        "list_files",
+        "list_dir",
+      ]);
       for (const r of results) {
         const d = r.detail ?? {};
+        const actionName =
+          typeof d.action === "string" ? d.action.toLowerCase() : "";
+        const isFsListing = REDACT_ACTIONS.has(actionName);
         let payload: string;
-        if (
+        if (isFsListing) {
+          payload =
+            "[file listing redacted - call read_knowledge_file or knowledge_query with a specific filename if you need the contents]";
+        } else if (
           typeof d.delegated_output === "string" &&
           d.delegated_output
         ) {
@@ -776,7 +796,49 @@ export async function POST(
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // HOTFIX H-ARCH-1 (2026-05-17, B 02:04 SSE-gateway spec):
+      // single operator-facing chokepoint. Every SSE event leaving
+      // this stream passes through humanizeJargon on its operator-
+      // visible string fields. Prior approach humanized at each
+      // emit call site - new render surfaces (reasoning chip,
+      // spinner verb, tool labels) kept leaking raw tool names
+      // and protocol jargon (v4/v5/v6 R-MARTI-CANONICAL walks).
+      // Centralising guarantees: any future emit() automatically
+      // inherits the operator-clean transform.
+      const OPERATOR_FACING_TYPES = new Set([
+        "text",
+        "thinking",
+        "command_running",
+        "error",
+        "commands_executed",
+      ]);
+      const OPERATOR_FACING_STRING_FIELDS = [
+        "delta",
+        "brief",
+        "verb",
+        "label",
+        "message",
+      ];
       const emit = (event: Record<string, unknown>) => {
+        if (OPERATOR_FACING_TYPES.has(event.type as string)) {
+          for (const k of OPERATOR_FACING_STRING_FIELDS) {
+            const v = event[k];
+            if (typeof v === "string" && v.length > 0) {
+              event[k] = humanizeJargon(v);
+            }
+          }
+          if (event.type === "commands_executed" && Array.isArray(event.results)) {
+            event.results = (event.results as Array<Record<string, unknown>>).map(
+              (r) => {
+                const next: Record<string, unknown> = { ...r };
+                if (typeof next.summary === "string") {
+                  next.summary = humanizeJargon(next.summary as string);
+                }
+                return next;
+              },
+            );
+          }
+        }
         controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
       };
 
@@ -951,16 +1013,8 @@ export async function POST(
             // gmail" the moment each command starts, before the slow
             // tool call or delegated run returns.
             onProgress: (ev) => {
-              // HOTFIX 8b prime (2026-05-17, B 17:08 SPEC): spinner
-              // label leaked the raw tool name (e.g.
-              // "Running apify_top_reels_from_file…") to the
-              // operator. JARGON_MAP only applied to thinking and
-              // visibleReply via humanizeJargon; the live spinner
-              // verb was constructed here and emitted untouched.
-              // Humanize the label through the same map so the
-              // spinner says "Running scrape reels from the
-              // creator list…" instead.
-              const niceLabel = humanizeJargon(ev.label);
+              // HOTFIX H-ARCH-1: humanize happens centrally in emit().
+              const niceLabel = ev.label;
               const verb =
                 ev.type === "agent_invoke"
                   ? `${niceLabel} is answering now`
@@ -1433,11 +1487,8 @@ export async function POST(
               final_attempt_excerpt: filtered.finalAttempt.slice(0, 500),
             };
 
-        // HOTFIX 30: humanize tool-name + protocol jargon at the SSE
-        // boundary so the operator surface stays clean while the
-        // persisted message body (line 1479) keeps the canonical raw
-        // text the next-turn agent context needs.
-        emit({ type: "text", delta: humanizeJargon(visibleText) });
+        // HOTFIX H-ARCH-1: humanize happens centrally in emit().
+        emit({ type: "text", delta: visibleText });
         if (createdTasks.length > 0) {
           emit({ type: "tasks_created", tasks: createdTasks });
         }
