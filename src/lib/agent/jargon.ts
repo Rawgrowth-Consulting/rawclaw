@@ -241,6 +241,14 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   // resulting "internal config, internal config, internal config" reads
   // like noise. Collapse consecutive repeats into a single phrase.
   { pattern: /(\binternal config\b)(?:,\s*internal config\b)+/g, replacement: "$1" },
+  // P43 (2026-05-17, A v105): "Per the the resolution rule protocol" leaked.
+  // P41 greedy regex collapsed the "rule" suffix but the prefix doubling
+  // survived when the suffix word was "protocol" instead of "rule" -
+  // outside the suffix capture scope. Safety net at the END of JARGON_MAP
+  // catches every "the the" double after all prior replacements have run,
+  // so future regex authors don't need to repeat the prefix guard. Legitimate
+  // "the the" in English prose is essentially nonexistent.
+  { pattern: /\bthe\s+the\b/gi, replacement: "the" },
 ];
 
 export function humanizeJargon(raw: string): string {
