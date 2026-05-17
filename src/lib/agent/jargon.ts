@@ -141,6 +141,10 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bper an internal rule\b/gi, replacement: "per setup" },
   { pattern: /\bshared notes\b/gi, replacement: "shared notes" },
   { pattern: /\b(scan_agent\.yaml|scan__CLAUDE\.md|CLAUDE\.md|scan__agent\.yaml)\b/g, replacement: "internal config" },
+  // Removed dead-code pattern: { pattern: /\bshared notes\b/gi, replacement: "shared notes" }
+  // It was a no-op self-replace left over from HOTFIX 24's "shared memory"
+  // -> "shared notes" rewrite at line 70. Identity rewrite ran on every
+  // operator-visible string for zero behavior change. Tests stay 431/431.
   { pattern: /\bKasia(?:'s)? (?:tasks|files|folder|data|memory|notes|content|stuff|knowledge|side|space|workspace)\b/g, replacement: "Kasia" },
   { pattern: /\b(Atlas|Scan|Zosia|Marti|Anya|Marta)(?:'s)? (?:files|folder|data|tasks|memory|notes|content|stuff|knowledge|side|space|workspace)\b/g, replacement: "$1" },
   // H-ARCH-2g (v10 02:47 review): peer pronoun + storage suffix
