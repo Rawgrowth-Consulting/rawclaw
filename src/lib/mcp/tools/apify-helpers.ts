@@ -78,3 +78,77 @@ export function parsePostTime(raw: unknown): number {
   }
   return 0;
 }
+
+/**
+ * Comment-count field probe. Instagram exposes commentsCount,
+ * Facebook commentCount, web feeds comments. Returns 0 when no
+ * field is present so caller-side sort + display always works.
+ */
+const COMMENT_FIELDS = ["commentsCount", "commentCount", "comments"] as const;
+
+export function commentCount(raw: unknown): number {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  for (const k of COMMENT_FIELDS) {
+    const v = r[k];
+    if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return 0;
+}
+
+const MAX_API_ERROR_BODY_CHARS = 200;
+
+/**
+ * Format an Apify REST error into one operator-clean line. Used
+ * by every fetch call site that bails on non-2xx. Centralises
+ * the body-slice + status prefix so error rows in the audit log
+ * stay consistent + a future humanizer pass can hit one spot.
+ */
+export function formatApiError(opts: {
+  tool: string;
+  status: number;
+  bodyPreview?: string;
+  context?: string;
+}): string {
+  const body = (opts.bodyPreview ?? "").slice(0, MAX_API_ERROR_BODY_CHARS);
+  const ctx = opts.context ? ` (${opts.context})` : "";
+  const tail = body ? `: ${body}` : "";
+  return `apify ${opts.tool} HTTP ${opts.status}${ctx}${tail}`;
+}
+
+/**
+ * Coerce an unknown arg into a string array. Apify tools accept
+ * handle lists from the model as a JSON array; null / undefined
+ * / non-array fall back to []. Stringifies each entry via
+ * coerceToString so [null, "foo"] becomes ["", "foo"] - caller
+ * filters empties with .filter(Boolean) when desired.
+ */
+export function parseStringArray(arg: unknown): string[] {
+  if (!Array.isArray(arg)) return [];
+  return arg.map((v) => coerceToString(v));
+}
+
+/**
+ * Extract Instagram-style handle list from a free-text arg.
+ * Requires either an "@" prefix or an "instagram.com/" URL
+ * prefix - bare words are too ambiguous to grep out of arbitrary
+ * operator copy without false positives (the "https"/"and" tokens
+ * would otherwise sneak in). Strips trailing slash so each handle
+ * is exactly the username Apify expects. De-dups + drops empties.
+ */
+const HANDLE_RE = /(?:instagram\.com\/|@)([A-Za-z0-9._]{1,30})/g;
+
+export function extractHandles(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of raw.matchAll(HANDLE_RE)) {
+    const h = (m[1] ?? "").replace(/[/.]+$/, "");
+    if (!h || seen.has(h)) continue;
+    seen.add(h);
+    out.push(h);
+  }
+  return out;
+}

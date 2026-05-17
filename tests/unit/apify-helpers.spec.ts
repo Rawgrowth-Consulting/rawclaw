@@ -3,8 +3,12 @@ import assert from "node:assert/strict";
 import {
   actorPathOf,
   coerceToString,
+  commentCount,
+  extractHandles,
+  formatApiError,
   isApifyOk,
   parsePostTime,
+  parseStringArray,
 } from "../../src/lib/mcp/tools/apify-helpers";
 
 /**
@@ -95,4 +99,83 @@ test("parsePostTime: zero on empty / unknown input", () => {
   assert.equal(parsePostTime(undefined), 0);
   assert.equal(parsePostTime({}), 0);
   assert.equal(parsePostTime({ randomKey: 123 }), 0);
+});
+
+test("commentCount: snake / camel / plural fields all parse", () => {
+  assert.equal(commentCount({ commentsCount: 42 }), 42);
+  assert.equal(commentCount({ commentCount: 7 }), 7);
+  assert.equal(commentCount({ comments: 3 }), 3);
+});
+
+test("commentCount: string number coerced", () => {
+  assert.equal(commentCount({ commentsCount: "15" }), 15);
+});
+
+test("commentCount: zero on missing / non-numeric / null", () => {
+  assert.equal(commentCount(null), 0);
+  assert.equal(commentCount({}), 0);
+  assert.equal(commentCount({ commentsCount: "abc" }), 0);
+});
+
+test("formatApiError: status + tool + body preview", () => {
+  const out = formatApiError({
+    tool: "scrape",
+    status: 500,
+    bodyPreview: "internal server error",
+  });
+  assert.match(out, /HTTP 500/);
+  assert.match(out, /scrape/);
+  assert.match(out, /internal server error/);
+});
+
+test("formatApiError: context segment included when provided", () => {
+  const out = formatApiError({
+    tool: "poll",
+    status: 404,
+    context: "run abc123",
+  });
+  assert.match(out, /\(run abc123\)/);
+});
+
+test("formatApiError: body truncated at 200 chars", () => {
+  const long = "x".repeat(500);
+  const out = formatApiError({ tool: "scrape", status: 502, bodyPreview: long });
+  assert.ok(out.length < 300, `formatted line too long: ${out.length}`);
+  assert.ok(out.includes("x".repeat(200)));
+  assert.ok(!out.includes("x".repeat(201)));
+});
+
+test("parseStringArray: array of mixed types coerces each", () => {
+  assert.deepEqual(parseStringArray(["a", 1, null, true]), ["a", "1", "", "true"]);
+});
+
+test("parseStringArray: non-array returns empty", () => {
+  assert.deepEqual(parseStringArray("foo"), []);
+  assert.deepEqual(parseStringArray(null), []);
+  assert.deepEqual(parseStringArray(42), []);
+});
+
+test("extractHandles: bare words ignored (require @-prefix or URL)", () => {
+  const out = extractHandles("martifox kasiacopy martifox");
+  assert.deepEqual(out, []);
+});
+
+test("extractHandles: dedupes across @-prefix repeats", () => {
+  const out = extractHandles("@martifox @kasiacopy @martifox");
+  assert.deepEqual(out, ["martifox", "kasiacopy"]);
+});
+
+test("extractHandles: @-prefix stripped", () => {
+  const out = extractHandles("@martifox @anya");
+  assert.deepEqual(out, ["martifox", "anya"]);
+});
+
+test("extractHandles: instagram.com URL extracted", () => {
+  const out = extractHandles("https://instagram.com/martifox/ and instagram.com/zosia");
+  assert.deepEqual(out, ["martifox", "zosia"]);
+});
+
+test("extractHandles: empty / pure punctuation returns []", () => {
+  assert.deepEqual(extractHandles(""), []);
+  assert.deepEqual(extractHandles("!!!,,,"), []);
 });
