@@ -294,6 +294,21 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   // this batch is the spinner-state surface specifically.
   { pattern: /\bRunning a tool\b/g, replacement: "Running an action" },
   { pattern: /\bWorking on a tool\b/g, replacement: "Working on an action" },
+  // HOTFIX 26 (2026-05-17, R-COMPOSIO-1 FAIL-40 from A walk): raw
+  // Composio app+tool names leak into Action card label + spinner.
+  // `googlecalendar` slipped through every prior scrub because no
+  // pattern targets bare lowercase tool names; humanize to product
+  // name. Sibling AgentChatTab edit now wraps `app` + spinner `text`
+  // in humanizeJargon, but the map needs the tool-name vocabulary.
+  { pattern: /\bgooglecalendar\b/gi, replacement: "Google Calendar" },
+  // Dup-word safety net for "integration integration" - upstream
+  // emit of "the composio integration" routes composio→"the
+  // integration", yielding "the the integration integration". The
+  // earlier line 275 "the the→the" collapse handles half; this
+  // handles the suffix half. Scoped to the specific known dup
+  // (NOT a generic /\b(\w+)\s+\1\b/ that would break "that that",
+  // "had had", legitimate pronoun repeats). Idempotent.
+  { pattern: /\bintegration\s+integration\b/gi, replacement: "integration" },
   { pattern: /\bclaude is generating\b/gi, replacement: "the agent is writing" },
   { pattern: /\bgenerating reply\b/gi, replacement: "writing the reply" },
   { pattern: /\bfetching\b/gi, replacement: "getting" },

@@ -1708,7 +1708,7 @@ function SystemBlock({
       >
         <StepHeadline
           label={
-            <span className="text-[var(--brand-primary)]">{text}…</span>
+            <span className="text-[var(--brand-primary)]">{humanizeJargon(text)}…</span>
           }
           status={
             <span className="inline-flex items-center gap-1 text-[10px] text-[var(--brand-primary)]">
@@ -2010,7 +2010,7 @@ function OrchestrationStep({
     const label = isApify
       ? humanizeJargon(tool)
       : app && action
-        ? `${app} · ${humanizeJargon(action)}`
+        ? `${humanizeJargon(app)} · ${humanizeJargon(action)}`
         : "Action";
     return (
       <TimelineRow
