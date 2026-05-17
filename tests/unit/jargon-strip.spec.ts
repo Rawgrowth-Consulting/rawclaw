@@ -33,11 +33,11 @@ test("shared memory + operator name redacted together", () => {
   assert.doesNotMatch(out, /shared memory/i);
 });
 
-test("spinner 'Running command...' humanized", () => {
-  const out = humanizeJargon("Running command...");
-  assert.match(out, /Working on it/i);
-  assert.doesNotMatch(out, /Running command/);
-});
+// H25 spinner "Running command..." → "Working on it..." lives in
+// src/components/agents/AgentChatTab.tsx (fallback for unknown
+// action), not in humanizeJargon — per A's 923d5c6 implementation.
+// The component-level contract is asserted in the AgentChatTab
+// spec, not here.
 
 test("tool wrapper + operator name leak both scrubbed", () => {
   const out = humanizeJargon("agents_update on Pedro");
