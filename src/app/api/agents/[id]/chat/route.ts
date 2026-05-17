@@ -694,30 +694,19 @@ export async function POST(
       const results = Array.isArray(meta?.results)
         ? (meta!.results as RecallResult[])
         : [];
-      // HOTFIX H-ARCH-1 (2026-05-17): redact filesystem-listing tool
-      // results before folding them back into the agent's preamble
-      // context. The model was reading the raw dir enumeration on
-      // turn N+1 and parroting filenames ("scan__agent.yaml",
-      // "CLAUDE.md") into the operator-visible reply (v6 walk root
-      // cause). Operator never needs to see internal config names -
-      // the model only needs to know "I have access to my files" so
-      // it picks the right tool, not which exact files exist.
-      const REDACT_ACTIONS = new Set([
-        "lookup_my_files",
-        "list_knowledge_files",
-        "list_files",
-        "list_dir",
-      ]);
+      // HOTFIX H-ARCH-3 REVERT of H-ARCH-1 CHANGE 3 (per B 02:51):
+      // The recall block previously redacted lookup_my_files /
+      // list_knowledge_files / list_files / list_dir results to
+      // "[file listing redacted]". That blinded the model from
+      // recognising real filenames it had attached (v8-v10 model
+      // told operator "I don't have creator-list" when the file
+      // WAS attached - misleading reply). Operator-visible scrub
+      // already happens at the SSE emit gateway (H-ARCH-1 CHANGE 1)
+      // so the recall block can safely keep canonical filenames.
       for (const r of results) {
         const d = r.detail ?? {};
-        const actionName =
-          typeof d.action === "string" ? d.action.toLowerCase() : "";
-        const isFsListing = REDACT_ACTIONS.has(actionName);
         let payload: string;
-        if (isFsListing) {
-          payload =
-            "[file listing redacted - call read_knowledge_file or knowledge_query with a specific filename if you need the contents]";
-        } else if (
+        if (
           typeof d.delegated_output === "string" &&
           d.delegated_output
         ) {

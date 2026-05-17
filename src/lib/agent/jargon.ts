@@ -141,13 +141,13 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bper an internal rule\b/gi, replacement: "per setup" },
   { pattern: /\bshared notes\b/gi, replacement: "shared notes" },
   { pattern: /\b(scan_agent\.yaml|scan__CLAUDE\.md|CLAUDE\.md|scan__agent\.yaml)\b/g, replacement: "internal config" },
-  { pattern: /\bKasia(?:'s)? (?:tasks|files|folder|data|memory|notes|content|stuff)\b/g, replacement: "Kasia" },
-  { pattern: /\b(Atlas|Scan|Zosia|Marti|Anya)(?:'s)? (?:files|folder|data|tasks|memory|notes|content|stuff)\b/g, replacement: "$1" },
+  { pattern: /\bKasia(?:'s)? (?:tasks|files|folder|data|memory|notes|content|stuff|knowledge|side|space|workspace)\b/g, replacement: "Kasia" },
+  { pattern: /\b(Atlas|Scan|Zosia|Marti|Anya|Marta)(?:'s)? (?:files|folder|data|tasks|memory|notes|content|stuff|knowledge|side|space|workspace)\b/g, replacement: "$1" },
   // H-ARCH-2g (v10 02:47 review): peer pronoun + storage suffix
   // ("her tasks", "his folder", "their files") still slips when the
   // model uses a pronoun instead of the agent's name. Strip the
   // storage suffix entirely - operator never wants the routing.
-  { pattern: /\b(her|his|their) (?:tasks|files|folder|data|memory|notes|content|stuff)\b/g, replacement: "their notes" },
+  { pattern: /\b(her|his|their) (?:tasks|files|folder|data|memory|notes|content|stuff|knowledge|side|space|workspace)\b/g, replacement: "their notes" },
   // H-ARCH-2b (B 02:17 spec extras): residual "tool" + "filename"
   // word leaks in v7 reply body.
   { pattern: /\bfile-based tool\b/gi, replacement: "file-based scrape" },
