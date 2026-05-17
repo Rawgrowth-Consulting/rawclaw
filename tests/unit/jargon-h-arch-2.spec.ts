@@ -67,6 +67,24 @@ test("H-ARCH-2b: the right filename → the right one", () => {
   );
 });
 
+test("H-ARCH-2c: the actual filename → my files", () => {
+  assert.equal(
+    humanizeJargon("find the actual filename to retry"),
+    "find my files to retry",
+  );
+});
+
+test("H-ARCH-2c: the exact filename → the name", () => {
+  assert.equal(
+    humanizeJargon("grab the exact filename, then re-run"),
+    "grab the name, then re-run",
+  );
+});
+
+test("H-ARCH-2c: bare filename → name", () => {
+  assert.equal(humanizeJargon("the filename was wrong"), "the name was wrong");
+});
+
 test("idempotent on H-ARCH-2 patterns", () => {
   const noisy =
     "Kasia's files have scan_agent.yaml, scan__CLAUDE.md, CLAUDE.md attached";

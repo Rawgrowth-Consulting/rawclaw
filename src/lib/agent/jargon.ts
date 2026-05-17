@@ -146,9 +146,18 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   // H-ARCH-2b (B 02:17 spec extras): residual "tool" + "filename"
   // word leaks in v7 reply body.
   { pattern: /\bfile-based tool\b/gi, replacement: "file-based scrape" },
-  { pattern: /\bactual file names\b/gi, replacement: "my files" },
+  { pattern: /\bactual file names?\b/gi, replacement: "my files" },
   { pattern: /\bthe right filename\b/gi, replacement: "the right one" },
   { pattern: /\bright filename\b/gi, replacement: "right one" },
+  // H-ARCH-2c (v8 02:26 review): singular "filename" + variants
+  // still surfaced ("the actual filename", "the exact filename",
+  // "the correct name", "the file name"). Strip the storage word.
+  { pattern: /\bthe actual filename\b/gi, replacement: "my files" },
+  { pattern: /\bthe exact filename\b/gi, replacement: "the name" },
+  { pattern: /\bthe correct filename\b/gi, replacement: "the name" },
+  { pattern: /\bthe correct name\b/gi, replacement: "the name" },
+  { pattern: /\b(?:exact|actual|correct) filename\b/gi, replacement: "name" },
+  { pattern: /\bfilename\b/gi, replacement: "name" },
   // H-ARCH-2 (v7 review 02:17): when multiple internal filenames are
   // listed in a single sentence and all map to "internal config", the
   // resulting "internal config, internal config, internal config" reads
