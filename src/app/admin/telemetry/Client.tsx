@@ -1,9 +1,23 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { jsonFetcher } from "@/lib/swr";
 import type { TelemetryRow } from "./page";
+
+const COLUMNS = [
+  { key: "when", label: "When", align: "text-left" as const },
+  { key: "mode", label: "Mode", align: "text-left" as const },
+  { key: "agent", label: "Agent", align: "text-left" as const },
+  { key: "selected", label: "Selected", align: "text-right" as const },
+  { key: "skipped", label: "Skipped", align: "text-right" as const },
+  { key: "tokens", label: "Tokens", align: "text-right" as const },
+  { key: "budget", label: "Budget", align: "text-right" as const },
+  { key: "msgs", label: "Msgs", align: "text-right" as const },
+  { key: "byBudget", label: "By budget?", align: "text-left" as const },
+];
+
+const FILTER_DEBOUNCE_MS = 250;
 
 function fmtTs(iso: string): string {
   const d = new Date(iso);
@@ -18,18 +32,41 @@ function fmtBudget(n: number): string {
   return n < 0 ? "inf" : n.toLocaleString();
 }
 
+function shortAgent(id: string | null): string {
+  return id ? id.slice(0, 8) : "—";
+}
+
+/**
+ * Admin /telemetry table. Polls /api/admin/telemetry every 10s
+ * (suspended when tab hidden). Filter input debounces 250ms before
+ * threading into the SWR key so each keystroke doesn't spawn a
+ * fetch + cache entry. Rows are click-to-expand to reveal the
+ * full selected/skipped block id lists.
+ */
 export function TelemetryClient({ initial }: { initial: TelemetryRow[] }) {
+  const [filterDraft, setFilterDraft] = useState("");
   const [agentFilter, setAgentFilter] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const trimmed = filterDraft.trim();
+    if (trimmed === agentFilter) return;
+    const t = window.setTimeout(() => setAgentFilter(trimmed), FILTER_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [filterDraft, agentFilter]);
+
   const url = agentFilter
     ? `/api/admin/telemetry?agent=${encodeURIComponent(agentFilter)}`
     : "/api/admin/telemetry";
   const { data } = useSWR<{ rows: TelemetryRow[] }>(url, jsonFetcher, {
     fallbackData: { rows: initial },
     refreshInterval: 10_000,
+    refreshWhenHidden: false,
+    revalidateOnMount: false,
   });
   const rows = data?.rows ?? initial;
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const colSpan = useMemo(() => COLUMNS.length, []);
 
   return (
     <div className="space-y-4">
@@ -37,8 +74,8 @@ export function TelemetryClient({ initial }: { initial: TelemetryRow[] }) {
         <input
           type="text"
           placeholder="Filter by agent_id (uuid)"
-          value={agentFilter}
-          onChange={(e) => setAgentFilter(e.target.value.trim())}
+          value={filterDraft}
+          onChange={(e) => setFilterDraft(e.target.value)}
           className="w-96 rounded border border-border bg-background px-3 py-2 text-sm font-mono"
         />
         <span className="text-xs text-muted-foreground">
@@ -50,15 +87,11 @@ export function TelemetryClient({ initial }: { initial: TelemetryRow[] }) {
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
             <tr>
-              <th className="px-3 py-2 text-left">When</th>
-              <th className="px-3 py-2 text-left">Mode</th>
-              <th className="px-3 py-2 text-left">Agent</th>
-              <th className="px-3 py-2 text-right">Selected</th>
-              <th className="px-3 py-2 text-right">Skipped</th>
-              <th className="px-3 py-2 text-right">Tokens</th>
-              <th className="px-3 py-2 text-right">Budget</th>
-              <th className="px-3 py-2 text-right">Msgs</th>
-              <th className="px-3 py-2 text-left">By budget?</th>
+              {COLUMNS.map((c) => (
+                <th key={c.key} className={`px-3 py-2 ${c.align}`}>
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -75,7 +108,7 @@ export function TelemetryClient({ initial }: { initial: TelemetryRow[] }) {
                     </td>
                     <td className="px-3 py-2">{r.mode}</td>
                     <td className="px-3 py-2 font-mono text-xs">
-                      {r.agent_id ? r.agent_id.slice(0, 8) : "—"}
+                      {shortAgent(r.agent_id)}
                     </td>
                     <td className="px-3 py-2 text-right">
                       {r.selected_block_ids.length}
@@ -104,7 +137,7 @@ export function TelemetryClient({ initial }: { initial: TelemetryRow[] }) {
                   </tr>
                   {expanded ? (
                     <tr className="border-t border-border bg-muted/10">
-                      <td colSpan={9} className="px-3 py-3">
+                      <td colSpan={colSpan} className="px-3 py-3">
                         <div className="grid grid-cols-2 gap-6 text-xs">
                           <div>
                             <div className="mb-1 font-semibold uppercase text-muted-foreground">
@@ -131,7 +164,7 @@ export function TelemetryClient({ initial }: { initial: TelemetryRow[] }) {
             })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
+                <td colSpan={colSpan} className="px-3 py-8 text-center text-muted-foreground">
                   No telemetry rows yet. Trigger a chat or telegram message and refresh.
                 </td>
               </tr>
