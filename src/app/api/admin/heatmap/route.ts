@@ -1,21 +1,23 @@
 import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
-import { fetchAgentHeatmap } from "@/lib/agent/heatmap";
+import { fetchAgentHeatmap, parseWindowDays } from "@/lib/agent/heatmap";
 
 export const runtime = "nodejs";
 
 /**
- * GET /api/admin/heatmap?tz=<IANA>
+ * GET /api/admin/heatmap?tz=<IANA>&days=<7|30|90>
  *
  * Returns the 7-day x 24-hour activity grid per agent for the
- * caller's active org. Default tz = UTC if no query param.
+ * caller's active org. days defaults to 7. tz defaults to UTC.
  */
 export async function GET(req: Request) {
   const ctx = await getOrgContext();
   if (!ctx?.isAdmin || !ctx.activeOrgId) {
     return NextResponse.json({ error: "admin only" }, { status: 403 });
   }
-  const tz = new URL(req.url).searchParams.get("tz") ?? "UTC";
-  const payload = await fetchAgentHeatmap(ctx.activeOrgId, tz);
+  const params = new URL(req.url).searchParams;
+  const tz = params.get("tz") ?? "UTC";
+  const windowDays = parseWindowDays(params.get("days"));
+  const payload = await fetchAgentHeatmap(ctx.activeOrgId, tz, windowDays);
   return NextResponse.json(payload);
 }

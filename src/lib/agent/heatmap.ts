@@ -31,13 +31,31 @@ export type AgentHeatmap = {
 export type HeatmapPayload = {
   windowStart: string; // ISO; inclusive
   windowEnd: string; // ISO; exclusive
+  windowDays: HeatmapWindowDays;
   timezone: string;
   agents: AgentHeatmap[];
 };
 
-export const HEATMAP_DAYS = 7;
 export const HEATMAP_HOURS = 24;
 export const HEATMAP_TOP_AGENTS = 10;
+
+/**
+ * Supported window sizes for the admin heatmap selector. The grid
+ * is always 7×24 (day-of-week × hour) regardless of window length
+ * - longer windows accumulate more counts per cell.
+ */
+export const HEATMAP_WINDOWS = [7, 30, 90] as const;
+export type HeatmapWindowDays = (typeof HEATMAP_WINDOWS)[number];
+export const HEATMAP_DEFAULT_WINDOW: HeatmapWindowDays = 7;
+export const HEATMAP_DAYS = 7; // grid rows, always 7 (one per dow)
+
+export function parseWindowDays(raw: string | null | undefined): HeatmapWindowDays {
+  const n = Number.parseInt(raw ?? "", 10);
+  if ((HEATMAP_WINDOWS as ReadonlyArray<number>).includes(n)) {
+    return n as HeatmapWindowDays;
+  }
+  return HEATMAP_DEFAULT_WINDOW;
+}
 
 type TelemetryWindowRow = {
   agent_id: string | null;
@@ -132,24 +150,29 @@ export function aggregateHeatmap(
 export async function fetchAgentHeatmap(
   orgId: string,
   timezone: string,
+  windowDays: HeatmapWindowDays = HEATMAP_DEFAULT_WINDOW,
   now: Date = new Date(),
 ): Promise<HeatmapPayload> {
   const windowEnd = now;
   const windowStart = new Date(
-    windowEnd.getTime() - HEATMAP_DAYS * 24 * 60 * 60 * 1000,
+    windowEnd.getTime() - windowDays * 24 * 60 * 60 * 1000,
   );
+  // Longer windows can have more rows; scale the cap roughly so the
+  // 90d view still fits in one round-trip.
+  const rowCap = Math.min(20_000, 1_000 * windowDays);
   const { data, error } = await supabaseAdmin()
     .from("rgaios_chat_telemetry")
     .select("agent_id, created_at")
     .eq("organization_id", orgId)
     .gte("created_at", windowStart.toISOString())
     .lt("created_at", windowEnd.toISOString())
-    .limit(5000);
+    .limit(rowCap);
   if (error) {
     console.error("[heatmap] telemetry select failed", error);
     return {
       windowStart: windowStart.toISOString(),
       windowEnd: windowEnd.toISOString(),
+      windowDays,
       timezone,
       agents: [],
     };
@@ -163,6 +186,7 @@ export async function fetchAgentHeatmap(
   return {
     windowStart: windowStart.toISOString(),
     windowEnd: windowEnd.toISOString(),
+    windowDays,
     timezone,
     agents,
   };

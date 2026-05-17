@@ -3,6 +3,7 @@ import { PageShell } from "@/components/page-shell";
 import { getOrgContext } from "@/lib/auth/admin";
 import {
   fetchAgentHeatmap,
+  HEATMAP_DEFAULT_WINDOW,
   type HeatmapPayload,
 } from "@/lib/agent/heatmap";
 import { HeatmapClient } from "./Client";
@@ -27,12 +28,16 @@ export default async function AdminHeatmapPage() {
 
   const tz =
     Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const initial = await fetchAgentHeatmap(ctx.activeOrgId, tz);
+  const initial = await fetchAgentHeatmap(
+    ctx.activeOrgId,
+    tz,
+    HEATMAP_DEFAULT_WINDOW,
+  );
 
   return (
     <PageShell
       title="Agent activity heatmap"
-      description={`Per-agent chat-turn density for the last 7 days, bucketed by day-of-week × hour-of-day in ${tz}. Top 10 agents by total turns.`}
+      description={`Per-agent chat-turn density bucketed by day-of-week × hour-of-day in ${tz}. Switch the 7d / 30d / 90d window above. Top 10 agents by total turns.`}
     >
       <HeatmapClient initial={initial} timezone={tz} />
     </PageShell>

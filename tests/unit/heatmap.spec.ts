@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import {
   aggregateHeatmap,
   HEATMAP_DAYS,
+  HEATMAP_DEFAULT_WINDOW,
   HEATMAP_HOURS,
   HEATMAP_TOP_AGENTS,
+  HEATMAP_WINDOWS,
   localDowHour,
+  parseWindowDays,
 } from "../../src/lib/agent/heatmap";
 
 /**
@@ -119,6 +122,29 @@ test("aggregateHeatmap: labelForAgent injection overrides default slice", () => 
     () => "Custom Label",
   );
   assert.equal(out[0].agentLabel, "Custom Label");
+});
+
+test("HEATMAP_WINDOWS contract: 7 / 30 / 90 days", () => {
+  assert.deepEqual([...HEATMAP_WINDOWS], [7, 30, 90]);
+});
+
+test("HEATMAP_DEFAULT_WINDOW = 7", () => {
+  assert.equal(HEATMAP_DEFAULT_WINDOW, 7);
+});
+
+test("parseWindowDays accepts 7 / 30 / 90 verbatim", () => {
+  assert.equal(parseWindowDays("7"), 7);
+  assert.equal(parseWindowDays("30"), 30);
+  assert.equal(parseWindowDays("90"), 90);
+});
+
+test("parseWindowDays falls back to default on garbage", () => {
+  assert.equal(parseWindowDays("yesterday"), 7);
+  assert.equal(parseWindowDays("0"), 7);
+  assert.equal(parseWindowDays("9999"), 7);
+  assert.equal(parseWindowDays(""), 7);
+  assert.equal(parseWindowDays(null), 7);
+  assert.equal(parseWindowDays(undefined), 7);
 });
 
 test("aggregateHeatmap: tz shift moves rows across day boundary", () => {
