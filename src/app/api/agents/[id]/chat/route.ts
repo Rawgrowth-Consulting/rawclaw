@@ -1189,6 +1189,53 @@ export async function POST(
               if (pass2Thinking.visibleReply) {
                 preFilterText = pass2Thinking.visibleReply;
               }
+              // DELEGATION PASS-3 WEAVE (2026-05-17, Pedro CEO bug): pass-2
+              // wrote dispatch framing BEFORE agent_invoke executed, so
+              // Kasia's ranked list (detail.delegated_output, see agent-
+              // commands.ts:1242) never lands in Scan's prose. One bounded
+              // pass-3, no new <command>, weave the deliverable.
+              try {
+                const newDel = commandResults.slice(preTry2ResultCount).filter(
+                  (r) =>
+                    r.type === "agent_invoke" && r.ok &&
+                    typeof r.detail?.delegated_output === "string" &&
+                    (r.detail.delegated_output as string).trim().length > 0,
+                );
+                const vis = (preFilterText ?? "").trim();
+                const woven = newDel.some((r) => {
+                  const p = (r.detail!.delegated_output as string).trim().slice(0, 40);
+                  return p.length >= 40 && vis.includes(p);
+                });
+                if (newDel.length > 0 && !woven) {
+                  const weaveBlock = newDel.map((r, i) => {
+                    const d = r.detail ?? {};
+                    const name = typeof d.assignee_name === "string" ? d.assignee_name : `assignee[${i + 1}]`;
+                    return `[${i + 1}] ${name} delivered:\n${(d.delegated_output as string).slice(0, 4000)}`;
+                  }).join("\n\n");
+                  const pass3 = await chatReply({
+                    organizationId: orgId,
+                    organizationName: ctx.activeOrgName,
+                    chatId: 0,
+                    userMessage: lastContent,
+                    publicAppUrl: process.env.NEXT_PUBLIC_APP_URL ?? "",
+                    agentId,
+                    historyOverride: [...history, { role: "user", content: lastContent }],
+                    extraPreamble: extraPreamble +
+                      "\n\n═══ DELEGATION JUST RETURNED ═══\nThe assignee's actual deliverable is below. Weave the concrete items (with @handle + metric per line where applicable) into your reply. Do NOT emit new <command> blocks. Do NOT say 'dispatching' or 'on it' - the work is done. Quote the real data.\n\n" +
+                      weaveBlock,
+                    noHandoff: true,
+                    maxTokens: agentMaxTokens,
+                    callerUserId: userId,
+                  });
+                  if (pass3.ok && pass3.reply.trim()) {
+                    const stripped = extractThinkingRaw(pass3.reply).visibleReply
+                      .replace(/<command[\s\S]*?<\/command>/gi, "").trim();
+                    if (stripped.length > 0) preFilterText = stripped;
+                  }
+                }
+              } catch (err) {
+                console.warn("[chat] pass-3 delegation weave failed:", (err as Error).message);
+              }
               // HOTFIX 7 (2026-05-17): chat-finalize hang after a
               // pass-2 that emitted a successful command but no
               // surrounding prose. R5/R9 v2 walk reproduced it:
@@ -1290,6 +1337,15 @@ export async function POST(
                     if (r.ok && tool === "agents_update") {
                       const firstLine = preview.split("\n")[0].replace(/\*\*/g, "");
                       return firstLine.slice(0, 240);
+                    }
+                    // DELEGATION PASS-3 SYNTH (2026-05-17): agent_invoke
+                    // success - use delegated_output head, not r.summary
+                    // (which is just dispatch framing).
+                    const delegatedOut =
+                      typeof detail.delegated_output === "string" ? (detail.delegated_output as string) : null;
+                    if (r.ok && r.type === "agent_invoke" && delegatedOut) {
+                      const assignee = typeof detail.assignee_name === "string" ? (detail.assignee_name as string) : "assignee";
+                      return `${assignee}: ${delegatedOut.slice(0, 600)}`;
                     }
                     if (r.ok) {
                       return `Done - ${tool}: ${preview.split("\n")[0]}`.slice(0, 240);
