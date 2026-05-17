@@ -283,6 +283,22 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   // which P41 maps to "the resolution rule the resolution rule".
   // Adjacent-phrase collapse for any number of repetitions.
   { pattern: /\b(the resolution rule)(?:\s+the resolution rule)+\b/gi, replacement: "$1" },
+  // HOTFIX 25 (2026-05-17, C dispatch): spinner labels in agent chat
+  // (the `command_running` SSE verb routed through humanizeJargon at the
+  // route's gateway) still leak dev jargon. Verb assembled as
+  // "Running ${label}" / "Working on ${label}" with fallback "a tool"
+  // surfaces as "Running a tool"; raw model-protocol strings
+  // ("claude is generating", "generating reply", "fetching", "loading
+  // context", "in-progress") leak into the in-flight UI tag. Sibling
+  // PR #65 covered tool-card chips; PR #66 covered reasoning chips;
+  // this batch is the spinner-state surface specifically.
+  { pattern: /\bRunning a tool\b/g, replacement: "Running an action" },
+  { pattern: /\bWorking on a tool\b/g, replacement: "Working on an action" },
+  { pattern: /\bclaude is generating\b/gi, replacement: "the agent is writing" },
+  { pattern: /\bgenerating reply\b/gi, replacement: "writing the reply" },
+  { pattern: /\bfetching\b/gi, replacement: "getting" },
+  { pattern: /\bloading context\b/gi, replacement: "getting ready" },
+  { pattern: /\bin[- ]progress\b/gi, replacement: "in flight" },
 ];
 
 export function humanizeJargon(raw: string): string {
