@@ -15,7 +15,19 @@
  * that breaks a "use client" boundary).
  */
 
-const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
+// String replacement is the common case. Function replacement is used by
+// the H-ARCH-5e filename-ext stripper at the entry below to transform the
+// captured base name (e.g. "creator-list" -> "creator list"). Both forms
+// are accepted by String.prototype.replace at runtime; this type just
+// makes the contract honest.
+// String.prototype.replace's callback signature uses `any[]` for the
+// rest args because the values are mixed (capture strings, offset
+// number, full source string). Match the lib.d.ts shape rather than
+// invent a narrower one that fights the standard overload.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Replacement = string | ((substring: string, ...args: any[]) => string);
+
+const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> = [
   { pattern: /\bcoercion error\b/gi, replacement: "had a small hiccup" },
   { pattern: /\bUUID\b/g, replacement: "id" },
   { pattern: /\blookup ambiguity\b/gi, replacement: "name resolution" },
@@ -171,7 +183,7 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   // filename extension leak. Strip the bare filename in operator
   // reply ("creator-list-v2.md" -> "creator list", "report.csv" ->
   // "report"). Also catch apify API field names that bleed through.
-  { pattern: /\b([a-z0-9][a-z0-9_-]*)(?:[-_](?:v\d+))?\.(?:md|csv|json|ya?ml|xml|txt|tsv|jsonl)\b/gi, replacement: (_m, base: string) => base.replace(/[-_]/g, " ") },
+  { pattern: /\b([a-z0-9][a-z0-9_-]*)(?:[-_](?:v\d+))?\.(?:md|csv|json|ya?ml|xml|txt|tsv|jsonl)\b/gi, replacement: (_m: string, base: string) => base.replace(/[-_]/g, " ") },
   { pattern: /\bcommentsCount\b/g, replacement: "comments count" },
   { pattern: /\bfile_name\s*=\s*"?[^"\s,]*"?/gi, replacement: "" },
   { pattern: /\bfile_name\b/gi, replacement: "the file" },
@@ -224,7 +236,13 @@ export function humanizeJargon(raw: string): string {
   if (!raw) return raw;
   let out = raw;
   for (const { pattern, replacement } of JARGON_MAP) {
-    out = out.replace(pattern, replacement);
+    // Narrow per-entry so TypeScript picks the right
+    // String.prototype.replace overload (string vs function form).
+    if (typeof replacement === "string") {
+      out = out.replace(pattern, replacement);
+    } else {
+      out = out.replace(pattern, replacement);
+    }
   }
   return out;
 }
