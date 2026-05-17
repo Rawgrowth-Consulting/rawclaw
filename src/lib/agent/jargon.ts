@@ -254,6 +254,11 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   // suffix doesn't reach across compound emits. Symmetric end-of-map
   // safety net for the duplicated "rule" suffix.
   { pattern: /\brule\s+rule\b/gi, replacement: "rule" },
+  // P45 (2026-05-17, A v161): full-phrase doubling survives all prior
+  // collapses when upstream emits "FILENAME-RESOLVE FILENAME-RESOLVE"
+  // which P41 maps to "the resolution rule the resolution rule".
+  // Adjacent-phrase collapse for any number of repetitions.
+  { pattern: /\b(the resolution rule)(?:\s+the resolution rule)+\b/gi, replacement: "$1" },
 ];
 
 export function humanizeJargon(raw: string): string {

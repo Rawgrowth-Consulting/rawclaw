@@ -2026,7 +2026,7 @@ function OrchestrationStep({
           label={label}
           badge={
             <span className="rounded bg-[var(--brand-surface-2)] px-1.5 py-0.5 text-[9px] font-medium uppercase text-[var(--text-muted)]">
-              {isApify ? "Internal" : "Composio"}
+              {isApify ? "Internal" : "Action"}
             </span>
           }
           status={<StatusDot ok={cmd.ok} />}
