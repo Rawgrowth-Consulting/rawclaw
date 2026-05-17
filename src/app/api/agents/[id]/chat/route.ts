@@ -1218,7 +1218,9 @@ export async function POST(
                   const tools = Array.from(
                     new Set(
                       pass2Results.map((r) =>
-                        typeof r.detail?.tool === "string" ? r.detail.tool : "tool",
+                        typeof r.detail?.tool === "string"
+                          ? humanizeJargon(r.detail.tool)
+                          : "tool",
                       ),
                     ),
                   ).join(", ");
