@@ -34,7 +34,7 @@ const DEFAULT_MAX_TOKENS = 32768;
 const RECENT_HISTORY = 6;
 
 type AgentChatResult =
-  | { ok: true; reply: string }
+  | { ok: true; reply: string; stop_reason?: string }
   | { ok: false; error: string };
 
 type AnthropicContentBlock = {
@@ -957,5 +957,5 @@ export async function chatReply(input: {
     };
   }
 
-  return { ok: true, reply };
+  return { ok: true, reply, stop_reason: data.stop_reason };
 }
