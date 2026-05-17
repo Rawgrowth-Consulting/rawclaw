@@ -1348,6 +1348,17 @@ function Bubble({
     );
   }
 
+  // H-ARCH-RENDER (B 03:10 Q2 research): SSE stream humanizes
+  // operator-facing text at emit-time; page reloads bypass that
+  // because rendered messages come from rgaios_agent_chat_messages
+  // (raw, per H30). Apply humanizeJargon at render-time so the
+  // history-load path matches the live-stream path. Persistence
+  // stays raw (single source of truth); the operator never sees
+  // canonical tool names regardless of arrival mode.
+  const renderedAssistantContent = message.content
+    ? humanizeJargon(message.content)
+    : message.content;
+
   if (message.role === "system") {
     return (
       <SystemBlock message={message} railTop={railTop} railBottom={railBottom} />
@@ -1377,9 +1388,9 @@ function Bubble({
       dataRole="assistant"
     >
       <div className="min-w-0 rounded-xl rounded-tl-sm border border-[var(--line)] bg-[var(--brand-surface-2)] px-4 py-2.5 text-sm leading-relaxed text-[var(--text-body)]">
-        {message.content ? (
+        {renderedAssistantContent ? (
           <>
-            <Response>{message.content}</Response>
+            <Response>{renderedAssistantContent}</Response>
             {/* Inline action panel for proactive anomaly messages */}
             {showActions && (
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--line)] pt-2.5">
@@ -1679,7 +1690,7 @@ function SystemBlock({
           }
         />
         <p className="mt-0.5 whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--text-muted)]">
-          {text}
+          {humanizeJargon(text)}
         </p>
       </TimelineRow>
     );
