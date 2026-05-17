@@ -148,6 +148,25 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   // model uses a pronoun instead of the agent's name. Strip the
   // storage suffix entirely - operator never wants the routing.
   { pattern: /\b(her|his|their) (?:tasks|files|folder|data|memory|notes|content|stuff|knowledge|side|space|workspace)\b/g, replacement: "their notes" },
+  // H-ARCH-5 (B 03:26 spec): delegation card "Task: ..." body
+  // still leaks raw tool names + arg kvs ("apify_top_reels_from_file
+  // window_days=10 top_n=10 metric=comments"). Strip those + the
+  // arg-shape preamble. Also soften retry-rate messages to remove
+  // /connections + "add another account" leaks.
+  { pattern: /\brace_scrape\b/gi, replacement: "additional scrape" },
+  { pattern: /\bcoverage_brief\b/gi, replacement: "coverage summary" },
+  { pattern: /\bwindow_days=\d+\b/gi, replacement: "" },
+  { pattern: /\btop_n=\d+\b/gi, replacement: "" },
+  { pattern: /\bmetric=comments\b/gi, replacement: "by comments" },
+  { pattern: /\bmetric=likes\b/gi, replacement: "by likes" },
+  { pattern: /\bmetric=views\b/gi, replacement: "by views" },
+  { pattern: /\bArgs:\s*/g, replacement: "" },
+  { pattern: /\bname-RESOLVE\b/gi, replacement: "the resolution rule" },
+  { pattern: /\bFILENAME-RESOLVE\b/gi, replacement: "the resolution rule" },
+  { pattern: /\brun limit\b/gi, replacement: "brief pause" },
+  { pattern: /\b\/connections\b/g, replacement: "" },
+  { pattern: /\badd another account\b/gi, replacement: "contact support" },
+  { pattern: /\bif this keeps happening, contact support\b/gi, replacement: "ping me if it keeps happening" },
   // H-ARCH-2b (B 02:17 spec extras): residual "tool" + "filename"
   // word leaks in v7 reply body.
   { pattern: /\bfile-based tool\b/gi, replacement: "file-based scrape" },
