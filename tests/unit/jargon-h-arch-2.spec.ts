@@ -85,6 +85,27 @@ test("H-ARCH-2c: bare filename → name", () => {
   assert.equal(humanizeJargon("the filename was wrong"), "the name was wrong");
 });
 
+test("H-ARCH-2d: file lookup failed → file search came up empty", () => {
+  assert.equal(
+    humanizeJargon("The file lookup failed - retrying"),
+    "The file search came up empty - retrying",
+  );
+});
+
+test("H-ARCH-2d: file fetch missed → file search came up empty", () => {
+  assert.equal(
+    humanizeJargon("The file fetch missed - checking again"),
+    "The file search came up empty - checking again",
+  );
+});
+
+test("H-ARCH-2d: attached file name → attached file", () => {
+  assert.equal(
+    humanizeJargon("didn't match any attached file name"),
+    "didn't match any attached file",
+  );
+});
+
 test("idempotent on H-ARCH-2 patterns", () => {
   const noisy =
     "Kasia's files have scan_agent.yaml, scan__CLAUDE.md, CLAUDE.md attached";

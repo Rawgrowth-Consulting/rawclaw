@@ -158,6 +158,13 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
   { pattern: /\bthe correct name\b/gi, replacement: "the name" },
   { pattern: /\b(?:exact|actual|correct) filename\b/gi, replacement: "name" },
   { pattern: /\bfilename\b/gi, replacement: "name" },
+  // H-ARCH-2d (B 02:28 v8 review): "lookup" / "fetch" still
+  // read as infra jargon to non-dev operators.
+  { pattern: /\bfile lookup failed\b/gi, replacement: "file search came up empty" },
+  { pattern: /\bfile fetch missed\b/gi, replacement: "file search came up empty" },
+  { pattern: /\bfile lookup\b/gi, replacement: "file search" },
+  { pattern: /\bfile fetch\b/gi, replacement: "file search" },
+  { pattern: /\battached file name\b/gi, replacement: "attached file" },
   // H-ARCH-2 (v7 review 02:17): when multiple internal filenames are
   // listed in a single sentence and all map to "internal config", the
   // resulting "internal config, internal config, internal config" reads
