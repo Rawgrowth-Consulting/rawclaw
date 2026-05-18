@@ -100,7 +100,12 @@ jobs:
     runs-on: ubuntu-latest
     # Skip on workflow_dispatch reruns from random branches: only auto
     # deploy when the build came from a real push to v3.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/v3'
+    # Also skip when SSH secret is missing - per Pedro policy, secrets
+    # may stay unset; A pulls VPS manually. Conditional skip kills
+    # recurring red-noise on every v3 push (TICK-22/29/43 diagnose).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/v3' && env.MARTI_SSH_KEY != ''
+    env:
+      MARTI_SSH_KEY: ${{ secrets.MARTI_SSH_KEY }}
     steps:
       - name: SSH pull + restart app on Marti VPS
         uses: appleboy/ssh-action@v1.2.0
