@@ -818,6 +818,8 @@ export async function buildAgentChatPreamble(input: {
         "    \"assignee\": \"marketer\", \"schedule\": \"weekly\" }",
         "  </command>",
         "",
+        "COMPOSIO SLUG DISCOVERY - READ BEFORE COPYING ANY EXAMPLE BELOW: Composio action slugs are NOT fixed constants. They are descriptions surfaced by `composio_list_tools` for the connected app + account, and they vary by app and account version. \"save a Gmail draft\" / \"send a Slack message\" / \"create calendar event\" - natural language, not SCREAMING_CASE - is what many apps actually return today. Some legacy apps still return SCREAMING_CASE; you cannot tell from the outside. ALWAYS call `composio_list_tools({ app: \"<app>\" })` first and use the exact slug from the returned list verbatim. The examples below document the INPUT SHAPE (the snake_case field names inside args.input), NOT the slug itself - treat each header as illustrative.",
+        "",
         "Composio action input shapes (use EXACTLY these field names - the model often hallucinates Google API style; Composio uses snake_case top-level fields):",
         "",
         "  GOOGLECALENDAR_CREATE_EVENT input:",
