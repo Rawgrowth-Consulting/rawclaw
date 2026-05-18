@@ -3,6 +3,7 @@ import { shouldGateTool } from "../approval-gate";
 import { composioAction } from "../proxy";
 import { createApproval } from "@/lib/approvals/queries";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { composioAppNameFor } from "@/lib/connections/catalog";
 
 /**
  * Composio Tool Router MCP surface.
@@ -170,8 +171,16 @@ registerTool({
         "Composio API key missing - set per-org key in Connections → Workspace API keys, or set COMPOSIO_API_KEY env on the VPS",
       );
     }
+    // Normalise via composioAppNameFor so display-key inputs
+    // ("google-calendar", "google-drive") get mapped to Composio's
+    // actual toolkit slugs ("googlecalendar", "googledrive"). The
+    // Marti DB stores connections under the display key while
+    // Composio's v3 toolkit_slug param expects its canonical
+    // dash-free form, which is what surfaced as R-COMPOSIO-3's
+    // "EM returned GMAIL actions when app=googlecalendar" error.
     const rawApp = String(args.app ?? "").trim().toLowerCase();
-    const filter = rawApp && rawApp !== "all" ? rawApp : "";
+    const normApp = rawApp ? composioAppNameFor(rawApp).toLowerCase() : "";
+    const filter = normApp && normApp !== "all" ? normApp : "";
 
     const cacheKey = `${ctx.organizationId}:${filter || "*"}`;
     const cached = composioListCache.get(cacheKey);
@@ -388,7 +397,12 @@ registerTool({
     required: ["app", "action", "input"],
   },
   handler: async (args, ctx) => {
-    const app = String(args.app ?? "").trim().toLowerCase();
+    // Same display-key -> Composio toolkit-slug normalisation as the
+    // list_tools handler. Without this, an agent reading the
+    // catalog UI key ("google-calendar") would hit Composio with a
+    // dash variant the v3 API doesn't recognise.
+    const rawApp = String(args.app ?? "").trim().toLowerCase();
+    const app = rawApp ? composioAppNameFor(rawApp).toLowerCase() : "";
     const action = String(args.action ?? "").trim();
     const rawInput = args.input;
     if (!app) return textError("app is required");
