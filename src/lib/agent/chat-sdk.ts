@@ -39,7 +39,11 @@ async function loadAgentSession(
     .eq("id", agentId)
     .eq("organization_id", organizationId)
     .maybeSingle();
-  return (data as { sdk_session_id?: string | null } | null)?.sdk_session_id ?? null;
+  const stored = (data as { sdk_session_id?: string | null } | null)
+    ?.sdk_session_id;
+  // Treat empty string as cleared (BUG-1 session-stale retry path
+  // writes "" to clear without changing the column type to nullable).
+  return stored && stored.length > 0 ? stored : null;
 }
 
 /**
@@ -172,17 +176,50 @@ export async function chatReplyViaSdk(input: {
   // Load previous session for context continuity
   const previousSessionId = await loadAgentSession(organizationId, agentId);
 
-  try {
-    const result = await runAgentSdk({
+  // BUG-1 SESSION-STALE RETRY (A [03:18] reproduction): when the
+  // DB-stored sdk_session_id no longer exists at the SDK side
+  // (garbage-collected after a quiet window, deploy-time wipe, etc),
+  // the Agent SDK throws "No conversation found with session ID:
+  // <uuid>". The operator-visible failure mode is the agent going
+  // dark on first attempt and only working post manual clear+new-chat.
+  // Catch that specific error class, clear the stale id, and retry
+  // ONCE without `resume:` so the next call lands on a fresh session.
+  // Distinct from the BUG-1 cwd-stale failure mode that PR #128
+  // (per-run agent workspace) already covered.
+  const runOnce = async (sessionId: string | undefined) =>
+    runAgentSdk({
       message: userMessage,
       systemPrompt, // Also passed directly in case cwd CLAUDE.md fails
-      sessionId: previousSessionId ?? undefined,
+      sessionId,
       cwd: agentDir,
       model: model ?? agent.runtime ?? undefined,
       onStreamText,
       mcpConfigPath: mcpConfigPath ?? undefined,
       timeoutMs: 120_000,
     });
+  const looksLikeSessionMiss = (err: unknown): boolean => {
+    const msg = err instanceof Error ? err.message : String(err);
+    return /No conversation found with session ID/i.test(msg);
+  };
+
+  try {
+    let result;
+    try {
+      result = await runOnce(previousSessionId ?? undefined);
+    } catch (err) {
+      if (previousSessionId && looksLikeSessionMiss(err)) {
+        console.warn(
+          `[chat-sdk] sdk_session_id ${previousSessionId} stale for agent ${agentId}, retrying without resume`,
+        );
+        // Clear the stale id so the NEXT chat turn also starts fresh
+        // if for any reason saveAgentSession below doesn't overwrite
+        // (e.g. retry path itself fails). Best-effort.
+        await saveAgentSession(organizationId, agentId, "").catch(() => {});
+        result = await runOnce(undefined);
+      } else {
+        throw err;
+      }
+    }
 
     // Persist session ID for next message
     if (result.sessionId) {
