@@ -10,6 +10,7 @@ import "./knowledge";
 import "./agent-knowledge";
 import "./agent-invoke";
 import "./composio-router";
+import "./composio-connect";
 import "./runs";
 import "./agents";
 import "./routines";
