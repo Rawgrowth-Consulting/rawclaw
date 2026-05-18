@@ -242,7 +242,12 @@ async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
 
   const body: Record<string, unknown> = {
     model: req.model ?? CLAUDE_MAX_OAUTH_MODEL,
-    max_tokens: 4096,
+    // BUG-14: default 4096 truncated 10-item synthesis around item 5-6
+    // when captions push token budget. Bump default to 8192 so the
+    // single-turn tool result + reply path matches the pass-2 floor
+    // already enforced in chat/route.ts. Per-agent override still wins
+    // via the spread below if a caller passes a larger budget.
+    max_tokens: 8192,
     system,
     messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
     ...(tools && tools.length > 0 ? { tools } : {}),
