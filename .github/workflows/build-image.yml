@@ -100,14 +100,21 @@ jobs:
     runs-on: ubuntu-latest
     # Skip on workflow_dispatch reruns from random branches: only auto
     # deploy when the build came from a real push to v3.
-    # Also skip when SSH secret is missing - per Pedro policy, secrets
-    # may stay unset; A pulls VPS manually. Conditional skip kills
-    # recurring red-noise on every v3 push (TICK-22/29/43 diagnose).
-    if: github.event_name == 'push' && github.ref == 'refs/heads/v3' && env.MARTI_SSH_KEY != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/v3'
     env:
+      # Surfaced at job env so the step-level `if` below can read it.
+      # Job-level `if:` cannot see `env.X` (GH parser only resolves
+      # workflow-level env at that stage), which is what PR #119
+      # silently tripped on -- the workflow rejected with a 0s
+      # "workflow file issue" and every v3 push went red.
       MARTI_SSH_KEY: ${{ secrets.MARTI_SSH_KEY }}
     steps:
       - name: SSH pull + restart app on Marti VPS
+        # Skip silently when the SSH secret is unset. Per Pedro policy
+        # the secret may stay unset; A pulls the VPS manually. This
+        # kills the red-noise on every v3 push without rejecting the
+        # workflow file.
+        if: env.MARTI_SSH_KEY != ''
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.MARTI_SSH_HOST }}
