@@ -1665,10 +1665,13 @@ export async function POST(
         const skipMemory =
           !filtered.ok ||
           lastContent.trim().length < 30 ||
-          visibleText.trim().length < 30;
+          visibleTextScrubbed.trim().length < 30;
         if (!skipMemory) {
           try {
-            const fact = await extractChatMemoryFact(lastContent, visibleText);
+            // BUG-20 (C handover #4): pass scrubbed text so Haiku
+            // memory-extract never sees raw {tool, args} JSON from
+            // pass-1, matching the persistence fix in PR #117.
+            const fact = await extractChatMemoryFact(lastContent, visibleTextScrubbed);
             if (fact) {
               await db.from("rgaios_audit_log").insert({
                 organization_id: orgId,
