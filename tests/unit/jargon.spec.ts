@@ -62,6 +62,36 @@ test("composio_use_tool mapped to use the integration", () => {
   assert.doesNotMatch(out, /composio_use_tool/);
 });
 
+test("GAP-6: bare 'Composio' as a product name passes through unchanged", () => {
+  // R-EM-SEC 04:32 walked into this: EM was asked "top 3 security
+  // checks before wider Marti beta" and surfaced "Composio token" as
+  // one of them. The old bare /\bcomposio\b/gi rule rewrote that to
+  // "the integration token", which reads as a generic placeholder and
+  // hides the real product the operator is asking about. The
+  // snake_case rules (composio_use_tool, composio_list_tools) still
+  // scrub the actual internal jargon - we only removed the bare rule.
+  const out = humanizeJargon(
+    "Verify Composio token rotation: leaked tokens give shell access.",
+  );
+  assert.match(out, /Composio/, "bare 'Composio' product name must survive");
+  assert.doesNotMatch(
+    out,
+    /the integration token/i,
+    "must not rewrite 'Composio token' to the generic placeholder",
+  );
+});
+
+test("GAP-6: composio_use_tool inside a sentence with bare Composio still scrubs only the snake_case form", () => {
+  // Belt-and-suspenders: prove the rule we kept still fires + the rule
+  // we removed no longer does, in the same input.
+  const out = humanizeJargon(
+    "Composio is the product. Internally we call composio_use_tool.",
+  );
+  assert.match(out, /Composio is the product/, "bare product reference intact");
+  assert.match(out, /use the integration/, "snake_case rule still fires");
+  assert.doesNotMatch(out, /composio_use_tool/, "snake_case rule scrubbed");
+});
+
 test("apify_top_reels_from_file mapped to scrape reels from the creator list", () => {
   const out = humanizeJargon("I'll fire apify_top_reels_from_file now");
   assert.match(out, /scrape reels from the creator list/);
