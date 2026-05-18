@@ -212,3 +212,32 @@ export function getCatalogEntry(key: string): CatalogEntry | undefined {
 export function composioAppNameFor(key: string): string {
   return getCatalogEntry(key)?.composioAppName ?? key;
 }
+
+/**
+ * Inverse of composioAppNameFor: take a Composio toolkit slug
+ * (e.g. "googlecalendar") and return the canonical Marti catalog key
+ * (e.g. "google-calendar") so DB rows + lookups agree on a single
+ * provider_config_key shape.
+ *
+ * BUG-35 (D 2026-05-18, R-COMPOSIO-3 walk): live browse cache entries
+ * pass through with `entry.key = liveItem.slug` (Composio slug shape),
+ * so /api/connections/composio POST was writing rows with
+ * provider_config_key="composio:googlecalendar" while every downstream
+ * lookup (proxy.ts uses normalizeComposioAppKey first) goes hunting
+ * for "composio:google-calendar". Rows existed in the DB, status was
+ * connected, but the agent never found them and Composio rejected
+ * with "no connected account for toolkit Google Calendar".
+ *
+ * This helper is the single source of truth - both the OAuth-start
+ * write path and the executeAction read path normalize through here.
+ * Defaults to the input unchanged when no override matches (already a
+ * catalog key, or a brand-new toolkit we don't have a catalog row for
+ * yet).
+ */
+export function catalogKeyForComposioSlug(input: string): string {
+  if (CONNECTOR_CATALOG.some((c) => c.key === input)) return input;
+  const reverse = CONNECTOR_CATALOG.find(
+    (c) => c.composioAppName === input,
+  );
+  return reverse?.key ?? input;
+}

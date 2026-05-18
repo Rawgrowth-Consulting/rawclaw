@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getOrgContext } from "@/lib/auth/admin";
-import { CONNECTOR_CATALOG, getCatalogEntry, composioAppNameFor } from "@/lib/connections/catalog";
+import {
+  CONNECTOR_CATALOG,
+  getCatalogEntry,
+  composioAppNameFor,
+  catalogKeyForComposioSlug,
+} from "@/lib/connections/catalog";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import {
   resolveComposioApiKey,
@@ -133,7 +138,19 @@ export async function POST(req: Request) {
             // auth_config_id from this v3 link attempt. If a 'connected'
             // row exists we still overwrite to pending_token; the user
             // explicitly clicked Connect again, treat as reconnect.
-            const providerConfigKey = `composio:${entry.key}`;
+            // BUG-35 (D 2026-05-18, R-COMPOSIO-3 calendar walk): live
+            // browse-cache path can stamp entry.key with the raw Composio
+            // toolkit slug ("googlecalendar"), but the downstream
+            // executeAction lookup in src/lib/composio/proxy.ts:430
+            // normalizes its query to the catalog key
+            // ("google-calendar") before hitting rgaios_connections.
+            // Without normalizing here, the write/read keys diverge -
+            // row exists + status=connected, agent still gets "no
+            // connected account" because the lookup misses the row.
+            // catalogKeyForComposioSlug is the inverse helper; safe
+            // no-op when entry.key is already a catalog key.
+            const canonicalKey = catalogKeyForComposioSlug(entry.key);
+            const providerConfigKey = `composio:${canonicalKey}`;
             const bareKey = providerConfigKey.startsWith("composio:")
               ? providerConfigKey.slice("composio:".length)
               : providerConfigKey;
