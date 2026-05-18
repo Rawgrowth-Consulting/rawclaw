@@ -1105,7 +1105,13 @@ async function execAgentInvoke(
   let runOutput: Record<string, unknown> | null = null;
   let runError: string | null = null;
   if (runId) {
-    const pollDeadline = Date.now() + 60_000;
+    // BUG-23 (2026-05-18): poll deadline matches executor.ts:47
+    // WALL_CLOCK_MS. The previous 60s cap silently bailed on delegations
+    // that took 60-120s (e.g. Ania persona with a large system_prompt +
+    // a complex DM-rewrite task), leaving the orchestrator with an empty
+    // delegated_output even though the executor was still writing the
+    // run row. Match the inner timeout so the poll outlives the work.
+    const pollDeadline = Date.now() + 120_000;
     while (Date.now() < pollDeadline) {
       const { data: polled } = await db
         .from("rgaios_routine_runs")
