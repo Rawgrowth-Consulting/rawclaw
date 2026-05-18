@@ -107,6 +107,25 @@ const composioListCache = new Map<string, ListCacheEntry>();
 // global catalog call - that keeps pure discovery working.
 async function resolveComposioAuthConfigIds(
   organizationId: string,
+  /**
+   * Optional app/toolkit slug to scope the returned auth_config_ids
+   * to. When set, only `composio:<appFilter>` connection rows and
+   * `composio-auth-config:<appFilter>` synthetic cache rows match -
+   * which is the load-bearing scoping for `composio_list_tools` so
+   * Composio v3's `/api/v3/tools?toolkit_slug=...&auth_config_ids=...`
+   * doesn't return tools from OTHER connected apps when the org has
+   * gmail + google-calendar + slack all wired (A 00:41 root-cause:
+   * unscoped auth_config_ids list let Composio answer with gmail
+   * actions even when toolkit_slug=googlecalendar). When omitted,
+   * the function returns auth_configs across every connected
+   * toolkit (catalog browse path).
+   *
+   * The filter checks both shapes - the raw display key as stored
+   * (e.g. "google-calendar") AND the catalog's `composioAppName`
+   * canonical (e.g. "googlecalendar") - because connections can be
+   * stored under either depending on the OAuth start path version.
+   */
+  appFilter?: string,
 ): Promise<string[]> {
   try {
     const { data, error } = await supabaseAdmin()
@@ -115,6 +134,16 @@ async function resolveComposioAuthConfigIds(
       .eq("organization_id", organizationId)
       .eq("status", "connected");
     if (error || !data) return [];
+    const slug = appFilter?.trim().toLowerCase();
+    const canonical = slug ? composioAppNameFor(slug).toLowerCase() : null;
+    // Two shapes the connection could match: the raw display key, OR
+    // the Composio canonical. A row whose provider_config_key suffix
+    // matches EITHER is in scope. Empty slug = match anything.
+    const matchesApp = (key: string): boolean => {
+      if (!slug) return true;
+      const suffix = key.slice(key.indexOf(":") + 1);
+      return suffix === slug || (canonical !== null && suffix === canonical);
+    };
     const ids = new Set<string>();
     for (const row of data as Array<{
       provider_config_key: string;
@@ -124,12 +153,16 @@ async function resolveComposioAuthConfigIds(
       // Synthetic auth-config cache row: id lives in nango_connection_id.
       if (
         row.provider_config_key.startsWith("composio-auth-config:") &&
-        row.nango_connection_id?.startsWith("ac_")
+        row.nango_connection_id?.startsWith("ac_") &&
+        matchesApp(row.provider_config_key)
       ) {
         ids.add(row.nango_connection_id);
       }
       // Connected-account row for a real toolkit: id lives in metadata.
-      if (row.provider_config_key.startsWith("composio:")) {
+      if (
+        row.provider_config_key.startsWith("composio:") &&
+        matchesApp(row.provider_config_key)
+      ) {
         const metaId = (row.metadata as { composio_auth_config_id?: string } | null)
           ?.composio_auth_config_id;
         if (typeof metaId === "string" && metaId.startsWith("ac_")) {
@@ -205,8 +238,14 @@ registerTool({
       // even though the toolkit was genuinely wired. When the org has
       // no Composio connections we leave the param off and fall back to
       // the global catalog so pure discovery / browse still works.
+      // Scope by the requested app filter so Composio v3 doesn't
+      // return other connected toolkits' tools when this org has
+      // gmail + google-calendar + slack all wired (A 00:41 root-cause).
+      // Empty filter falls through to the org-wide auth_config list
+      // for catalog browse.
       const authConfigIds = await resolveComposioAuthConfigIds(
         ctx.organizationId,
+        filter || undefined,
       );
       if (authConfigIds.length > 0) {
         baseParams.set("auth_config_ids", authConfigIds.join(","));
