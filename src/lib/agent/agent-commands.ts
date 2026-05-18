@@ -284,6 +284,25 @@ export type CommandResult = {
 export type ExtractCommandsResult = {
   visibleReply: string;
   results: CommandResult[];
+  /**
+   * True iff at least one of the executed commands was a successful
+   * `tool_call`. A `tool_call` (e.g. apify scrape, composio fetch)
+   * produces raw data the agent is expected to SYNTHESISE into prose
+   * on the next pass. agent_invoke + routine_create do not - those
+   * already produce user-visible output (the delegated agent's reply,
+   * or a confirmation card) and the orchestrator's pass-2 visible
+   * reply may legitimately be empty.
+   *
+   * The chat surface uses this as the pass-2 silent-stuck synth-
+   * fallback predicate: only fire the "synth from results" recovery
+   * when pass-1 actually emitted a tool_call - otherwise we'd
+   * fabricate prose where the model intentionally stayed quiet.
+   *
+   * Caller can still derive this from `results`; the field is the
+   * explicit contract so the chat route does not have to hard-code
+   * the type-string match.
+   */
+  expectsTextSynthesis: boolean;
 };
 
 type SpeakerInfo = {
@@ -1424,12 +1443,12 @@ export async function extractAndExecuteCommands(input: {
   }
 
   if (pending.length === 0) {
-    return { visibleReply: reply, results: [] };
+    return { visibleReply: reply, results: [], expectsTextSynthesis: false };
   }
 
   const speaker = await loadSpeaker(orgId, speakerAgentId);
   if (!speaker) {
-    return { visibleReply, results: [] };
+    return { visibleReply, results: [], expectsTextSynthesis: false };
   }
   const isAtlas = speaker.role === "ceo";
   const isHead = speaker.is_department_head === true;
@@ -1446,6 +1465,7 @@ export async function extractAndExecuteCommands(input: {
           summary: `Commands rejected - ${speaker.name} is not Atlas or a department head`,
         },
       ],
+      expectsTextSynthesis: false,
     };
   }
 
@@ -1696,5 +1716,16 @@ export async function extractAndExecuteCommands(input: {
       `[agent-commands] audit insert failed: ${(err as Error).message}`,
     );
   }
-  return { visibleReply, results };
+  // FIX 3 (B 23:21 -> C dispatch): explicit "pass-2 should have
+  // emitted text" marker. Only a successful tool_call produces raw
+  // data the orchestrator needs to synthesise into prose on the next
+  // pass. agent_invoke results carry their own user-visible reply
+  // (delegated_output) and routine_create surfaces a confirmation
+  // card; neither needs the synth-fallback recovery, and triggering
+  // it for them risks fabricating prose where the model intentionally
+  // stayed quiet.
+  const expectsTextSynthesis = results.some(
+    (r) => r.type === "tool_call" && r.ok,
+  );
+  return { visibleReply, results, expectsTextSynthesis };
 }

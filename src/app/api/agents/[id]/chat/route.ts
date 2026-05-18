@@ -993,6 +993,14 @@ export async function POST(
           summary: string;
           detail?: Record<string, unknown>;
         }> = [];
+        // FIX 3 (B 23:21 -> C dispatch): pass-1's
+        // `expectsTextSynthesis` marker is the explicit "pass-2
+        // should have emitted synthesis text" signal. We capture it
+        // here so the pass-2 silent-stuck synth-fallback below can
+        // gate on `tool_call ran successfully` rather than the
+        // coarser "any command ran" signal that used to over-trigger
+        // on pure agent_invoke / routine_create turns.
+        let pass1ExpectsSynth = false;
         try {
           const ext = await extractAndExecuteCommands({
             orgId,
@@ -1020,6 +1028,7 @@ export async function POST(
             preFilterText = ext.visibleReply || preFilterText;
             commandResults = ext.results;
           }
+          pass1ExpectsSynth = ext.expectsTextSynthesis;
         } catch (err) {
           console.warn(
             "[chat] command extraction failed:",
@@ -1315,7 +1324,16 @@ export async function POST(
               // "scrape OK" badge then dead air. Widen the predicate:
               // also synthesise from the PASS-1 results when pass-2
               // visible is empty/intermediate AND pass-1 had any results.
-              const hasPass1Results = preTry2ResultCount > 0;
+              // FIX 3 (B 23:21 -> C dispatch): the prior version of
+              // this predicate fired on ANY pass-1 command, which over-
+              // triggered the synth-fallback for pure agent_invoke /
+              // routine_create turns where pass-2 is allowed to stay
+              // quiet (the delegated reply / confirmation card IS the
+              // surface). Narrow to pass1ExpectsSynth - true iff pass-1
+              // had a successful tool_call, which is the only command
+              // type that produces raw data the orchestrator MUST then
+              // turn into prose.
+              const hasPass1Results = pass1ExpectsSynth;
               // BUG-9 RECUR 2nd-pass (A 23:17 RETRY-7 Kasia): tighter
               // threshold. Top-10 list with comment counts + handles
               // needs >200 chars. Anything below + tool ran = synth

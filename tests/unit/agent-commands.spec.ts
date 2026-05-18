@@ -93,6 +93,11 @@ test("extractAndExecuteCommands: no <command> blocks → no-op, reply unchanged"
     out.visibleReply,
     "Just a friendly chat reply with no commands.",
   );
+  // FIX 3 (B 23:21 -> C dispatch): no commands = no tool_call =
+  // pass-2 has nothing to synthesise from. The chat surface uses
+  // this to skip the synth-fallback recovery entirely on plain
+  // conversational turns.
+  assert.equal(out.expectsTextSynthesis, false);
 });
 
 test("extractAndExecuteCommands: sub-agent (not Atlas, not head) is rejected, blocks stripped", async () => {
@@ -128,6 +133,9 @@ test("extractAndExecuteCommands: sub-agent (not Atlas, not head) is rejected, bl
   assert.equal(out.results.length, 1);
   assert.equal(out.results[0].ok, false);
   assert.match(out.results[0].summary, /not Atlas or a department head/);
+  // Rejected (not-authorised) sub-agent never ran a tool_call - the
+  // pass-2 synth-fallback must not fire on a refusal.
+  assert.equal(out.expectsTextSynthesis, false);
 });
 
 test("extractAndExecuteCommands: Atlas tool_call invokes Composio v3 execute", async () => {
@@ -192,6 +200,10 @@ test("extractAndExecuteCommands: Atlas tool_call invokes Composio v3 execute", a
   assert.equal(out.results.length, 1, "one command result");
   assert.equal(out.results[0].ok, true, `got: ${out.results[0].summary}`);
   assert.equal(out.results[0].type, "tool_call");
+  // FIX 3 (B 23:21 -> C dispatch): a successful tool_call IS the
+  // case the pass-2 silent-stuck synth-fallback exists for - this is
+  // the marker the chat surface gates on.
+  assert.equal(out.expectsTextSynthesis, true);
   assert.ok(composioHit, "Composio v3 endpoint must have been called");
   // `composioBody` is only assigned inside the fetch-router callback, so
   // TS control-flow narrows it away here. Re-bind through an explicit type.
