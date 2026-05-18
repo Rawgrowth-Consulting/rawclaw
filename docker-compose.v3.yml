@@ -37,6 +37,17 @@ services:
       # Used for app-level secret-at-rest encryption (lib/crypto.ts).
       JWT_SECRET: ${JWT_SECRET}
 
+      # Composio v3 toolkit (Gmail / Slack / Calendar / etc). BUG-20
+      # root cause (D 01:15 verified on Marti): /opt/rawclaw/.env had
+      # COMPOSIO_API_KEY set but the compose `app` service env block
+      # didn't thread it through, so the container's
+      # `resolveComposioApiKey(orgId)` env fallback failed and every
+      # composio_use_tool call reported "no connected account" /
+      # mis-routed. Default `:-` so a deploy without Composio still
+      # boots clean. Webhook secret is for inbound Composio callbacks.
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+      COMPOSIO_WEBHOOK_SECRET: ${COMPOSIO_WEBHOOK_SECRET:-}
+
       # Bearer required by /api/cron/* endpoints (schedule-tick, claude-token).
       CRON_SECRET: ${CRON_SECRET:-}
 
