@@ -819,7 +819,15 @@ export async function POST(
           for (const k of OPERATOR_FACING_STRING_FIELDS) {
             const v = event[k];
             if (typeof v === "string" && v.length > 0) {
-              event[k] = humanizeJargon(v);
+              // BUG-28 (2026-05-18, R-ORCH-1 CEO->Marta walk 12:06):
+              // humanizeJargon scrubs tool slugs but leaves em-dashes
+              // intact. R-ORCH-1 walk surfaced 7 em-dashes in the
+              // delegated Marta summary - operator saw raw em-dashes
+              // in the SSE stream. scrubThinkingDashes is the same
+              // regex shape as apply-filter.ts:51 brand-voice em-dash
+              // strip; cheap to apply here so the SSE chokepoint
+              // matches the final-text chokepoint guarantee.
+              event[k] = scrubThinkingDashes(humanizeJargon(v));
             }
           }
           if (event.type === "commands_executed" && Array.isArray(event.results)) {
@@ -827,7 +835,9 @@ export async function POST(
               (r) => {
                 const next: Record<string, unknown> = { ...r };
                 if (typeof next.summary === "string") {
-                  next.summary = humanizeJargon(next.summary as string);
+                  next.summary = scrubThinkingDashes(
+                    humanizeJargon(next.summary as string),
+                  );
                 }
                 return next;
               },
