@@ -1316,8 +1316,19 @@ export async function POST(
               // also synthesise from the PASS-1 results when pass-2
               // visible is empty/intermediate AND pass-1 had any results.
               const hasPass1Results = preTry2ResultCount > 0;
+              // BUG-9 RECUR 2nd-pass (A 23:17 RETRY-7 Kasia): tighter
+              // threshold. Top-10 list with comment counts + handles
+              // needs >200 chars. Anything below + tool ran = synth
+              // didn't deliver. Also catch missing numbered list
+              // markers when commandResults present.
+              const looksLikeIncompleteList =
+                hasPass1Results &&
+                visibleAfterStrip.length < 200 &&
+                !/\b10\.\s/.test(visibleAfterStrip);
               const pass2HasNoUsableText =
-                visibleAfterStrip.length < 20 || looksLikeIntermediate;
+                visibleAfterStrip.length < 20 ||
+                looksLikeIntermediate ||
+                looksLikeIncompleteList;
               if (
                 (pass2EmittedCommands || hasPass1Results) &&
                 pass2HasNoUsableText
