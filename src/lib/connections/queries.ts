@@ -49,15 +49,47 @@ export async function getConnection(
       throw new Error(`getConnection: ${perUser.error.message}`);
     if (perUser.data) return perUser.data;
   }
-  const { data, error } = await db
+  const orgWide = await db
     .from("rgaios_connections")
     .select("*")
     .eq("organization_id", organizationId)
     .eq("provider_config_key", providerConfigKey)
     .is("user_id", null)
     .maybeSingle();
-  if (error) throw new Error(`getConnection: ${error.message}`);
-  return data;
+  if (orgWide.error)
+    throw new Error(`getConnection: ${orgWide.error.message}`);
+  if (orgWide.data) return orgWide.data;
+  // BUG-37 (D 2026-05-18 R-COMPOSIO-3 calendar walk + verify):
+  // Per-user lookup miss + org-wide (user_id IS NULL) miss is still
+  // returning null for a row that is legitimately status=connected
+  // but was created with a DIFFERENT user_id than the caller. Seen
+  // live: composio:google-calendar row in prod has user_id=b3a3fdf4
+  // (admin who first OAuth'd Calendar) while caller session is
+  // Pedro (c6f089f7) - both gmail+instagram rows have Pedro's uid
+  // so those work, calendar fails for everyone except b3a3fdf4.
+  //
+  // Pedro mandate: "n pode desconectar, tem que ser assim, de outro
+  // jeito" - server-side fix required, no operator reconnect.
+  //
+  // Fallback policy: when caller-scoped AND org-wide both miss,
+  // return ANY status=connected row for this (org, provider_key)
+  // IFF exactly one such row exists. The "exactly one" guard
+  // prevents accidental cross-user leak in orgs where multiple
+  // members each have their own personal grant (e.g. two sales
+  // reps each with own Hubspot account). Single-row case is the
+  // org-shared-toolkit case (Calendar / Slack workspace / Notion)
+  // and is the only one this fallback fires for.
+  const allRows = await db
+    .from("rgaios_connections")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("provider_config_key", providerConfigKey)
+    .eq("status", "connected");
+  if (allRows.error)
+    throw new Error(`getConnection: ${allRows.error.message}`);
+  const connected = allRows.data ?? [];
+  if (connected.length === 1) return connected[0];
+  return null;
 }
 
 export async function upsertConnection(input: {
