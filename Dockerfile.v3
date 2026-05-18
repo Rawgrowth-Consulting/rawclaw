@@ -111,6 +111,24 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/progress ./node_modu
 RUN npm install --omit=dev --no-save --no-package-lock \
       pg@^8 jsonwebtoken@^9 bcryptjs@^3
 
+# BUG-22 (D 2026-05-18): Claude Code CLI is the LLM transport for the
+# v3 cli runtime path (.env: LLM_PROVIDER=claude-max-oauth, RUNTIME_PATH=cli).
+# Previously installed ad-hoc inside the running container and lost on
+# every force-recreate. Install it in the image so the path survives
+# rebuild + matches the runtime contract documented in AGENTS.md
+# (Path A Claude Code CLI primary).
+RUN npm install -g @anthropic-ai/claude-code
+
+# Give nextjs a real home dir so `claude --print` can read its OAuth
+# credentials. The Debian/Alpine slim node base sets nextjs HOME to
+# /nonexistent, which breaks the CLI's $HOME/.claude lookup. We
+# create the dir + chown + usermod so the runtime can mount or copy
+# /home/rawclaw/.claude → /home/nextjs/.claude (provision-vps.sh handles
+# the copy on bootstrap; docker-compose.v3.yml volume-mounts it on
+# subsequent restarts).
+RUN mkdir -p /home/nextjs && chown nextjs:nodejs /home/nextjs \
+      && usermod -d /home/nextjs nextjs
+
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/whisper-cli
 
 USER nextjs
