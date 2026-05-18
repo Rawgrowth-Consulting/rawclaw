@@ -1637,7 +1637,28 @@ export async function POST(
           surface: SURFACE,
         });
 
-        const preRedactVisible = filtered.ok ? filtered.text : HARD_FAIL_MESSAGE;
+        // BUG-42 (D 2026-05-18, A bench-iter batch 1 surfaced):
+        // applyBrandFilter hard-fails (regen #1 also tripped banned-11)
+        // were collapsing every reasoning response into HARD_FAIL_MESSAGE
+        // "[brand voice guard] Reply withheld - copy still contained
+        // banned words after one regeneration". Net effect: complex
+        // analytical / calculation / factual answers (GAIA, MMLU-Pro,
+        // long-form research) get blanked because the regen pass
+        // couldn't strip every banned word in one shot. Operator sees
+        // a guard placeholder instead of the actual reasoning.
+        //
+        // Pedro mandate: keep brand voice firm BUT do not blank
+        // reasoning. Soft-fail path: when hard-fail, ship the
+        // substring-sanitised finalAttempt (banned tokens stripped
+        // inline) instead of HARD_FAIL_MESSAGE. Audit row is still
+        // written inside applyBrandFilter as brand_voice_hard_fail
+        // so we still see + can tighten the regen prompt later.
+        // The agent's reasoning survives, the operator can act.
+        const preRedactVisible = filtered.ok
+          ? filtered.text
+          : filtered.finalAttempt && filtered.finalAttempt.length > 0
+            ? filtered.finalAttempt
+            : HARD_FAIL_MESSAGE;
 
         // Outbound secret scrub. Models echo back pasted creds in
         // their own "rotate that key" warnings (Scan repeated
