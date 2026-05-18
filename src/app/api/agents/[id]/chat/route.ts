@@ -1036,6 +1036,28 @@ export async function POST(
           );
         }
 
+        // BUG-9 EAGER-SYNTH (D TICK-48, 2026-05-17): apify_top_reels_from_file
+        // returns a small pre-formatted "Top N reels by <metric>: @x - 500 -
+        // <caption>..." text on result_preview. Lift it as preFilterText
+        // BEFORE pass-2 fires so the operator-visible reply has the actual
+        // data even if pass-2 silent-stucks (Anthropic active bug #50727
+        // returns content=[] post-tool). If pass-2 succeeds it overwrites
+        // preFilterText at line ~1206 with the model's prose synthesis -
+        // standard path is unchanged. This is defense-in-depth alongside
+        // the post-pass-2 synth-fallback (PR #120 + PR #124): even if the
+        // fallback predicate misfires, the operator still gets the list.
+        const presetRes = commandResults.find(
+          (r) =>
+            r.ok &&
+            (r.detail as { tool?: string } | undefined)?.tool ===
+              "apify_top_reels_from_file",
+        );
+        const presetText = (presetRes?.detail as { result_preview?: string } | undefined)
+          ?.result_preview;
+        if (typeof presetText === "string" && presetText.length > 0) {
+          preFilterText = presetText;
+        }
+
         // 4a-2. Second pass: feed the tool/delegation results back to the
         // agent so the operator-visible reply actually USES the data -
         // "Here are the last 5 posts: ..." instead of "Pulling now."
