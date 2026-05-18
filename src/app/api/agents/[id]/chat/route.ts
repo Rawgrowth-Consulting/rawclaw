@@ -1122,8 +1122,15 @@ export async function POST(
                 resultsBlock +
                 refineDirective,
               noHandoff: true,
-              // Same per-agent reasoning budget as pass 1.
-              maxTokens: agentMaxTokens,
+              // BUG-14 / R-MARTI-CANONICAL: pass-2 sees the tool result
+              // block (e.g. 10 reels with captions + comment counts) and
+              // must synthesise a numbered answer over it. The per-agent
+              // default (4096) truncates at item 5-6 for top-10 lists +
+              // captions, which surfaces as A's "no synthesis outside
+              // card" / "5/50 items previewed" report. Floor pass-2 at
+              // 8192 when commandResults were produced - keeps pass-1
+              // budget conservative, only bumps the resynthesis turn.
+              maxTokens: Math.max(agentMaxTokens ?? 0, 8192),
               callerUserId: userId,
             });
             if (pass2.ok && pass2.reply.trim()) {
