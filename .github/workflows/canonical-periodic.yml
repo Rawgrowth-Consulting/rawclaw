@@ -1,0 +1,113 @@
+name: Canonical periodic re-test
+
+# Mechanizes Pedro's [04:26] mandate: "AGORA TEM QUE CONTINUAR
+# RETESTANDO ESSE DOS 10 DE VEZ EM QUANDO E OS OUTROS CANONICAL
+# PORRA". A's manual periodic re-test loop drifts (heartbeat-only
+# windows); this workflow runs the Playwright canonical specs on a
+# cron so regressions surface against a live Marti VPS without
+# anyone having to remember to refire them.
+#
+# Cost: each run spends one Apify scrape per scheduled fire +
+# whatever Composio actions the spec exercises. */30 is the
+# Pedro-cited cadence. To dial that down, change the cron line
+# below OR drop a /tmp/canonical-skip flag on the Marti box (see
+# skip-gate step).
+#
+# Safety gates:
+#   1. Schedule + workflow_dispatch only - never on push/PR so a
+#      green-CI rush can't accidentally fire 47 Apify scrapes.
+#   2. Specs skip themselves when E2E_KASIA_AGENT_ID /
+#      E2E_MARTA_AGENT_ID env vars are unset (see
+#      tests/canonical/R-MARTI-CANONICAL.spec.ts skip pattern).
+#      Until ops sets those + E2E_USER / E2E_PASS in repo secrets
+#      the workflow is dormant - dry runs only.
+#   3. Skip-gate step pre-checks /tmp/canonical-skip on the VPS
+#      via SSH. Pedro can pause the whole loop with one touch.
+
+on:
+  schedule:
+    # Every 30 minutes per Pedro [04:26] cadence. Off-the-hour at :07
+    # / :37 so the fleet doesn't pile on the hour mark.
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+# Concurrency: skip if a previous run is still going - the Apify
+# scrape can run several minutes and we'd rather drop a fire than
+# fan out parallel scrapes against the same handles.
+concurrency:
+  group: canonical-periodic
+  cancel-in-progress: false
+
+jobs:
+  canonical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Target Marti's public deploy. Override at dispatch time
+      # via inputs if a staging VPS is preferred.
+      E2E_BASE_URL: ${{ vars.MARTI_PUBLIC_URL || 'https://marti.rawgrowth.ai' }}
+      E2E_USER: ${{ secrets.MARTI_E2E_USER }}
+      E2E_PASS: ${{ secrets.MARTI_E2E_PASS }}
+      E2E_KASIA_AGENT_ID: ${{ secrets.MARTI_KASIA_AGENT_ID }}
+      E2E_MARTA_AGENT_ID: ${{ secrets.MARTI_MARTA_AGENT_ID }}
+      GITHUB_RUN_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip-gate check (Pedro pause flag on VPS)
+        id: skip
+        # Pedro can pause the loop without touching the workflow
+        # file by `touch /tmp/canonical-skip` on the Marti box.
+        # When the SSH secret is unset (no remote access wired)
+        # the check no-ops and the run proceeds.
+        run: |
+          if [ -z "${{ secrets.MARTI_SSH_KEY }}" ] || [ -z "${{ secrets.MARTI_SSH_HOST }}" ]; then
+            echo "ssh-secret unset, skipping pause-flag check"
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "${{ secrets.MARTI_SSH_KEY }}" > ~/.ssh/marti
+          chmod 600 ~/.ssh/marti
+          ssh-keyscan -H "${{ secrets.MARTI_SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          if ssh -i ~/.ssh/marti -o StrictHostKeyChecking=no \
+              "${{ secrets.MARTI_SSH_USER || 'root' }}@${{ secrets.MARTI_SSH_HOST }}" \
+              "test -f /tmp/canonical-skip" ; then
+            echo "Pedro pause flag /tmp/canonical-skip present on VPS - skipping run"
+            echo "paused=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paused=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.skip.outputs.paused != 'true'
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        if: steps.skip.outputs.paused != 'true'
+        run: npm ci
+
+      - name: Install Playwright browsers
+        if: steps.skip.outputs.paused != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run canonical specs
+        if: steps.skip.outputs.paused != 'true'
+        # The canonical/ specs each carry their own
+        # `test.skip(!E2E_<AGENT>_ID, ...)` guard, so if the matching
+        # secret is unset only the unblocked specs actually run -
+        # we don't have to wire per-spec inclusion here.
+        run: npx playwright test tests/canonical/
+
+      - name: Upload screenshots + traces on PASS or FAIL
+        if: always() && steps.skip.outputs.paused != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-results-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
