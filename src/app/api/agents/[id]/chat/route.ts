@@ -1622,6 +1622,16 @@ export async function POST(
         // the operator just saw stream into the page. The client already
         // has the visible text so we don't fail the request - just
         // surface the issue in server logs for follow-up.
+        //
+        // Persist `visibleTextScrubbed` (not `visibleText`) so the raw
+        // {"tool":..., "args":{...}} JSON dict that TASK #141's scrubber
+        // strips from the streamed delta also gets stripped from the row
+        // history.  Before this fix the UI saw clean text but the DB
+        // landed the raw JSON, so /chat GET re-rendered the JSON on
+        // reload AND the next turn's `userTurns.slice(0,-1)` history
+        // (line ~656) re-fed the JSON into the LLM prompt - the exact
+        // pattern Pedro banned ("TIPO CHAMAR APIFY_TOOL_CALL KRL") would
+        // resurface turn-to-turn even after the chat surface fix.
         const assistantInsert = await db
           .from("rgaios_agent_chat_messages")
           .insert({
@@ -1629,7 +1639,7 @@ export async function POST(
             agent_id: agentId,
             user_id: null,
             role: "assistant",
-            content: visibleText,
+            content: visibleTextScrubbed,
             metadata: withThread(persistMetadata),
           } as never);
         if (assistantInsert.error) {
