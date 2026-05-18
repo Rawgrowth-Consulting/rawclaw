@@ -1,26 +1,4 @@
-import {
-  buildCapabilitiesAndTrustBlock,
-  buildReasoningProtocolBlock,
-  buildSharedMemoryBlock,
-  buildRecentSignalsBlock,
-  buildAssignedSkillsBlock,
-  buildAuthorityOverrideBlock,
-  buildPersonaAndOrgPlaceBlock,
-  buildPendingTasksBlock,
-  buildIdentityBlock,
-  buildOrgRosterBlock,
-  buildRecentActivityBlock,
-  buildCeoTelegramEntryBlock,
-  buildAtlasDirectivesBlock,
-  buildPastMemoriesBlock,
-  buildRecentReasoningBlock,
-  buildBrandProfileBlock,
-  buildAgentFilesBlock,
-  buildCompanyCorpusBlock,
-  buildCeoCommandsBlock,
-  buildSubAgentComposioCommandsBlock,
-  buildTrailingProtocolsBlock,
-} from "./preamble";
+import { buildAgentChatPreamble } from "./preamble";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import {
   buildSystemPrompt,
@@ -87,9 +65,7 @@ export type AgentCapabilityFlags = {
   hasComposio: boolean;
 };
 
-export type ChatBlockContext = Omit<ChatInput, "mode"> & {
-  priorContent: string;
-} & AgentCapabilityFlags;
+// CI-fix: ChatBlockContext removed alongside the CHAT_BLOCKS registry.
 
 /**
  * Resolve role + connection flags for the current agent in one round
@@ -160,168 +136,17 @@ export async function computeAgentCapabilityFlags(input: {
  *     = both "chat" and "telegram". Future per-mode tweaks (drop
  *     verbose CEO directives in telegram, etc.) go here.
  */
-export type ChatBlockPriority = "required" | "skippable";
+// CI-fix: ChatBlock + ChatBlockPriority types removed alongside the
+// registry. Reintroduce when iter-37 ops-tunable budget is rebuilt
+// on top of the new monolithic preamble.
 
-export type ChatBlock = {
-  id: string;
-  build: (ctx: ChatBlockContext) => Promise<string | null> | string | null;
-  defaultCostTokens?: number;
-  priority?: ChatBlockPriority;
-  modes?: AgentContextMode[];
-};
-
-/**
- * Per-block builders. Pure mapping from CHAT_BLOCK id to its build
- * function. Iter 37 split: metadata (id, priority, defaultCostTokens,
- * modes) lives in chat-blocks.config.json so ops can tune budgets +
- * priority without editing TS. Builders stay in code because they
- * close over typed helpers.
- */
-const CHAT_BLOCK_BUILDERS: Record<
-  string,
-  (ctx: ChatBlockContext) => Promise<string | null> | string | null
-> = {
-  "capabilities-trust": () => buildCapabilitiesAndTrustBlock(),
-  "reasoning-protocol": () => buildReasoningProtocolBlock(),
-  "shared-memory": (ctx) =>
-    buildSharedMemoryBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
-  "recent-signals": (ctx) => buildRecentSignalsBlock({ orgId: ctx.orgId }),
-  "assigned-skills": (ctx) =>
-    buildAssignedSkillsBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
-  "authority-override": (ctx) =>
-    buildAuthorityOverrideBlock({ orgId: ctx.orgId, agentId: ctx.agentId }),
-  "persona-org-place": (ctx) =>
-    buildPersonaAndOrgPlaceBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      priorContent: ctx.priorContent,
-    }),
-  "pending-tasks": (ctx) =>
-    buildPendingTasksBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      priorContent: ctx.priorContent,
-    }),
-  identity: (ctx) =>
-    buildIdentityBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      priorContent: ctx.priorContent,
-    }),
-  "org-roster": (ctx) =>
-    buildOrgRosterBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      isCeo: ctx.isCeo,
-      priorContent: ctx.priorContent,
-    }),
-  "recent-activity": (ctx) =>
-    buildRecentActivityBlock({
-      orgId: ctx.orgId,
-      isCeo: ctx.isCeo,
-      priorContent: ctx.priorContent,
-    }),
-  "ceo-telegram-entry": (ctx) =>
-    buildCeoTelegramEntryBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      isCeo: ctx.isCeo,
-      priorContent: ctx.priorContent,
-    }),
-  "atlas-directives": (ctx) =>
-    buildAtlasDirectivesBlock({
-      isCeo: ctx.isCeo,
-      priorContent: ctx.priorContent,
-    }),
-  // legacy-tail CHAT_BLOCKS entry removed phase 1e iter 19.
-  "json-commands-ceo": (ctx) =>
-    buildCeoCommandsBlock({
-      canCommand: ctx.canCommand,
-      priorContent: ctx.priorContent,
-    }),
-  "json-commands-composio": (ctx) =>
-    buildSubAgentComposioCommandsBlock({
-      canCommand: ctx.canCommand,
-      hasComposio: ctx.hasComposio,
-      priorContent: ctx.priorContent,
-    }),
-  "past-memories": (ctx) =>
-    buildPastMemoriesBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      priorContent: ctx.priorContent,
-    }),
-  "recent-reasoning": (ctx) =>
-    buildRecentReasoningBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      priorContent: ctx.priorContent,
-    }),
-  "brand-profile": (ctx) =>
-    buildBrandProfileBlock({
-      orgId: ctx.orgId,
-      orgName: ctx.orgName,
-      isOwnerContext: ctx.userRole === "owner" || ctx.userRole === "admin",
-      priorContent: ctx.priorContent,
-    }),
-  "agent-files": (ctx) =>
-    buildAgentFilesBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      priorContent: ctx.priorContent,
-    }),
-  "company-corpus": (ctx) =>
-    buildCompanyCorpusBlock({
-      orgId: ctx.orgId,
-      agentId: ctx.agentId,
-      queryText: ctx.queryText,
-      priorContent: ctx.priorContent,
-    }),
-  "trailing-protocols": (ctx) => buildTrailingProtocolsBlock(ctx.priorContent),
-};
-
-type ChatBlockConfigEntry = {
-  id: string;
-  priority: ChatBlockPriority;
-  defaultCostTokens: number;
-  modes?: AgentContextMode[];
-};
-
-import CHAT_BLOCKS_CONFIG from "./chat-blocks.config.json";
-
-/**
- * Block composition order for chat + telegram surfaces. Each entry is
- * called in sequence; non-null return values are concatenated. Blocks
- * that need the already-accumulated content (for separator logic)
- * read ctx.priorContent.
- *
- * Iter 37: metadata externalized to chat-blocks.config.json. The
- * registry below is a JOIN: ops-tunable JSON entries x typed
- * builders. Throws at module init if any config id has no matching
- * builder (loud failure beats silent dropouts).
- */
-// Type stays as ChatBlock[] (selector/describer signatures already
-// accept it) but runtime is frozen: Object.freeze on the array AND
-// each entry so accidental .push / mutation throws at runtime. Iter
-// 38 hardening on the iter-37 JSON-loaded registry.
-export const CHAT_BLOCKS: ChatBlock[] = Object.freeze(
-  (CHAT_BLOCKS_CONFIG as ChatBlockConfigEntry[]).map((entry) => {
-    const build = CHAT_BLOCK_BUILDERS[entry.id];
-    if (!build) {
-      throw new Error(
-        `chat-blocks.config.json entry "${entry.id}" has no builder in CHAT_BLOCK_BUILDERS`,
-      );
-    }
-    const block: ChatBlock = {
-      id: entry.id,
-      build,
-      priority: entry.priority,
-      defaultCostTokens: entry.defaultCostTokens,
-      ...(entry.modes ? { modes: [...entry.modes] } : {}),
-    };
-    return Object.freeze(block);
-  }),
-) as ChatBlock[];
+// CI-fix: per-block CHAT_BLOCK_BUILDERS + CHAT_BLOCKS registry removed
+// after commit 368650d collapsed preamble.ts into a single
+// buildAgentChatPreamble monolith (the 21 named builders no longer
+// exist to import). Chat + telegram now delegate to the monolith
+// directly via composeChatPreamble below. The selector / budget gate /
+// telemetry surfaces stay no-ops for now; iter-37 ops-tunable budget
+// can be re-introduced by re-splitting the monolith.
 
 /**
  * Telemetry payload passed to a ChatTelemetryCallback after the
@@ -468,99 +293,15 @@ export function computeChatBudget(
   );
 }
 
-/**
- * Decide which CHAT_BLOCKS entries are eligible to render given the
- * caller-supplied budget. Required blocks always pass. Skippable
- * blocks are kept in registry order until the running total of
- * skippable cost exceeds skippableBudgetTokens; remaining skippable
- * blocks are dropped.
- *
- * Returned blocks preserve the original CHAT_BLOCKS order, so the
- * "priorContent" separator chain inside helpers keeps working.
- *
- * Default budget = Infinity -> returns CHAT_BLOCKS unchanged.
- */
-export function selectChatBlocks(
-  blocks: ChatBlock[] = CHAT_BLOCKS,
-  options: ComposeChatPreambleOptions = {},
-): ChatBlock[] {
-  // Single source of truth: describeSelection owns the mode + budget
-  // algorithm. selectChatBlocks projects its `selected` ids back onto
-  // the input block objects, preserving registry order. Iter 34 DRY
-  // collapse - the two used to maintain parallel filter logic.
-  const selectedIds = new Set(
-    describeSelection(blocks, options).selected.map((s) => s.id),
-  );
-  return blocks.filter((b) => selectedIds.has(b.id));
-}
-
-export type SelectionEntry = {
-  id: string;
-  priority: ChatBlockPriority;
-  cost: number;
-};
-
-export type SkippedEntry = SelectionEntry & {
-  reason: "mode" | "budget";
-};
-
-export type SelectionDecision = {
-  selected: SelectionEntry[];
-  skipped: SkippedEntry[];
-  totalSelectedCost: number;
-  totalSkippedCost: number;
-};
-
-/**
- * Pure debug helper. Mirrors the selectChatBlocks decision but also
- * reports which blocks were dropped and why (mode filter vs budget
- * cut). Useful for tests + production telemetry without paying the
- * cost of actually rendering anything.
- */
-export function describeSelection(
-  blocks: ChatBlock[] = CHAT_BLOCKS,
-  options: ComposeChatPreambleOptions = {},
-): SelectionDecision {
-  const { mode } = options;
-  const budget = options.skippableBudgetTokens ?? Number.POSITIVE_INFINITY;
-  const budgetActive = Number.isFinite(budget) && budget >= 0;
-
-  const selected: SelectionEntry[] = [];
-  const skipped: SkippedEntry[] = [];
-  let totalSelectedCost = 0;
-  let totalSkippedCost = 0;
-  let spent = 0;
-
-  for (const b of blocks) {
-    const priority = b.priority ?? "required";
-    const cost = b.defaultCostTokens ?? 0;
-
-    if (mode !== undefined && b.modes && !b.modes.includes(mode)) {
-      skipped.push({ id: b.id, priority, cost, reason: "mode" });
-      totalSkippedCost += cost;
-      continue;
-    }
-
-    if (priority === "required") {
-      selected.push({ id: b.id, priority, cost });
-      totalSelectedCost += cost;
-      continue;
-    }
-
-    // skippable + budget gate
-    if (budgetActive && spent + cost > budget) {
-      skipped.push({ id: b.id, priority, cost, reason: "budget" });
-      totalSkippedCost += cost;
-      continue;
-    }
-    spent += cost;
-    selected.push({ id: b.id, priority, cost });
-    totalSelectedCost += cost;
-  }
-
-  return { selected, skipped, totalSelectedCost, totalSkippedCost };
-}
-
+// CI-fix: selectChatBlocks / describeSelection / SelectionEntry types
+// removed alongside the CHAT_BLOCKS registry. composeChatPreamble now
+// delegates straight to buildAgentChatPreamble (the post-368650d
+// monolith in preamble.ts). Options that previously drove the
+// per-block budget gate (skippableBudgetTokens, mode, budgetPolicy)
+// are accepted for callsite compatibility but ignored - the monolith
+// renders the full preamble unconditionally. Telemetry callback
+// still fires with a single-entry decision so the admin telemetry
+// page keeps recording chat turns.
 async function composeChatPreamble(
   input: Omit<ChatInput, "mode">,
   options: ComposeChatPreambleOptions = {},
@@ -570,63 +311,33 @@ async function composeChatPreamble(
     orgId: input.orgId,
     agentId: input.agentId,
   });
-  const effectiveOptions: ComposeChatPreambleOptions = {
-    ...options,
-    mode: options.mode ?? mode,
-  };
-  // Iter 36: budgetPolicy (if set) overrides skippableBudgetTokens
-  // using the already-computed flags - no extra DB round-trip.
-  if (options.budgetPolicy) {
-    effectiveOptions.skippableBudgetTokens = options.budgetPolicy(flags);
-  }
-  const decision = describeSelection(CHAT_BLOCKS, effectiveOptions);
-  const selectedIds = new Set(decision.selected.map((s) => s.id));
 
-  if (options.telemetry) {
-    const budgetDrops = decision.skipped.filter((s) => s.reason === "budget");
-    const budget = effectiveOptions.skippableBudgetTokens;
-    if (typeof options.telemetry === "function") {
-      const budgetTokens =
-        budget === undefined || !Number.isFinite(budget) ? -1 : budget;
-      const payload: ChatTelemetryDecisionPayload = {
-        mode: effectiveOptions.mode,
-        selectedIds: decision.selected.map((s) => s.id),
-        skippedIds: decision.skipped.map((s) => s.id),
-        estimatedTokens: decision.totalSelectedCost,
-        budgetTokens,
-        skippedByBudget: budgetDrops.length > 0,
-        roleFlags: flags,
-      };
-      Promise.resolve(options.telemetry(payload)).catch((err) => {
-        console.error("[chat-telemetry] callback failed", err);
-      });
-    } else if (budgetDrops.length > 0) {
-      const budgetLabel =
-        budget === undefined || !Number.isFinite(budget) ? "inf" : String(budget);
-      console.info(
-        `[chat-blocks-selector] mode=${
-          effectiveOptions.mode ?? "any"
-        } budget=${budgetLabel} dropped=${budgetDrops.length} ids=${budgetDrops
-          .map((d) => d.id)
-          .join(",")} tokens_saved=${budgetDrops.reduce(
-          (sum, d) => sum + d.cost,
-          0,
-        )}`,
-      );
-    }
-  }
-
-  let out = "";
-  for (const block of CHAT_BLOCKS) {
-    if (!selectedIds.has(block.id)) continue;
-    const piece = await block.build({
-      ...input,
-      ...flags,
-      priorContent: out,
+  if (options.telemetry && typeof options.telemetry === "function") {
+    const budget = options.budgetPolicy
+      ? options.budgetPolicy(flags)
+      : options.skippableBudgetTokens;
+    const budgetTokens =
+      budget === undefined || !Number.isFinite(budget) ? -1 : budget;
+    const payload: ChatTelemetryDecisionPayload = {
+      mode: options.mode ?? mode,
+      selectedIds: ["preamble"],
+      skippedIds: [],
+      estimatedTokens: 0,
+      budgetTokens,
+      skippedByBudget: false,
+      roleFlags: flags,
+    };
+    Promise.resolve(options.telemetry(payload)).catch((err) => {
+      console.error("[chat-telemetry] callback failed", err);
     });
-    if (piece) out += piece;
   }
-  return out;
+
+  return buildAgentChatPreamble({
+    orgId: input.orgId,
+    agentId: input.agentId,
+    orgName: input.orgName,
+    queryText: input.queryText,
+  });
 }
 
 export async function buildAgentContext(
