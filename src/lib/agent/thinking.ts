@@ -89,6 +89,22 @@ import { humanizeJargon } from "./jargon";
 
 export { humanizeJargon };
 
+// GAP-4a (2026-05-18): the Reasoning surface renders the agent's
+// `<thinking>` trace verbatim post-extraction, after humanizeJargon
+// scrubs tool-name jargon. applyBrandFilter (chat/route.ts:1576)
+// catches em-dash on the visible reply but NEVER touches the thinking
+// trace, so any em-dash the model composes mid-reasoning slips through
+// to the operator-visible Reasoning chip. Reproducers across 7+ walks
+// today: R-KASIA-CADENCE 04:09 + R-KASIA-HOOK 04:41 + R-KASIA-AUDIT
+// 05:24 (Kasia 75% em-dash rate) + R-EM-DLQ 04:05 + R-EM-INCIDENT 05:18
+// (EM 50% rate). Pattern is composition-time variance, not per-agent
+// system_prompt - per-agent intervention would miss 33-50% of slips.
+// Mirror apply-filter.ts:51's lang-agnostic em-dash / en-dash / minus
+// substitution: " - " with surrounding spaces so words don't collide.
+function scrubThinkingDashes(text: string): string {
+  return text.replace(/[—–−]/g, " - ");
+}
+
 /**
  * HOTFIX 30 (2026-05-17): split the thinking-strip and the jargon-
  * humanize so callers can persist the RAW (stripped but un-humanized)
@@ -151,7 +167,7 @@ export function extractThinking(reply: string): ExtractedThinking {
       );
       const trace = normaliseThinking(cleaned);
       return {
-        thinking: trace ? humanizeJargon(trace) : null,
+        thinking: trace ? scrubThinkingDashes(humanizeJargon(trace)) : null,
         visibleReply: humanizeJargon(reply.slice(0, idx).trim()),
       };
     }
@@ -172,7 +188,7 @@ export function extractThinking(reply: string): ExtractedThinking {
   // safe - thinking is narrative, not a command surface.
   const cleaned = stripOrchestrationMarkup(m[1] ?? "");
   const trace = normaliseThinking(cleaned);
-  const thinking = trace ? humanizeJargon(trace) : null;
+  const thinking = trace ? scrubThinkingDashes(humanizeJargon(trace)) : null;
 
   // Strip ALL <thinking> blocks (the matched one + any extras) PLUS any
   // stray unpaired <thinking>/</thinking> tag so no raw XML survives
