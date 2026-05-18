@@ -839,6 +839,23 @@ export async function POST(
                     humanizeJargon(next.summary as string),
                   );
                 }
+                // BUG-31 (2026-05-18, R-MARTI-CANONICAL keyframe walk):
+                // result_preview lives in detail.result_preview, carries raw
+                // tool output (apify scrape summary etc), and bypasses both
+                // applyBrandFilter (only touches preFilterText) and the
+                // OPERATOR_FACING_STRING_FIELDS loop above. Kasia walk
+                // surfaced an em-dash inside "inside it — everything else"
+                // sourced from apify result_preview leaking to the operator
+                // card unchanged. Scrub it the same way summary is scrubbed.
+                if (next.detail && typeof next.detail === "object") {
+                  const detail = { ...(next.detail as Record<string, unknown>) };
+                  if (typeof detail.result_preview === "string") {
+                    detail.result_preview = scrubThinkingDashes(
+                      humanizeJargon(detail.result_preview as string),
+                    );
+                  }
+                  next.detail = detail;
+                }
                 return next;
               },
             );
