@@ -1275,7 +1275,15 @@ export async function buildAgentChatPreamble(input: {
 // Full removal of context.ts callsite is a follow-up refactor; this
 // unblocks v3 CI + Docker publish today.
 // ─────────────────────────────────────────────────────────────────────
-const __EMPTY = async (): Promise<string> => "";
+// Accept (and ignore) any positional args so the call sites in
+// src/lib/agent/context.ts - which invoke each builder with a
+// `ChatBlockContext` argument - typecheck cleanly while the stubs
+// still no-op. Without this, every `(ctx) => buildXBlock(...)` in
+// context.ts surfaces a TS2554 "Expected 0 arguments, but got 1"
+// against strict tsconfig, even though Next build skips TS errors
+// in CI / Docker (typescript.ignoreBuildErrors). Local `tsc --noEmit`
+// runs (used by editors + pre-commit hooks) need to be clean too.
+const __EMPTY = async (..._args: unknown[]): Promise<string> => "";
 export const buildCapabilitiesAndTrustBlock = __EMPTY;
 export const buildReasoningProtocolBlock = __EMPTY;
 export const buildSharedMemoryBlock = __EMPTY;
