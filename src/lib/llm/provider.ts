@@ -240,6 +240,34 @@ async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
     },
   }));
 
+  // BUG-40 (D 2026-05-18, Pedro mandate "estamos usando claude, tem
+  // que ter o claude web search"): inject Anthropic's native
+  // server-side web_search tool so agents can ground answers on
+  // live web facts without us hosting a Tavily key or scraping DDG.
+  // Native server tool is invisible to caller (no input_schema
+  // round-trip) and runs entirely inside Anthropic's backend -
+  // results flow back as tool_result blocks already brand-filtered
+  // by our downstream emit chokepoints.
+  //
+  // Wire shape: bag of {type, name, max_uses} blocks alongside our
+  // function tools. Anthropic accepts both shapes in the same
+  // tools[]. Beta header carries comma-separated tokens; we append
+  // web-search-2025-03-05 to the existing oauth-2025-04-20.
+  //
+  // Skip injection if the caller already wired a function tool
+  // literally named "web_search" - that's the MCP DDG/Tavily
+  // backend, and we don't want Claude to see both and pick
+  // randomly. Single-source = single backend per turn.
+  const callerHasWebSearch = (tools ?? []).some((t) => t.name === "web_search");
+  const allTools: Array<Record<string, unknown>> = [...(tools ?? [])];
+  if (!callerHasWebSearch) {
+    allTools.push({
+      type: "web_search_20250305",
+      name: "web_search",
+      max_uses: 3,
+    });
+  }
+
   const body: Record<string, unknown> = {
     model: req.model ?? CLAUDE_MAX_OAUTH_MODEL,
     // BUG-14: default 4096 truncated 10-item synthesis around item 5-6
@@ -250,7 +278,7 @@ async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
     max_tokens: 8192,
     system,
     messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
-    ...(tools && tools.length > 0 ? { tools } : {}),
+    ...(allTools.length > 0 ? { tools: allTools } : {}),
   };
 
   // 429 retry: Anthropic returns retry-after (seconds until window
@@ -275,7 +303,10 @@ async function runClaudeMaxOauth(req: ChatRequest): Promise<ChatResponse> {
         headers: {
           authorization: `Bearer ${token}`,
           "anthropic-version": "2023-06-01",
-          "anthropic-beta": "oauth-2025-04-20",
+          // BUG-40: append web-search beta token so the
+          // web_search_20250305 server tool above is accepted.
+          // Comma-separated list per Anthropic beta header spec.
+          "anthropic-beta": "oauth-2025-04-20,web-search-2025-03-05",
           "content-type": "application/json",
         },
         body: JSON.stringify(body),
