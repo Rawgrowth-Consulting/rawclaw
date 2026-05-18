@@ -146,6 +146,89 @@ async function runTavily(
   return { results };
 }
 
+/**
+ * DuckDuckGo HTML-scrape backend. No API key required. Used as
+ * graceful fallback when WEB_SEARCH_API_KEY (Tavily) is unset, so
+ * the tool degrades to a working free provider instead of an
+ * unconditional textError.
+ *
+ * BUG-39 (D 2026-05-18, R-COMPOSIO-3 + GAIA bench EMPTY 7/14):
+ * A's bench-full FULL run surfaced 50 percent empty-response rate on
+ * GAIA tasks because Marti has web_search registered but the VPS
+ * never had WEB_SEARCH_API_KEY set, so every web-grounded task fell
+ * through to "not configured" textError and the agent emitted
+ * nothing. Pedro mandate verbatim: "mande o claude usar web serach
+ * porra, ou duck dcuk go". DDG html endpoint is the no-key
+ * fallback - free, rate-limited but fine for chat-volume calls.
+ *
+ * Endpoint: https://duckduckgo.com/html/?q=... (server-side HTML).
+ * Parses h2.result__a anchors + result__snippet spans with a flat
+ * regex pass. Conservative result cap (5) + snippet cap mirrors
+ * Tavily path to keep agent context bounded.
+ */
+async function runDuckDuckGo(
+  query: string,
+): Promise<{ results: ProviderResult[] } | { error: string }> {
+  const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  let html: string;
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        // DDG html endpoint blocks empty UA; mirror a real browser.
+        "user-agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "accept": "text/html,application/xhtml+xml",
+        "accept-language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const body = (await readBodySafe(res)).slice(0, MAX_BODY);
+      return { error: `web_search (ddg): ${res.status} ${body}` };
+    }
+    html = await res.text();
+  } catch (err) {
+    const e = err as Error;
+    return {
+      error:
+        e.name === "TimeoutError"
+          ? `web_search (ddg): no response within ${Math.round(SEARCH_TIMEOUT_MS / 1000)}s`
+          : `web_search (ddg): network error - ${e.message}`,
+    };
+  }
+
+  // Flat regex parse of DDG html result blocks. Each block:
+  //   <a class="result__a" href="<ddg-redirect>?uddg=<encoded-real-url>">title</a>
+  //   ...
+  //   <a class="result__snippet">snippet text</a>
+  const blockRe =
+    /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
+  const results: ProviderResult[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = blockRe.exec(html)) && results.length < FETCH_RESULTS) {
+    const hrefRaw = m[1] ?? "";
+    // DDG wraps real URLs in /l/?uddg=<urlencoded-url>&...
+    let realUrl = hrefRaw;
+    const uddg = hrefRaw.match(/[?&]uddg=([^&]+)/);
+    if (uddg) {
+      try {
+        realUrl = decodeURIComponent(uddg[1]);
+      } catch {
+        // keep raw href if decode fails
+      }
+    }
+    const stripTags = (s: string): string =>
+      s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&#x27;/g, "'")
+        .replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+        .replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    const title = stripTags(m[2] ?? "");
+    const snippet = stripTags(m[3] ?? "").slice(0, MAX_SNIPPET);
+    if (realUrl) results.push({ title, url: realUrl, snippet });
+  }
+  return { results };
+}
+
 registerTool({
   name: "web_search",
   description:
@@ -169,20 +252,31 @@ registerTool({
     const query = String(args.query ?? "").trim();
     if (!query) return textError("query is required");
 
-    // Opt-in provider behind one env key, same shape as the embedder's
-    // openai/voyage backends: no key set means the feature is simply
-    // not configured on this VPS - return a clear hint, do not throw.
+    // BUG-39 (D 2026-05-18): Tavily is the preferred backend when
+    // WEB_SEARCH_API_KEY is set (better-ranked results, recency
+    // bias). When the key is absent, fall back to the no-key DDG
+    // html scrape so the tool always returns something - the prior
+    // behaviour (unconditional textError) blanked 50 percent of
+    // GAIA bench tasks with empty-response. Tavily failure also
+    // chains to DDG so a transient Tavily 5xx doesn't blank the
+    // turn. DDG result quality is lower but agent + brand filter
+    // can still ground responses on the snippets.
     const apiKey = (process.env.WEB_SEARCH_API_KEY ?? "").trim();
-    if (!apiKey) {
-      return textError(
-        "web_search is not configured - set WEB_SEARCH_API_KEY to enable it.",
-      );
-    }
-
     const days = recencyToDays(args.recency);
 
-    const outcome = await runTavily(apiKey, query, days);
-    if ("error" in outcome) return textError(outcome.error);
+    let outcome: { results: ProviderResult[] } | { error: string };
+    if (apiKey) {
+      outcome = await runTavily(apiKey, query, days);
+      if ("error" in outcome) {
+        // Log Tavily failure but try DDG before giving up.
+        const ddg = await runDuckDuckGo(query);
+        if ("error" in ddg) return textError(`${outcome.error}; ddg fallback: ${ddg.error}`);
+        outcome = ddg;
+      }
+    } else {
+      outcome = await runDuckDuckGo(query);
+      if ("error" in outcome) return textError(outcome.error);
+    }
 
     const { results } = outcome;
     if (results.length === 0) {
