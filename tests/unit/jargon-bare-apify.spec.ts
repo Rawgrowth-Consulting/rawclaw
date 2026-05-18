@@ -8,6 +8,13 @@ import { humanizeJargon } from "../../src/lib/agent/jargon";
  * consume their tokens first; the bare pattern catches any
  * remaining standalone occurrences. A v100 surfaced this at
  * 2026-05-17 07:43.
+ *
+ * GAP-7 (2026-05-18): bare pattern is now case-sensitive /g (was /gi).
+ * The capitalised product name "Apify" survives in operator-context
+ * replies - R-EM-COST 05:12 produced "no the scraper usage" because
+ * "Apify" was being stripped, leaving awkward grammar. Lowercase
+ * "apify" prose still rewrites. The snake_case rules at jargon.ts:53
+ * + 60-65 cover apify_* tool slugs regardless of case (those use /gi).
  */
 
 const CASES: Array<{ input: string; expected: string }> = [
@@ -15,10 +22,13 @@ const CASES: Array<{ input: string; expected: string }> = [
   { input: "ONE call to apify", expected: "ONE call to the scraper" },
   // Lowercase standalone.
   { input: "apify run started", expected: "the scraper run started" },
-  // Capitalised standalone (gi flag catches it).
-  { input: "Apify is busy", expected: "the scraper is busy" },
-  // Mid-sentence.
+  // GAP-7: capitalised "Apify" (product name) now SURVIVES so operator
+  // security/cost replies read naturally.
+  { input: "Apify is busy", expected: "Apify is busy" },
+  // Mid-sentence lowercase still rewrites.
   { input: "I will run apify now.", expected: "I will run the scraper now." },
+  // GAP-7 evidence shape: "no Apify usage" reads naturally now.
+  { input: "no Apify usage", expected: "no Apify usage" },
 ];
 
 for (const c of CASES) {
