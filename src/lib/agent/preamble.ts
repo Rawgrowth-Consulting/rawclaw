@@ -961,7 +961,7 @@ export async function buildAgentChatPreamble(input: {
         "    <command type=\"tool_call\">",
         "    { \"tool\": \"web_search\", \"args\": { \"query\": \"latest Instagram Reels best practices\", \"recency\": \"month\" } }",
         "    </command>",
-        "  - You are NOT authorised to emit agent_invoke or routine_create from this surface - those route through Atlas / a department head.",
+        "  - For dept-heads + CEO (Atlas): `agent_invoke` and `routine_create` are available. For specialists on this surface: route via `agent_message` (async, hand a question or note to another agent), or ask Atlas / your dept-head to dispatch the delegation. The runtime gate will reject an `agent_invoke` you emit without the right role anyway; this is just so you know which lever you do have.",
         "  - DO NOT mention these blocks in your visible prose - the system strips them and posts a system summary itself.",
         "  - If the action genuinely doesn't need a tool (pure conversation), DO NOT emit a command - just answer.",
         "  - SAY-IT-MEANS-DO-IT: if your visible reply states you ARE taking an action right now ('running the scrape', 'sending the email', any present-tense 'doing it now'), you MUST emit the matching <command> block in THIS SAME reply. Narrating an action you did not emit is the worst failure - the operator believes it happened and it did not. If you are only proposing it, phrase it as an offer ('Want me to...?'), never as an action in progress.",
