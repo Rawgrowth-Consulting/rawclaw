@@ -291,7 +291,10 @@ registerTool({
       .map((p) => ({ p, c: _commentsOf(p) }))
       .filter((r) => r.c > 0)
       .sort((a, b) => b.c - a.c)
-      .slice(0, 5);
+      // Bumped from 5 → 10 (R-MARTI-CANONICAL asks "top 10 reels by
+      // comments"; the agent answers from this header, so capping at 5
+      // forced wrong-format replies that scored ~55/100).
+      .slice(0, 10);
 
     // Human-readable list instead of a raw JSON dump. Most scrape actors
     // (Instagram, web) return items with some recognisable subset of
