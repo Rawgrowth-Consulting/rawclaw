@@ -475,6 +475,49 @@ export async function runOauthToolLoop(
         .map((b) => b.text)
         .join("\n\n")
         .trim();
+      // BUG-9 ROUTINE PATH (D TICK-62, 2026-05-17): Anthropic bug
+      // #50727 sometimes returns content=[] post-tool execution. In
+      // the routine / delegation path that runs through this loop,
+      // the result is text="" → caller (executor.ts → Atlas weave
+      // → operator chat) surfaces a blank reply and the operator
+      // sees silent-stuck. PR #120 fixed the chat-route pass-2
+      // mirror; this is the same fallback for runOauthToolLoop.
+      // When the model returns empty AND we already executed at
+      // least one tool, lift the last tool_result content as the
+      // final text so the caller has actual data to work with.
+      if (text.length === 0 && toolCalls.length > 0 && messages.length > 0) {
+        const lastUserMsg = messages[messages.length - 1];
+        if (
+          lastUserMsg.role === "user" &&
+          Array.isArray(lastUserMsg.content)
+        ) {
+          const toolResults = lastUserMsg.content
+            .filter(
+              (b): b is Extract<
+                AnthropicContentBlock,
+                { type: "tool_result" }
+              > => b.type === "tool_result",
+            )
+            .map((b) =>
+              typeof b.content === "string"
+                ? b.content
+                : b.content.map((x) => x.text).join("\n\n"),
+            )
+            .join("\n\n")
+            .trim();
+          if (toolResults.length > 0) {
+            console.warn(
+              `${prefix} model returned empty content post-tool, lifting last tool_result as final text (BUG-9 routine-path workaround)`,
+            );
+            return {
+              text: toolResults,
+              stopReason: "synth_fallback",
+              steps: step + 1,
+              toolCalls,
+            };
+          }
+        }
+      }
       return {
         text,
         stopReason: resp.stop_reason,
