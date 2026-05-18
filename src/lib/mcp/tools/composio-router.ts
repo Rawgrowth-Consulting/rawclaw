@@ -136,13 +136,26 @@ async function resolveComposioAuthConfigIds(
     if (error || !data) return [];
     const slug = appFilter?.trim().toLowerCase();
     const canonical = slug ? composioAppNameFor(slug).toLowerCase() : null;
-    // Two shapes the connection could match: the raw display key, OR
-    // the Composio canonical. A row whose provider_config_key suffix
-    // matches EITHER is in scope. Empty slug = match anything.
+    // Bidirectional match: the connection's provider_config_key suffix
+    // can be EITHER the catalog display key ("google-calendar") OR
+    // the Composio canonical ("googlecalendar") depending on which
+    // OAuth start path version stored it. The caller's appFilter is
+    // already normalised to canonical by composio_list_tools, so we
+    // canonicalise BOTH the suffix and the requested slug before
+    // comparing - that way a connection stored as
+    // "composio:google-calendar" matches a query for "googlecalendar"
+    // (and vice versa) without having to enumerate every alias.
     const matchesApp = (key: string): boolean => {
       if (!slug) return true;
-      const suffix = key.slice(key.indexOf(":") + 1);
-      return suffix === slug || (canonical !== null && suffix === canonical);
+      const suffix = key.slice(key.indexOf(":") + 1).toLowerCase();
+      if (suffix === slug) return true;
+      if (canonical !== null && suffix === canonical) return true;
+      // Canonicalise the suffix the same way and compare against
+      // both the raw slug and the canonical form.
+      const suffixCanonical = composioAppNameFor(suffix).toLowerCase();
+      if (suffixCanonical === slug) return true;
+      if (canonical !== null && suffixCanonical === canonical) return true;
+      return false;
     };
     const ids = new Set<string>();
     for (const row of data as Array<{

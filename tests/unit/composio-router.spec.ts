@@ -321,6 +321,140 @@ test("composio_list_tools (app='googlecalendar'): canonical Composio slug passes
   assert.match(composioCall!.url, /toolkit_slug=googlecalendar(&|$)/);
 });
 
+test("composio_list_tools (app=google-calendar with gmail+gcal connections): only sends gcal auth_config_id (PR #142)", async () => {
+  // A's R-COMPOSIO-3 root-cause per [A 00:41]: the unscoped
+  // auth_config_ids list let Composio v3 answer with the
+  // alphabetically-first matching auth_config's tools (gmail)
+  // even when toolkit_slug=googlecalendar was explicit. PR #142
+  // scopes resolveComposioAuthConfigIds by the requested app
+  // filter; this spec pins that scoping so a future refactor
+  // can't silently re-broaden the auth_config list and bring
+  // the gmail-leak regression back.
+  const router = installFetchRouter((req) => {
+    if (req.url.includes("/rest/v1/rgaios_connections")) {
+      // Org has BOTH gmail and google-calendar connected via Composio.
+      // Each row carries its auth_config_id in metadata.
+      return jsonResponse([
+        {
+          id: "row-gmail",
+          organization_id: "org-multi",
+          provider_config_key: "composio:gmail",
+          nango_connection_id: "nango-gmail-conn",
+          display_name: "Gmail",
+          status: "connected",
+          metadata: { composio_auth_config_id: "ac_gmail_xxx" },
+          agent_id: null,
+          user_id: null,
+          connected_at: new Date(0).toISOString(),
+        },
+        {
+          id: "row-gcal",
+          organization_id: "org-multi",
+          provider_config_key: "composio:google-calendar",
+          nango_connection_id: "nango-gcal-conn",
+          display_name: "Google Calendar",
+          status: "connected",
+          metadata: { composio_auth_config_id: "ac_gcal_yyy" },
+          agent_id: null,
+          user_id: null,
+          connected_at: new Date(0).toISOString(),
+        },
+      ]);
+    }
+    if (req.url.includes("backend.composio.dev/api/v3/tools")) {
+      return jsonResponse({ items: [] });
+    }
+    return jsonResponse(null);
+  });
+
+  const { callTool } = await import("@/lib/mcp/registry");
+  await callTool(
+    "composio_list_tools",
+    { app: "google-calendar" },
+    { organizationId: "org-multi", userId: null },
+  );
+
+  const composioCall = router.calls.find((c) =>
+    c.url.includes("backend.composio.dev"),
+  );
+  assert.ok(composioCall);
+  // The gcal auth_config_id MUST be in the URL (so Composio knows
+  // which connection to use), and the gmail auth_config_id MUST
+  // NOT be present (so Composio doesn't conflate toolkits and
+  // return gmail actions for a googlecalendar query).
+  assert.match(
+    composioCall!.url,
+    /auth_config_ids=[^&]*ac_gcal_yyy/,
+    "gcal auth_config_id must be in the query URL",
+  );
+  assert.doesNotMatch(
+    composioCall!.url,
+    /ac_gmail_xxx/,
+    "gmail auth_config_id must NOT be in the query URL when app=google-calendar (the bug A 00:41 caught)",
+  );
+});
+
+test("composio_list_tools (no app, multi-toolkit org): sends ALL connected auth_config_ids (catalog browse path)", async () => {
+  // Counter-test to PR #142's scoping: the unfiltered catalog
+  // browse path must still see every connected toolkit's
+  // auth_config_id (otherwise users with multi-toolkit setups
+  // would lose discovery for the toolkits not in the first
+  // alphabetical position). Scoping only applies when the
+  // caller passed an `app` filter.
+  const router = installFetchRouter((req) => {
+    if (req.url.includes("/rest/v1/rgaios_connections")) {
+      return jsonResponse([
+        {
+          id: "row-gmail",
+          organization_id: "org-browse",
+          provider_config_key: "composio:gmail",
+          nango_connection_id: "nango-gmail-b",
+          display_name: "Gmail",
+          status: "connected",
+          metadata: { composio_auth_config_id: "ac_gmail_b" },
+          agent_id: null,
+          user_id: null,
+          connected_at: new Date(0).toISOString(),
+        },
+        {
+          id: "row-gcal",
+          organization_id: "org-browse",
+          provider_config_key: "composio:google-calendar",
+          nango_connection_id: "nango-gcal-b",
+          display_name: "Google Calendar",
+          status: "connected",
+          metadata: { composio_auth_config_id: "ac_gcal_b" },
+          agent_id: null,
+          user_id: null,
+          connected_at: new Date(0).toISOString(),
+        },
+      ]);
+    }
+    if (req.url.includes("backend.composio.dev/api/v3/tools")) {
+      return jsonResponse({ items: [] });
+    }
+    return jsonResponse(null);
+  });
+
+  const { callTool } = await import("@/lib/mcp/registry");
+  await callTool(
+    "composio_list_tools",
+    {},
+    { organizationId: "org-browse", userId: null },
+  );
+
+  const composioCall = router.calls.find((c) =>
+    c.url.includes("backend.composio.dev"),
+  );
+  assert.ok(composioCall);
+  // Both ac_ ids must be present in the query for the
+  // unfiltered catalog browse.
+  assert.match(composioCall!.url, /ac_gmail_b/, "gmail ac must be present in catalog browse");
+  assert.match(composioCall!.url, /ac_gcal_b/, "gcal ac must be present in catalog browse");
+  // And no toolkit_slug filter (browse path).
+  assert.doesNotMatch(composioCall!.url, /toolkit_slug=/);
+});
+
 test("composio_list_tools (app='all'): treated like no filter", async () => {
   const router = installFetchRouter(() =>
     jsonResponse({ items: [] }),
