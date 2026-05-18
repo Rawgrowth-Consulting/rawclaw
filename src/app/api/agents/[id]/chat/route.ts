@@ -72,13 +72,13 @@ async function generateThinkingBrief(userMessage: string): Promise<string | null
   if (/^(agent_invoke|dispatch|delegate|ask)\s+/i.test(stripped)) {
     const m = stripped.match(/(?:agent_invoke|dispatch|delegate|ask)\s+(\w+)/i);
     const tgt = m?.[1] ?? "the right dept head";
-    return `I will dispatch ${tgt} via agent_invoke and surface the result inline.`;
+    return `I will delegate to ${tgt} and surface the result inline.`;
   }
   if (/\b(instagram|\big\b|posts?|reels?|apify|scrape|engagement|best post|martifox)\b/i.test(t)) {
-    return "I will pull the Instagram data via Apify and work from the real numbers.";
+    return "I will pull the Instagram numbers and work from the real data.";
   }
   if (/composio|gmail|slack|calendar|google|hubspot|\btool\b/i.test(t)) {
-    return "I will check what's wired in Composio and fire the right tool call.";
+    return "I will check what's connected and use the right one.";
   }
   if (/council|debate|both .* and|marketing and|cross-functional/i.test(t)) {
     return "I will convene a council - dispatch the relevant heads, then synthesise their angles into a decision.";
