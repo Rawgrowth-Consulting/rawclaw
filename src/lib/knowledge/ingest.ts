@@ -79,16 +79,30 @@ export async function ingestAgentFile(input: {
       if (chunks.length > 0) {
         const { vectors: embeddings, provider } =
           await embedBatchWithProvider(chunks.map((c) => c.content));
-        const rows = chunks.map((c, i) => ({
-          file_id: fileId,
-          organization_id: input.orgId,
-          agent_id: input.agentId,
-          chunk_index: c.index,
-          content: c.content,
-          token_count: Math.round(c.content.length / 4),
-          embedding: embeddings[i] ? toPgVector(embeddings[i]) : null,
-          embedding_provider: provider,
-        }));
+        // BUG-K1 (C-handover #3): when embedding provider returns
+        // fewer vectors than inputs (OpenAI res.data ordering edge),
+        // trailing chunks landed with embedding=null. They became
+        // invisible to vector search but consumed rows. Skip them
+        // entirely + log the count drift so degradation is visible
+        // instead of silent.
+        const droppedNullEmbed = chunks.length - embeddings.filter(Boolean).length;
+        if (droppedNullEmbed > 0) {
+          console.warn(
+            `[knowledge.ingest] embedder returned ${embeddings.length} vectors for ${chunks.length} chunks; dropping ${droppedNullEmbed} trailing chunks rather than persisting null-embedding rows`,
+          );
+        }
+        const rows = chunks
+          .map((c, i) => ({
+            file_id: fileId,
+            organization_id: input.orgId,
+            agent_id: input.agentId,
+            chunk_index: c.index,
+            content: c.content,
+            token_count: Math.round(c.content.length / 4),
+            embedding: embeddings[i] ? toPgVector(embeddings[i]) : null,
+            embedding_provider: provider,
+          }))
+          .filter((r) => r.embedding !== null);
         for (let i = 0; i < rows.length; i += 500) {
           // embedding_provider (migration 0073) isn't in the generated
           // Database types yet; cast the batch to bypass the stale
