@@ -34,8 +34,17 @@ async function loadIncomingChain(
   callerAgentId: string,
 ): Promise<{ chain: string[]; depth: number }> {
   if (!callerAgentId) return { chain: [], depth: 0 };
-  try {
-    const { data } = await db
+  // DB-hiccup guard (D 04:22 dispatch): a single transient Supabase
+  // 5xx / network blip used to fall straight through to the
+  // depth=0 fallback, which silently RESET the delegation chain.
+  // The downstream MAX_DELEGATION_DEPTH gate then allowed a fourth
+  // hop because depth registered as 0 again. One single-shot retry
+  // catches the common case (cold-start / transient pool churn)
+  // without turning this into an unbounded retry loop that would
+  // hold up the delegation. Both failures and the final fallback
+  // log a clear warning so ops can see when the chain was lost.
+  const query = async () =>
+    db
       .from("rgaios_routine_runs")
       .select("input_payload, created_at, rgaios_routines!inner(assignee_agent_id)")
       .eq("organization_id", orgId)
@@ -44,23 +53,42 @@ async function loadIncomingChain(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const ip = (data as { input_payload?: unknown } | null)?.input_payload;
-    if (ip && typeof ip === "object" && !Array.isArray(ip)) {
-      const o = ip as Record<string, unknown>;
-      const chain = Array.isArray(o.delegation_chain)
-        ? (o.delegation_chain as unknown[]).filter(
-            (x): x is string => typeof x === "string",
-          )
-        : [];
-      const depth =
-        typeof o.delegation_depth === "number"
-          ? o.delegation_depth
-          : chain.length;
-      return { chain, depth };
+  let lastErr: Error | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const { data } = await query();
+      const ip = (data as { input_payload?: unknown } | null)?.input_payload;
+      if (ip && typeof ip === "object" && !Array.isArray(ip)) {
+        const o = ip as Record<string, unknown>;
+        const chain = Array.isArray(o.delegation_chain)
+          ? (o.delegation_chain as unknown[]).filter(
+              (x): x is string => typeof x === "string",
+            )
+          : [];
+        const depth =
+          typeof o.delegation_depth === "number"
+            ? o.delegation_depth
+            : chain.length;
+        return { chain, depth };
+      }
+      // No row found: caller is not itself a delegated agent. Normal
+      // fall-through to depth=0, NOT a hiccup - skip the retry + skip
+      // the depth-reset warning.
+      return { chain: [], depth: 0 };
+    } catch (err) {
+      lastErr = err as Error;
+      console.warn(
+        `[agent-invoke] loadIncomingChain attempt ${attempt}/2 for caller ${callerAgentId} failed: ${lastErr.message}`,
+      );
     }
-  } catch {
-    // DB hiccup must not block delegation - fall back to "no known chain".
   }
+  // Reached only on two consecutive DB failures. The depth=0 reset
+  // here would silently re-open the chain past MAX_DELEGATION_DEPTH
+  // on the NEXT hop; log explicitly so a chain-reset on a real
+  // delegated agent surfaces in logs instead of vanishing.
+  console.warn(
+    `[agent-invoke] loadIncomingChain returning depth=0 fallback for caller ${callerAgentId} after DB failures (${lastErr?.message ?? "unknown"}) - delegation depth tracking lost for this hop`,
+  );
   return { chain: [], depth: 0 };
 }
 
