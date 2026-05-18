@@ -101,7 +101,7 @@ export { humanizeJargon };
 // system_prompt - per-agent intervention would miss 33-50% of slips.
 // Mirror apply-filter.ts:51's lang-agnostic em-dash / en-dash / minus
 // substitution: " - " with surrounding spaces so words don't collide.
-function scrubThinkingDashes(text: string): string {
+export function scrubThinkingDashes(text: string): string {
   return text.replace(/[—–−]/g, " - ");
 }
 
