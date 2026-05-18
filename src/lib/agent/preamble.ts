@@ -1065,9 +1065,12 @@ export async function buildAgentChatPreamble(input: {
         lastSpace > 80 ? tasterRaw.slice(0, lastSpace) : tasterRaw;
       const truncated = content.length > BRAND_VOICE_INLINE_LIMIT;
       const sampleBanned = BANNED_WORDS.slice(0, 3).join(", ");
+      const brandFrame = isOwnerContext
+        ? `Your brand profile for ${orgName ?? "this organisation"} (match this voice in any client-facing output):`
+        : `Brand profile for ${orgName ?? "this organisation"} (THIS IS THE CLIENT YOU WORK FOR - match their voice, never use generic advice):`;
       preamble +=
         (preamble ? "\n\n" : "") +
-        `Brand profile for ${orgName ?? "this organisation"} (THIS IS THE CLIENT YOU WORK FOR - match their voice, never use generic advice):\n\n${taster}${truncated ? "..." : ""}\n\nBanned words sample (${BANNED_WORDS.length} total - never use): ${sampleBanned}.\n\nFor the full voice markdown, complete banned-words list, or any documented framework, call the lookup_brand_voice tool.`;
+        `${brandFrame}\n\n${taster}${truncated ? "..." : ""}\n\nBanned words sample (${BANNED_WORDS.length} total - never use): ${sampleBanned}.\n\nFor the full voice markdown, complete banned-words list, or any documented framework, call the lookup_brand_voice tool.`;
     }
   } catch (err) {
     console.warn(
@@ -1233,3 +1236,38 @@ export async function buildAgentChatPreamble(input: {
 
   return preamble;
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// BUG-11 SHIM: commit 368650d collapsed 21 per-block builders into the
+// single buildAgentChatPreamble() above. src/lib/agent/context.ts still
+// imports them by name to assemble the legacy chat-block bag, causing
+// runtime TypeError on chat startup + Docker build failures (next
+// build sha relies on this file). Stub them as no-ops returning empty
+// string so context.ts assembles cleanly. Whole CHAT_BLOCK_BUILDERS
+// map effectively becomes empty (no extra context blocks) - same as
+// running the new unified preamble path, which is what we want anyway.
+// Full removal of context.ts callsite is a follow-up refactor; this
+// unblocks v3 CI + Docker publish today.
+// ─────────────────────────────────────────────────────────────────────
+const __EMPTY = async (): Promise<string> => "";
+export const buildCapabilitiesAndTrustBlock = __EMPTY;
+export const buildReasoningProtocolBlock = __EMPTY;
+export const buildSharedMemoryBlock = __EMPTY;
+export const buildRecentSignalsBlock = __EMPTY;
+export const buildAssignedSkillsBlock = __EMPTY;
+export const buildAuthorityOverrideBlock = __EMPTY;
+export const buildPersonaAndOrgPlaceBlock = __EMPTY;
+export const buildPendingTasksBlock = __EMPTY;
+export const buildIdentityBlock = __EMPTY;
+export const buildOrgRosterBlock = __EMPTY;
+export const buildRecentActivityBlock = __EMPTY;
+export const buildCeoTelegramEntryBlock = __EMPTY;
+export const buildAtlasDirectivesBlock = __EMPTY;
+export const buildPastMemoriesBlock = __EMPTY;
+export const buildRecentReasoningBlock = __EMPTY;
+export const buildBrandProfileBlock = __EMPTY;
+export const buildAgentFilesBlock = __EMPTY;
+export const buildCompanyCorpusBlock = __EMPTY;
+export const buildCeoCommandsBlock = __EMPTY;
+export const buildSubAgentComposioCommandsBlock = __EMPTY;
+export const buildTrailingProtocolsBlock = __EMPTY;
