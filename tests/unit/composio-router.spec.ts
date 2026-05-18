@@ -254,6 +254,73 @@ test("composio_list_tools (app=gmail): filters via toolkit_slug query param", as
   assert.match(composioCall!.url, /toolkit_slug=gmail/);
 });
 
+test("composio_list_tools (app='google-calendar'): normalizes display key to Composio toolkit_slug='googlecalendar' (PR #139)", async () => {
+  // R-COMPOSIO-3 bug per [A 00:14]: Marti DB stores connections under
+  // the catalog display key ("google-calendar") but Composio's
+  // /api/v3/tools toolkit_slug query param expects the dash-free
+  // canonical slug ("googlecalendar"). Without normalization the
+  // upstream returned GMAIL_* actions when asked for googlecalendar.
+  // PR #139 wires composioAppNameFor() through both handlers; this
+  // pins the wire-shape so a future refactor can't silently drop the
+  // mapping.
+  const router = installFetchRouter((req) => {
+    if (req.url.includes("backend.composio.dev/api/v3/tools")) {
+      return jsonResponse({
+        items: [
+          {
+            slug: "GOOGLECALENDAR_EVENTS_INSERT",
+            toolkit: { slug: "googlecalendar" },
+            display_name: "Create Event",
+          },
+        ],
+      });
+    }
+    return jsonResponse(null);
+  });
+  const { callTool } = await import("@/lib/mcp/registry");
+  const result = await callTool(
+    "composio_list_tools",
+    { app: "google-calendar" }, // display key from catalog
+    { organizationId: "org-list-gcal", userId: null },
+  );
+  assert.equal(result.isError, undefined);
+  const composioCall = router.calls.find((c) =>
+    c.url.includes("backend.composio.dev"),
+  );
+  assert.ok(composioCall);
+  assert.match(
+    composioCall!.url,
+    /toolkit_slug=googlecalendar(&|$)/,
+    "display key 'google-calendar' must normalize to Composio's 'googlecalendar' toolkit_slug",
+  );
+  // Counter-assertion: must NOT pass the raw dash variant through.
+  assert.doesNotMatch(composioCall!.url, /toolkit_slug=google-calendar/);
+});
+
+test("composio_list_tools (app='googlecalendar'): canonical Composio slug passes through unchanged", async () => {
+  // Back-compat guard: composioAppNameFor returns the input verbatim
+  // when there's no catalog entry for the input string. An agent that
+  // already knows the Composio canonical slug ("googlecalendar",
+  // "slack", "gmail") must keep working without any catalog lookup.
+  const router = installFetchRouter((req) => {
+    if (req.url.includes("backend.composio.dev/api/v3/tools")) {
+      return jsonResponse({ items: [] });
+    }
+    return jsonResponse(null);
+  });
+  const { callTool } = await import("@/lib/mcp/registry");
+  await callTool(
+    "composio_list_tools",
+    { app: "googlecalendar" },
+    { organizationId: "org-list-gcal-direct", userId: null },
+  );
+  const composioCall = router.calls.find((c) =>
+    c.url.includes("backend.composio.dev"),
+  );
+  assert.ok(composioCall);
+  assert.match(composioCall!.url, /toolkit_slug=googlecalendar(&|$)/);
+});
+
 test("composio_list_tools (app='all'): treated like no filter", async () => {
   const router = installFetchRouter(() =>
     jsonResponse({ items: [] }),
