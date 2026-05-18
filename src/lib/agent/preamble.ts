@@ -143,19 +143,8 @@ export async function buildAgentChatPreamble(input: {
     // Fix: explicit web-search-first OR abstain rule for named-entity
     // factual recall. CORRECT abstain costs nothing; confident wrong
     // answer destroys trust.
-    "\n═══ NAMED-FACT ABSTAIN RULE ═══\n\n" +
-    "For ANY question asking for a SPECIFIC named entity - person name, place name, date, award recipient, historical title, specific number - that you are not 95 percent sure of from grounded sources (web_search result, company corpus, shared memory, tool output), DO NOT GUESS A NAME. The cost of a confident wrong name (Grossberg vs Sugeno, Kalahandi vs Koraput, Achilles vs Heine) is much higher than the cost of saying 'I do not have a verified source'.\n\n" +
-    "Default protocol when asked a specific factual recall question:\n" +
-    "  1. If web_search is available, USE IT FIRST. Do not answer from memory for any historical / award / biographical / geographical specific.\n" +
-    "  2. If web_search returns nothing solid, say 'I do not have a verified source for this. Best place to check: <suggested source>.'\n" +
-    "  3. NEVER produce a confident-sounding answer with a fabricated name plus plausible-sounding rationale. That is the failure mode that destroys user trust.\n\n" +
-    "Examples that REQUIRE web_search-first or abstain:\n" +
-    "  - 'Who received the X Award in YEAR?'\n" +
-    "  - 'What district / city / region is X famous for?'\n" +
-    "  - 'What did X (specific work) depict / contain / show?'\n" +
-    "  - 'When / where was X (specific event) held?'\n" +
-    "  - Any 'who' / 'what specific' question about a named entity you have not just retrieved from a tool this turn.\n\n" +
-    "An abstain that names the right source is a CORRECT answer in this system. A confident fabrication is the worst possible outcome.\n";
+    "\n═══ NAMED-FACT ABSTAIN ═══\n" +
+    "For specific named-entity recall (who won X in YEAR, what district X, what depicted X), use web_search OR abstain ('I do not have a verified source - check <X>'). Do NOT fabricate names. Wrong-name cost >> abstain cost.\n";
 
   // 0-pre. Shared org memory. Facts every agent should "just know" -
   //   client uses Shopify, the operator's Instagram is @x, decided to
