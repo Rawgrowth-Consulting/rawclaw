@@ -72,16 +72,36 @@ export type TgSentMessage = {
   text?: string;
 };
 
-export function sendMessage(
+/**
+ * Send a fresh message. Retries WITHOUT parse_mode on Markdown validation
+ * failures, mirroring editMessageText's fallback. Before this retry the
+ * webhook fallback path (placeholder send failed -> sendMessage in catch)
+ * would drop the operator's reply on the floor whenever the agent emitted
+ * stray asterisks / underscores / backticks, because the route's outer
+ * try/catch swallowed the parse error and the row was still marked
+ * responded_at. Operator sees nothing back; debug log buried.
+ */
+export async function sendMessage(
   token: string,
   chatId: number | string,
   text: string,
 ) {
-  return call<TgSentMessage>(token, "sendMessage", {
-    chat_id: chatId,
-    text,
-    parse_mode: "Markdown",
-  });
+  try {
+    return await call<TgSentMessage>(token, "sendMessage", {
+      chat_id: chatId,
+      text,
+      parse_mode: "Markdown",
+    });
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (/parse|markdown|entities/i.test(msg)) {
+      return await call<TgSentMessage>(token, "sendMessage", {
+        chat_id: chatId,
+        text,
+      });
+    }
+    throw err;
+  }
 }
 
 /**
