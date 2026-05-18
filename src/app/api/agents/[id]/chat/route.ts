@@ -922,7 +922,14 @@ export async function POST(
             extractedThinking.thinking ??
             (await generateThinkingBrief(lastContent));
           if (brief) {
-            emit({ type: "thinking", brief });
+            // GAP-4a 3rd surface (2026-05-18): PR #152 added scrubThinkingDashes
+            // inside extractThinking, PR #154 wired it into the pass-2 emit at
+            // ~line 1230. This first emit at line 925 reads extractThinkingRaw
+            // (kept raw for db persistence below), so the operator-visible
+            // Reasoning chip still leaked em-dashes on first-pass thinking +
+            // on the generateThinkingBrief heuristic fallback. Scrub at the
+            // emit boundary; the db insert below keeps the raw text.
+            emit({ type: "thinking", brief: scrubThinkingDashes(brief) });
             await db.from("rgaios_agent_chat_messages").insert({
               organization_id: orgId,
               agent_id: agentId,
