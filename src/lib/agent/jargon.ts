@@ -66,7 +66,12 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   // P42 (2026-05-17, A v100): bare "apify" leaked into Task body prose
   // ("ONE call to apify"). All apify_* underscore patterns above must run
   // first so they consume their tokens; this catches any leftover bare word.
-  { pattern: /\bapify\b/gi, replacement: "the scraper" },
+  // GAP-7 (2026-05-18): case-sensitive /g so "Apify" (capitalised product
+  // name) survives in operator-context replies (R-EM-COST 05:12 produced
+  // "no the scraper usage" because "Apify" was getting stripped). Bare
+  // lowercase "apify" prose still rewrites; the snake_case rules at
+  // 53/60-65 already cover all the apify_* tool slugs.
+  { pattern: /\bapify\b/g, replacement: "the scraper" },
   { pattern: /\bagents_update\b/gi, replacement: "update my settings" },
   { pattern: /\bagents_create\b/gi, replacement: "hire a new agent" },
   { pattern: /\bagents_fire\b/gi, replacement: "archive an agent" },
