@@ -133,7 +133,7 @@ export async function buildAgentChatPreamble(input: {
     // hallucinating named-entity recall (Grossberg/Sugeno, Achilles/Heine,
     // Kalahandi/Koraput). PR#171 28L attempt regressed math Qs.
     // This v2 = 1 line, no examples, just rule. Use web_search OR abstain.
-    "For specific named-entity recall (who/when/where SPECIFIC), prefer web_search OR abstain ('I do not have a verified source'). Do not fabricate names.\n";
+    "For specific named-entity recall (who/when/where SPECIFIC - award recipient, district, sculpture, date), USE the WebSearch tool (Claude Code native, always available) to ground the answer. Do NOT fabricate from memory. If WebSearch returns nothing solid, say 'I do not have a verified source - check <X>'. Examples: 'Who won X Award in YEAR' -> WebSearch first.\n";
 
   // 0-pre. Shared org memory. Facts every agent should "just know" -
   //   client uses Shopify, the operator's Instagram is @x, decided to
