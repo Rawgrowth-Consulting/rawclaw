@@ -1289,13 +1289,25 @@ async function readAgentFileBody(
 
   // Pull all files (no ILIKE filter) so the fuzzy fallback can rank
   // every candidate when the substring path misses.
-  const { data: files } = await db
+  // R-MARTI-CANONICAL: agent-scoped files alone miss when operator
+  // expects fleet-shared knowledge (creator-list lives on Kasia, but
+  // Marta is the one with the scrape tool). Try agent-scoped first
+  // for affinity; fall back to org-scoped when agent has no match.
+  const { data: agentFiles } = await db
     .from("rgaios_agent_files")
     .select("id, filename, uploaded_at")
     .eq("organization_id", ctx.organizationId)
     .eq("agent_id", agentId)
     .order("uploaded_at", { ascending: false });
-  const all = (files ?? []) as Array<{ id: string; filename: string }>;
+  let all = (agentFiles ?? []) as Array<{ id: string; filename: string }>;
+  if (all.length === 0) {
+    const { data: orgFiles } = await db
+      .from("rgaios_agent_files")
+      .select("id, filename, uploaded_at")
+      .eq("organization_id", ctx.organizationId)
+      .order("uploaded_at", { ascending: false });
+    all = (orgFiles ?? []) as Array<{ id: string; filename: string }>;
+  }
 
   const needle = normalize(fileName);
   const ranked = all
