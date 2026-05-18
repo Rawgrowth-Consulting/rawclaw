@@ -132,6 +132,11 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   { pattern: /\bOperator wants\b/g, replacement: "User asks" },
   { pattern: /\bThe operator wants\b/g, replacement: "User asks" },
   { pattern: /\bthe operator\b/g, replacement: "the user" },
+  // GAP-X (2026-05-18, R-EM-NEXTJS-PERF 14:38): article-aware swap so
+  // "An operator" -> "A user" (consonant), not "An user" (broken grammar).
+  // Must precede bare /\boperator\b/g rule below.
+  { pattern: /\bAn operator\b/g, replacement: "A user" },
+  { pattern: /\ban operator\b/g, replacement: "a user" },
   { pattern: /\bOperator\b/g, replacement: "User" },
   { pattern: /\boperator\b/g, replacement: "user" },
   { pattern: /\bcommand type\b/gi, replacement: "request format" },
