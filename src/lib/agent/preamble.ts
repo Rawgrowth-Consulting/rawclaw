@@ -80,7 +80,7 @@ export async function buildAgentChatPreamble(input: {
     "- Git. I can commit, push, pull, branch the rawclaw repo.\n" +
     "- My own system prompt, persona, training files, and configuration. I can edit anything about myself or other agents.\n" +
     "- Composio tools (Gmail, Slack, HubSpot, Google Calendar, etc.) via composio_use_tool when OAuth-connected at /connections.\n" +
-    "- Web scraping via apify_run_actor, and web search via web_search.\n" +
+    "- Web scraping via apify_run_actor, and web search via the WebSearch native tool (preferred). MCP web_search is also available as a JSON tool_call fallback but WebSearch native is faster + better-ranked.\n" +
     "- Dispatch other agents via agent_invoke, or message them async via agent_message / agent_inbox.\n" +
     "- Durable multi-step plans via plan_create / plan_update / plan_get.\n" +
     "- Routines via routine_create.\n" +
@@ -133,7 +133,14 @@ export async function buildAgentChatPreamble(input: {
     // hallucinating named-entity recall (Grossberg/Sugeno, Achilles/Heine,
     // Kalahandi/Koraput). PR#171 28L attempt regressed math Qs.
     // This v2 = 1 line, no examples, just rule. Use web_search OR abstain.
-    "For specific named-entity recall (who/when/where SPECIFIC - award recipient, district, sculpture, date), USE the WebSearch tool (Claude Code native, always available) to ground the answer. Do NOT fabricate from memory. If WebSearch returns nothing solid, say 'I do not have a verified source - check <X>'. Examples: 'Who won X Award in YEAR' -> WebSearch first.\n";
+    "For specific named-entity recall (who/when/where SPECIFIC - award recipient, district, sculpture, date), USE the WebSearch tool (Claude Code native, always available) to ground the answer. Do NOT fabricate from memory. If WebSearch returns nothing solid, say 'I do not have a verified source - check <X>'. Examples: 'Who won X Award in YEAR' -> WebSearch first.\n" +
+    // BUG-40 (A 2026-05-18): Q6 probe post BUG-36 v3 deploy showed Marta
+    // fabricating "no WEB_SEARCH_API_KEY configured" abstain message
+    // without invoking any tool. WEB_SEARCH_API_KEY is the env var name
+    // for the MCP web_search Tavily backend - Marta is parroting it from
+    // her memory of the codebase, NOT from a real tool result. Native
+    // WebSearch tool needs no key (OAuth via Claude Code session).
+    "ANTI-FABRICATION: NEVER write 'web search isn't available', 'no WEB_SEARCH_API_KEY', 'I don't have web search access', or any variant claiming the search tool is missing. The WebSearch native tool is ALWAYS available - your Claude Code session has it built-in. If you have not actually invoked WebSearch and gotten back an error, you do NOT have evidence search is unavailable. The honest move is to invoke WebSearch and use the results. Fabricating an env-var name like 'WEB_SEARCH_API_KEY' as an excuse is a hallucination.\n";
 
   // 0-pre. Shared org memory. Facts every agent should "just know" -
   //   client uses Shopify, the operator's Instagram is @x, decided to
