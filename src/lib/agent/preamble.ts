@@ -52,8 +52,16 @@ export async function buildAgentChatPreamble(input: {
   agentId: string;
   orgName: string | null;
   queryText: string;
+  /**
+   * Role of the user driving this chat turn. When "owner" or "admin"
+   * the agent addresses them directly ("Your brand profile") instead
+   * of third-personing them ("the client"). Anything else keeps the
+   * client-facing tone so Telegram + routines stay safe.
+   */
+  userRole?: "owner" | "admin" | "developer" | "member" | null;
 }): Promise<string> {
   const { orgId, agentId, orgName, queryText } = input;
+  const isOwnerContext = input.userRole === "owner" || input.userRole === "admin";
   const db = supabaseAdmin();
   let preamble = "";
 
@@ -956,7 +964,8 @@ export async function buildAgentChatPreamble(input: {
         "  - DO NOT mention these blocks in your visible prose - the system strips them and posts a system summary itself.",
         "  - If the action genuinely doesn't need a tool (pure conversation), DO NOT emit a command - just answer.",
         "  - SAY-IT-MEANS-DO-IT: if your visible reply states you ARE taking an action right now ('running the scrape', 'sending the email', any present-tense 'doing it now'), you MUST emit the matching <command> block in THIS SAME reply. Narrating an action you did not emit is the worst failure - the operator believes it happened and it did not. If you are only proposing it, phrase it as an offer ('Want me to...?'), never as an action in progress.",
-        "  - NO-RETRY-NARRATION: if your reply says 'previous attempts failed', 'retrying', 'batches padały', '3rd attempt', 'running corrected version', 'as I tried earlier', or any variant of escalation/retry talk - you MUST cite a real run_id visible in YOUR RECENT REASONING / RECENT SIGNALS & METRICS (those rows come from rgaios_routine_runs). If you cannot point at a specific run_id, no prior attempt happened - so do not narrate one. Either emit the fresh <command> now, or say plainly 'I haven't tried yet'. Inventing a retry history to justify an empty reply is a hallucination.",
+        // Retry-narration rule (single source of truth) lives once in the CEO
+        // commands block above so the GAP-#5 single-occurrence assertion stays green.
         "  - PARTIAL-DATA-AUTO-EXECUTE: when the operator asks for a deliverable that references a list / file / corpus you can only partially access (you have 3 of ~30 handles in memory, the file is missing but you remember 2 entries, etc), do NOT ask the operator to paste the list or to confirm running on the partial set - RUN with what you have in this same reply. Emit the matching <command> for the partial data + add ONE sentence in the visible prose flagging the gap and what you would do with the full list. Asking permission to use 3/30 handles when the operator already asked for the deliverable wastes a turn. Caveat: if you have zero data at all (no handles in memory, no fragment in YOUR RECENT REASONING), then say so plainly and request the missing piece - do not invent handles.",
         "  - EXACT-HANDLES: when copying identifiers (Instagram handles, email addresses, usernames, slugs) from a file or memory into a tool call, use the EXACT string verbatim. Do NOT abbreviate, paraphrase, or normalize - the handles `thejasminearielle` / `jasmine`, `sundaysolves` / `sundayboss`, `heyriley.ai` / `heyriley` are NOT interchangeable. A single missing character returns zero results, and you mistakenly report the user list as low engagement when you simply scraped the wrong account. If you are not sure of the exact spelling, RE-READ the source (knowledge_query the file, scroll the recent reasoning) - do not guess.",
         "  - ONE-CALL-PER-LIST: for a list-scrape (e.g. \"top N reels by X from my creator list\"), emit ONE apify_run_actor call with ALL the handles in `username` and wait for it. Do NOT fire multiple parallel start_run + poll_run batches for the same list - that's slower than one sync call in practice and the multi-call flow confuses the synthesis step. After the sync call returns, filter by window, rank globally, deliver the top-N in the same reply.",
@@ -1207,7 +1216,8 @@ export async function buildAgentChatPreamble(input: {
       "",
       "═══ AGENT MANAGEMENT (Atlas + dept heads only) ═══",
       "",
-      "If you are Atlas (CEO) or a dept head, you can re-org SUB-AGENTS in conversation. CANNOT touch other dept heads (Pedro's rule - heads protected).",
+      "If you are Atlas (CEO) or a dept head, you can re-org SUB-AGENTS in conversation. CANNOT touch other dept heads (platform administrator rule - heads protected).",
+      "I CAN edit my own + my peers' agent rows (description, system_prompt, max_tokens, role, status) via the agents_update tool. Wholesale restructure (creating new departments, firing heads) still belongs in the UI. Persona / prompt / behaviour edits to an existing agent ARE in scope: call agents_update.",
       "",
       `<agent action="create" name="Senior SDR" reports_to="Sales Manager" role="sdr" description="Owns inbound lead qualification."></agent>`,
       `<agent action="archive" name="Junior Copywriter"></agent>`,
