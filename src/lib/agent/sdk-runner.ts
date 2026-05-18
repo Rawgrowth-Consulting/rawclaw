@@ -54,6 +54,25 @@ export interface SdkRunOptions {
  * Write a temporary CLAUDE.md file for the agent's workspace.
  * This is how the Agent SDK picks up the system prompt — via
  * settingSources: ['project'] reading CLAUDE.md from cwd.
+ *
+ * BUG-1 FIX (D TICK-31, 2026-05-17): each call creates a fresh per-
+ * run subdirectory under the agent's slot instead of reusing the
+ * deterministic `<base>/<agentId>` path. The Agent SDK's
+ * `settingSources: ['project']` reads CLAUDE.md AND every other
+ * file in the cwd as project context, so when the previous version
+ * shared the directory across runs the SDK pulled stale intermediate
+ * todo.md / scratch.md / notes from prior turns and contaminated the
+ * fresh session. Operator-visible symptom: "session stale between
+ * turns" + the clear+new-chat manual workaround that A relied on.
+ *
+ * Per-run isolation: `<base>/<agentId>/<random>` keeps the agent-
+ * scoped slot for ops debugging (`ls /tmp/rawclaw-agents/<id>/`
+ * shows every run that touched that agent) while guaranteeing each
+ * run starts on an empty cwd. Caller is expected to invoke
+ * `cleanupAgentWorkspace` in a `finally` block to free the temp
+ * dir; if cleanup is skipped the OS /tmp janitor eventually wins,
+ * the bug is no longer that the stale files leak into the NEXT
+ * run.
  */
 async function ensureAgentWorkspace(
   agentId: string,
@@ -61,10 +80,29 @@ async function ensureAgentWorkspace(
 ): Promise<string> {
   const workspaceBase =
     process.env.AGENT_WORKSPACE_DIR ?? "/tmp/rawclaw-agents";
-  const agentDir = path.join(workspaceBase, agentId);
-  await fs.mkdir(agentDir, { recursive: true });
+  const agentSlot = path.join(workspaceBase, agentId);
+  await fs.mkdir(agentSlot, { recursive: true });
+  // mkdtemp creates a unique directory with a random suffix appended
+  // to the prefix - the trailing slash on the prefix tells it to put
+  // the random part as the directory name inside agentSlot.
+  const agentDir = await fs.mkdtemp(path.join(agentSlot, "run-"));
   await fs.writeFile(path.join(agentDir, "CLAUDE.md"), systemPrompt, "utf-8");
   return agentDir;
+}
+
+/**
+ * Remove a per-run agent workspace created by `ensureAgentWorkspace`.
+ * Best-effort: cleanup failure logs and swallows so it never blocks
+ * the caller's `finally`. Idempotent on a missing path.
+ */
+export async function cleanupAgentWorkspace(agentDir: string): Promise<void> {
+  try {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  } catch (err) {
+    console.warn(
+      `[sdk-runner] cleanupAgentWorkspace failed for ${agentDir}: ${(err as Error).message}`,
+    );
+  }
 }
 
 /**
