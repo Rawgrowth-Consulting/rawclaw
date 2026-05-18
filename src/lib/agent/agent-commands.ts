@@ -7,6 +7,7 @@ import {
   stripJsonFence,
 } from "@/lib/agent/markup";
 import { chatComplete } from "@/lib/llm/provider";
+import { chatCompleteOAuthFirst } from "@/lib/llm/oauth-first";
 
 /**
  * Atlas / dept-head JSON command extraction. The chat reply may include
@@ -786,28 +787,42 @@ async function loadIncomingChain(
 async function verifyDelegatedOutput(
   task: string,
   output: string,
+  orgId: string,
+  callerUserId?: string | null,
 ): Promise<{ verdict: "pass" | "refine"; note?: string }> {
   try {
-    const res = await chatComplete({
-      system:
-        "You are an independent QA critic. You did NOT do the work and " +
-        "did NOT delegate it - you only check whether a delegated " +
-        "deliverable actually satisfies the task it was given. Be " +
-        "strict but fair: judge substance, not length or tone. Reply " +
-        "with EXACTLY one line, either `PASS` or `REFINE: <one-line " +
-        "reason>`. No other text.",
-      messages: [
-        {
-          role: "user",
-          content:
-            `TASK THAT WAS DELEGATED:\n${task.slice(0, 2000)}\n\n` +
-            `WHAT THE DELEGATED AGENT RETURNED:\n${output.slice(0, 4000)}\n\n` +
-            "Does the returned output actually satisfy the task? " +
-            "Reply PASS or REFINE: <one-line reason>.",
-        },
-      ],
-      temperature: 0,
-    });
+    // BUG-29 (2026-05-18, R-ORCH-3 walk 14:03): bare chatComplete picks
+    // up provider=claude-max-oauth from env (post BUG-27 fix) but has no
+    // claudeMaxOauthToken to pass, so every critic call throws
+    // "claude-max-oauth requires claudeMaxOauthToken in ChatRequest"
+    // and the catch block silently returns verdict='pass' - verification
+    // becomes a no-op. chatCompleteOAuthFirst pulls tokens from the org
+    // pool (same path the main chat surface uses), so the critic call
+    // actually runs.
+    const res = await chatCompleteOAuthFirst(
+      orgId,
+      {
+        system:
+          "You are an independent QA critic. You did NOT do the work and " +
+          "did NOT delegate it - you only check whether a delegated " +
+          "deliverable actually satisfies the task it was given. Be " +
+          "strict but fair: judge substance, not length or tone. Reply " +
+          "with EXACTLY one line, either `PASS` or `REFINE: <one-line " +
+          "reason>`. No other text.",
+        messages: [
+          {
+            role: "user",
+            content:
+              `TASK THAT WAS DELEGATED:\n${task.slice(0, 2000)}\n\n` +
+              `WHAT THE DELEGATED AGENT RETURNED:\n${output.slice(0, 4000)}\n\n` +
+              "Does the returned output actually satisfy the task? " +
+              "Reply PASS or REFINE: <one-line reason>.",
+          },
+        ],
+        temperature: 0,
+      },
+      callerUserId ?? undefined,
+    );
     const line = (res.text ?? "").trim();
     // Tolerant parse: model may prefix/wrap. Look for REFINE first
     // (the actionable verdict); anything else - including a bare PASS
@@ -858,6 +873,7 @@ async function execAgentInvoke(
   speakerId: string,
   payload: unknown,
   dispatchContext?: DelegationContext,
+  callerUserId?: string | null,
 ): Promise<CommandResult> {
   if (!payload || typeof payload !== "object") {
     return {
@@ -1226,7 +1242,12 @@ async function execAgentInvoke(
   let verification: { verdict: "pass" | "refine"; note?: string } | null =
     null;
   if (delegationOk && delegatedOutput) {
-    verification = await verifyDelegatedOutput(taskText, delegatedOutput);
+    verification = await verifyDelegatedOutput(
+      taskText,
+      delegatedOutput,
+      orgId,
+      callerUserId,
+    );
     // Trace the verification transition: the independent critic has
     // returned a verdict on the deliverable. Best-effort - never blocks.
     traceOrchestrationStep(orgId, speakerId, "verification", {
@@ -1535,7 +1556,13 @@ export async function extractAndExecuteCommands(input: {
       return execToolCall(orgId, speakerAgentId, payload, callerUserId ?? null);
     }
     if (type === "agent_invoke") {
-      return execAgentInvoke(orgId, speakerAgentId, payload, dispatchCtx);
+      return execAgentInvoke(
+        orgId,
+        speakerAgentId,
+        payload,
+        dispatchCtx,
+        callerUserId ?? null,
+      );
     }
     if (type === "routine_create") {
       return execRoutineCreate(orgId, speakerAgentId, payload);
