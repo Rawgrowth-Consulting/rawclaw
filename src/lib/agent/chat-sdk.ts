@@ -10,7 +10,7 @@
  */
 
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { runAgentSdk, writeMcpConfig, cleanupMcpConfig, ensureAgentWorkspace } from "@/lib/agent/sdk-runner";
+import { runAgentSdk, writeMcpConfig, cleanupMcpConfig, ensureAgentWorkspace, cleanupAgentWorkspace } from "@/lib/agent/sdk-runner";
 
 type AgentChatResult =
   | { ok: true; reply: string; sessionId?: string }
@@ -206,5 +206,10 @@ export async function chatReplyViaSdk(input: {
     if (mcpConfigPath) {
       cleanupMcpConfig(mcpConfigPath).catch(() => {});
     }
+    // BUG-1 (D TICK-31): remove the per-run agent workspace so the
+    // SDK never reads stale intermediate files (todo.md, scratch,
+    // etc) from a prior turn via settingSources: ['project']. Best-
+    // effort - cleanup failure is logged inside the helper.
+    cleanupAgentWorkspace(agentDir).catch(() => {});
   }
 }
