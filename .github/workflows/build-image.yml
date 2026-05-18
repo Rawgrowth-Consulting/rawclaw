@@ -64,3 +64,55 @@ jobs:
           # standalone Next output is ~150MB, full image ~600MB.
           # Compress to save GHCR bandwidth on every VPS pull.
           provenance: false
+
+  # ---------------------------------------------------------------------
+  # Auto-deploy hook (R-MARTI-CANONICAL unblock).
+  #
+  # WHAT: After `build` pushes a fresh `:v3` tag to GHCR, SSH into the
+  # Marti VPS and run `docker compose pull app && docker compose up -d app`
+  # in /opt/rawclaw. The compose file already pins `image:` to
+  # `ghcr.io/rawgrowth-consulting/rawclaw:v3`, so `pull` resolves the new
+  # digest and `up -d` recreates only the `app` service.
+  #
+  # WHY: Pre-hook flow was manual: every v3 merge required Pedro to SSH
+  # in and run pull + up. This blocks the canonical regression loop
+  # (R-MARTI-CANONICAL) because the box stays on the old image until a
+  # human is awake. With this hook the box is image-fresh within ~30s of
+  # GHCR push, and the canonical retry daemon can validate against the
+  # actual shipped artifact.
+  #
+  # SAFETY:
+  # - `needs: build` ensures we never deploy a failed build.
+  # - Only `app` service is touched. Drain server / Caddy / supabase
+  #   adjuncts stay running (no full `docker compose up -d`).
+  # - No rebuild on the VPS - just pull + recreate. CX22 4GB RAM stays
+  #   safe (the OOM-during-build incident is what justified moving the
+  #   build to GH runners in the first place).
+  # - Secrets required (Pedro must set via `gh secret set`):
+  #     MARTI_SSH_HOST  - e.g. 49.13.116.154
+  #     MARTI_SSH_USER  - root
+  #     MARTI_SSH_KEY   - private key with access to that host
+  #   If any secret is unset the step fails fast, the build still ships
+  #   to GHCR, and the deploy is the only red signal (build stays green).
+  # ---------------------------------------------------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Skip on workflow_dispatch reruns from random branches: only auto
+    # deploy when the build came from a real push to v3.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/v3'
+    steps:
+      - name: SSH pull + restart app on Marti VPS
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.MARTI_SSH_HOST }}
+          username: ${{ secrets.MARTI_SSH_USER }}
+          key: ${{ secrets.MARTI_SSH_KEY }}
+          # `set -e` so any failure (auth, pull, up) bubbles up red.
+          # `--quiet` on pull keeps the action log readable.
+          script: |
+            set -euo pipefail
+            cd /opt/rawclaw
+            docker compose pull app
+            docker compose up -d app
+            docker image prune -f
