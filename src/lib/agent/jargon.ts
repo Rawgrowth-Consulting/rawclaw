@@ -34,6 +34,11 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   { pattern: /\bdodge the\b/gi, replacement: "work around the" },
   { pattern: /\bMCP-direct\b/g, replacement: "internal" },
   { pattern: /\bMCP\b/g, replacement: "internal" },
+  // BUG-19 (B 22:26 QC R-MARTA-LEADING-INDICATOR): reasoning chip
+  // "I will answer directly from org context (RAG / memory + tools)"
+  // leaks RAG acronym - backend term, not operator vocab. Map to
+  // plain phrasing. Case-sensitive so the word "rag" stays intact.
+  { pattern: /\bRAG\b/g, replacement: "context lookups" },
   { pattern: /\bpass-2\b/g, replacement: "second turn" },
   { pattern: /\bpass-1\b/g, replacement: "first turn" },
   { pattern: /\bschema\b/g, replacement: "shape" },
