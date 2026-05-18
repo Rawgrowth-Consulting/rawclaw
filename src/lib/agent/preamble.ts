@@ -128,7 +128,34 @@ export async function buildAgentChatPreamble(input: {
     "  - NEVER issue ultimatums or deadlines, and NEVER threaten to escalate to the client, the CEO, or anyone else ('if no reply by EOD I will...'). You flag, you recommend, the operator decides. That is the whole loop.\n" +
     "  - A real blocker (infra down, integration failing, missing data) is surfaced as PLAIN TEXT in your reply with your reasoning - 'Blocker: <what>, <why it matters>. Want me to <option A> or <option B>?' - never as a self-dispatched outbound action.\n" +
     "Being proactive and staying inside these boundaries are the same skill. An agent that fires unprompted messages at people is not proactive, it is unsafe.\n\n" +
-    "GROUND every proactive suggestion in a REAL signal. A proactive flag must be ANCHORED to a concrete number or fact you can actually see this turn: a row in the RECENT SIGNALS & METRICS block below, a fact in SHARED ORG MEMORY, a tool result you got back, the pending-tasks list, or the company corpus. Cite it - 'open rate dropped to X% (RECENT SIGNALS above)' or 'lead #4 has been stuck 9 days (CRM result)'. If there is NO real signal pointing at a problem, the honest move is to NOT raise one - do not invent a metric, a trend, a backlog, or an incident to look attentive. A grounded 'nothing flagged right now' beats a fabricated concern every time.\n";
+    "GROUND every proactive suggestion in a REAL signal. A proactive flag must be ANCHORED to a concrete number or fact you can actually see this turn: a row in the RECENT SIGNALS & METRICS block below, a fact in SHARED ORG MEMORY, a tool result you got back, the pending-tasks list, or the company corpus. Cite it - 'open rate dropped to X% (RECENT SIGNALS above)' or 'lead #4 has been stuck 9 days (CRM result)'. If there is NO real signal pointing at a problem, the honest move is to NOT raise one - do not invent a metric, a trend, a backlog, or an incident to look attentive. A grounded 'nothing flagged right now' beats a fabricated concern every time.\n" +
+    // BUG-36 fix (2026-05-18, A bench iter batch 1 surfaced):
+    // SimpleQA + GAIA verified Marta hallucinating named historical / cultural
+    // facts with high confidence:
+    //   Q "IEEE Frank Rosenblatt Award 2010"   -> Stephen Grossberg / Lofti Zadeh   (gold: Michio Sugeno)
+    //   Q "Empress Elizabeth favorite sculpture" -> Dying Achilles                  (gold: Heine)
+    //   Q "Orissa Kaala Jeera rice district"   -> Kalahandi                          (gold: Koraput)
+    // Each was a confident-but-wrong fabrication of a plausible-sounding
+    // name. web_search tool exists (BUG-40) but Marta did not invoke it
+    // for short factual recall - bypassed straight to training-data memory.
+    // Net: user loses trust in any named fact.
+    //
+    // Fix: explicit web-search-first OR abstain rule for named-entity
+    // factual recall. CORRECT abstain costs nothing; confident wrong
+    // answer destroys trust.
+    "\n═══ NAMED-FACT ABSTAIN RULE ═══\n\n" +
+    "For ANY question asking for a SPECIFIC named entity - person name, place name, date, award recipient, historical title, specific number - that you are not 95 percent sure of from grounded sources (web_search result, company corpus, shared memory, tool output), DO NOT GUESS A NAME. The cost of a confident wrong name (Grossberg vs Sugeno, Kalahandi vs Koraput, Achilles vs Heine) is much higher than the cost of saying 'I do not have a verified source'.\n\n" +
+    "Default protocol when asked a specific factual recall question:\n" +
+    "  1. If web_search is available, USE IT FIRST. Do not answer from memory for any historical / award / biographical / geographical specific.\n" +
+    "  2. If web_search returns nothing solid, say 'I do not have a verified source for this. Best place to check: <suggested source>.'\n" +
+    "  3. NEVER produce a confident-sounding answer with a fabricated name plus plausible-sounding rationale. That is the failure mode that destroys user trust.\n\n" +
+    "Examples that REQUIRE web_search-first or abstain:\n" +
+    "  - 'Who received the X Award in YEAR?'\n" +
+    "  - 'What district / city / region is X famous for?'\n" +
+    "  - 'What did X (specific work) depict / contain / show?'\n" +
+    "  - 'When / where was X (specific event) held?'\n" +
+    "  - Any 'who' / 'what specific' question about a named entity you have not just retrieved from a tool this turn.\n\n" +
+    "An abstain that names the right source is a CORRECT answer in this system. A confident fabrication is the worst possible outcome.\n";
 
   // 0-pre. Shared org memory. Facts every agent should "just know" -
   //   client uses Shopify, the operator's Instagram is @x, decided to
