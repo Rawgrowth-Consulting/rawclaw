@@ -87,7 +87,17 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   { pattern: /\bplan_update\b/gi, replacement: "update the plan" },
   { pattern: /\bplan_get\b/gi, replacement: "read the plan" },
   { pattern: /\bweb_search\b/gi, replacement: "search the web" },
-  { pattern: /\bcomposio\b/gi, replacement: "the integration" },
+  // GAP-6 (2026-05-18, R-EM-SEC 04:32): the bare `composio` rule was
+  // too aggressive. It existed to hide internal SDK jargon from
+  // operators, but the operator-facing snake_case rules above
+  // (composio_use_tool / composio_list_tools) already cover that, and
+  // when an operator explicitly asks about Composio as a product
+  // (e.g. "top 3 security checks before wider Marti beta"), the bare
+  // rule clobbered the legitimate product reference - "Composio token"
+  // surfaced as "the integration token", which reads as a generic
+  // placeholder. Removing the bare rule preserves the snake_case
+  // jargon scrub on tool-name leaks while letting the product noun
+  // pass through in operator-context discussion.
   // HOTFIX 22 (2026-05-17, C dispatch): raw enum + protocol terms still
   // leaked into tool-card summaries ("tool_call payload must be a JSON
   // object", "unknown command type", "sub-agent slipped past"). Mirror
