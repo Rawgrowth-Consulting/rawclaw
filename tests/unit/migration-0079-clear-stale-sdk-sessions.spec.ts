@@ -51,3 +51,32 @@ test("0079: targets rgaios_agents (not a typo'd table name)", () => {
     "table must be rgaios_agents - chat-sdk.ts loads/saves sdk_session_id on this table",
   );
 });
+
+test("0079: ADD COLUMN IF NOT EXISTS makes the migration self-contained on fresh DBs", () => {
+  // Column was added ad-hoc to prod Supabase by commit 3054e6a
+  // (Agent SDK switch) with no schema-as-code migration. Fresh-DB
+  // CI has no column, so the UPDATE alone errors with
+  // "column sdk_session_id does not exist". Add it first.
+  const sql = readFileSync(MIGRATION_PATH, "utf8");
+  assert.match(
+    sql,
+    /ALTER\s+TABLE\s+rgaios_agents[\s\S]*ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+sdk_session_id/i,
+    "must ADD COLUMN IF NOT EXISTS sdk_session_id so the migration works on fresh DBs",
+  );
+  assert.match(
+    sql,
+    /sdk_session_id\s+text\s+NOT\s+NULL\s+DEFAULT\s+''/i,
+    "column type must match the chat-sdk.ts:44 NOT NULL DEFAULT '' convention",
+  );
+});
+
+test("0079: ALTER precedes UPDATE so the column exists before the write", () => {
+  const sql = readFileSync(MIGRATION_PATH, "utf8");
+  const alterIdx = sql.search(/ALTER\s+TABLE\s+rgaios_agents/i);
+  const updateIdx = sql.search(/UPDATE\s+rgaios_agents/i);
+  assert.ok(alterIdx >= 0 && updateIdx >= 0, "both statements must exist");
+  assert.ok(
+    alterIdx < updateIdx,
+    "ALTER TABLE must come before UPDATE - otherwise the UPDATE references a column that does not exist yet on fresh DBs",
+  );
+});

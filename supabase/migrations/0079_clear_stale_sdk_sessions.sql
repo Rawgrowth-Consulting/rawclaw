@@ -22,6 +22,19 @@
 -- exactly once via rgaios_schema_migrations PK, but the WHERE
 -- also protects against manual reruns and the
 -- tests/migrations/idempotency.spec.ts double-apply.
+--
+-- ADD-COLUMN-IF-MISSING: prior CI run (PR #147 attempt 1) failed
+-- with "column sdk_session_id does not exist" on the fresh-DB
+-- migrations job. The column was added ad-hoc to prod Supabase by
+-- the original Agent SDK switch (commit 3054e6a) without a
+-- schema-as-code migration, so a fresh apply has no column to
+-- update. Add it here as a pre-step so the migration is
+-- self-contained on fresh DBs AND no-ops on prod where the column
+-- already exists. The DEFAULT '' matches the read-side
+-- "cleared" convention at chat-sdk.ts:44.
+
+ALTER TABLE rgaios_agents
+  ADD COLUMN IF NOT EXISTS sdk_session_id text NOT NULL DEFAULT '';
 
 UPDATE rgaios_agents
    SET sdk_session_id = ''
