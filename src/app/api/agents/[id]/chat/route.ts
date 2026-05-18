@@ -864,6 +864,33 @@ export async function POST(
         controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
       };
 
+      // BUG-38 fix (2026-05-18, A bench iter batch 1 surfaced):
+      // Long-reasoning complex prompts (GAIA validation multi-hop, multi-tool
+      // chains) hold the SSE stream open >120s before emitting the first text
+      // event. Caddy/edge SSE read_timeout defaults to ~125s, closes the
+      // connection mid-stream, client sees zero {type:"text"} events and
+      // categorises the response as EMPTY. Bench batch 1 logged 1/5 GAIA Qs
+      // dying this way; standalone curl confirmed Marta does produce correct
+      // text after ~85s but anything past ~125s gets cut. Net: hard upper
+      // bound on reasoning latency that breaks any complex client task.
+      //
+      // Fix: emit a {type:"heartbeat"} keepalive every 20s while the stream
+      // is open. Caddy resets its read timer on each chunk so the connection
+      // stays alive through arbitrarily long reasoning. Heartbeat carries
+      // no operator-visible payload (clients can ignore it) - it's purely
+      // a wire-level liveness ping. NDJSON parsers either drop unknown
+      // types silently or skip them; brand-voice scrub bypasses (not in
+      // OPERATOR_FACING_TYPES).
+      let streamClosed = false;
+      const heartbeat = setInterval(() => {
+        if (streamClosed) return;
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify({ type: "heartbeat", ts: Date.now() }) + "\n"));
+        } catch {
+          streamClosed = true;
+        }
+      }, 20000);
+
       try {
         // Surface inbound redactions to the operator BEFORE the reply
         // streams. Kinds only - fragments stay server-side.
@@ -1821,6 +1848,8 @@ export async function POST(
         }
 
         emit({ type: "done" });
+        clearInterval(heartbeat);
+        streamClosed = true;
         controller.close();
       } catch (err) {
         emit({
@@ -1828,6 +1857,8 @@ export async function POST(
           message: (err as Error).message ?? "stream failed",
         });
         emit({ type: "done" });
+        clearInterval(heartbeat);
+        streamClosed = true;
         controller.close();
       }
     },
