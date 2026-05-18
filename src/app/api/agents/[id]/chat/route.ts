@@ -1036,21 +1036,31 @@ export async function POST(
           );
         }
 
-        // BUG-9 EAGER-SYNTH (D TICK-48, 2026-05-17): apify_top_reels_from_file
-        // returns a small pre-formatted "Top N reels by <metric>: @x - 500 -
-        // <caption>..." text on result_preview. Lift it as preFilterText
-        // BEFORE pass-2 fires so the operator-visible reply has the actual
-        // data even if pass-2 silent-stucks (Anthropic active bug #50727
-        // returns content=[] post-tool). If pass-2 succeeds it overwrites
-        // preFilterText at line ~1206 with the model's prose synthesis -
-        // standard path is unchanged. This is defense-in-depth alongside
-        // the post-pass-2 synth-fallback (PR #120 + PR #124): even if the
-        // fallback predicate misfires, the operator still gets the list.
+        // BUG-9 EAGER-SYNTH (D TICK-48, 2026-05-17 + 2026-05-18 GAP):
+        // tools that return a pre-formatted text snippet on
+        // result_preview should lift it as preFilterText BEFORE pass-2
+        // fires, so the operator-visible reply has the actual data
+        // even if pass-2 silent-stucks (Anthropic active bug #50727
+        // returns content=[] post-tool). If pass-2 succeeds it
+        // overwrites preFilterText at line ~1206 with the model's
+        // prose synthesis - standard path is unchanged.
+        //
+        // Originally hardcoded to `apify_top_reels_from_file` (PR
+        // #127 narrow defense-in-depth for the canonical-walk preset).
+        // BUG-9 then reproduced on (a) other Apify tools used by
+        // free-form scrape prompts (R-MARTI-SCRAPE-RETEST 05:05) and
+        // (b) composio_use_tool chains (R-COMPOSIO-1 05:41) where
+        // the second tool call never fires after discovery returns.
+        // Generalised here to lift result_preview from any tool that
+        // exposes one, so the operator still gets the most recent
+        // tool data instead of staring at a "Pondering..." spinner.
         const presetRes = commandResults.find(
           (r) =>
             r.ok &&
-            (r.detail as { tool?: string } | undefined)?.tool ===
-              "apify_top_reels_from_file",
+            typeof (r.detail as { result_preview?: unknown } | undefined)
+              ?.result_preview === "string" &&
+            ((r.detail as { result_preview?: string }).result_preview ?? "")
+              .length > 0,
         );
         const presetText = (presetRes?.detail as { result_preview?: string } | undefined)
           ?.result_preview;
