@@ -16,7 +16,12 @@ import { persistChatTelemetry } from "@/lib/agent/telemetry";
 import { extractAndCreateTasks } from "@/lib/agent/tasks";
 import { extractAndExecuteCommands } from "@/lib/agent/agent-commands";
 import { stripBareJsonCommands } from "@/lib/agent/markup";
-import { extractThinking, extractThinkingRaw, humanizeJargon } from "@/lib/agent/thinking";
+import {
+  extractThinking,
+  extractThinkingRaw,
+  humanizeJargon,
+  scrubThinkingDashes,
+} from "@/lib/agent/thinking";
 import { persistSharedMemoryFromReply } from "@/lib/memory/shared";
 import { badUuidResponse } from "@/lib/utils";
 
@@ -1221,8 +1226,17 @@ export async function POST(
               // a second reasoning trace so the operator sees the full
               // ReAct chain: plan (pass 1) -> tool cards -> observation
               // (pass 2) -> answer. Best-effort, never blocks the reply.
+              //
+              // GAP-4a follow-up (2026-05-18): PR #152 added scrubThinkingDashes
+              // inside extractThinking, but this code path uses extractThinkingRaw
+              // (raw for the audit-log persistence below). Apply the scrub at the
+              // emit boundary so the operator-visible Reasoning chip is brand-clean
+              // while the persisted db row keeps the model's exact composition.
               if (pass2Thinking.thinking) {
-                emit({ type: "thinking", brief: pass2Thinking.thinking });
+                emit({
+                  type: "thinking",
+                  brief: scrubThinkingDashes(pass2Thinking.thinking),
+                });
                 try {
                   await db.from("rgaios_agent_chat_messages").insert({
                     organization_id: orgId,
