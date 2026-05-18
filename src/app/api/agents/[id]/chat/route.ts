@@ -1546,7 +1546,20 @@ export async function POST(
             };
 
         // HOTFIX H-ARCH-1: humanize happens centrally in emit().
-        emit({ type: "text", delta: visibleText });
+        // TASK #141: Belt-and-suspenders strip of any raw `{"tool":...,
+        // "args":{...}}` JSON dict that leaked past the upstream
+        // <command>-block stripper (extractAndExecuteCommands sometimes
+        // misses bare JSON the agent emits outside the <command> wrapper).
+        // Pedro banned operator-visible raw tool payloads ("TIPO CHAMAR
+        // APIFY_TOOL_CALL KRL"); strip the literal pattern here so it
+        // never reaches the chat card body. Conservative regex: only
+        // matches a top-level object that has BOTH "tool" and "args" keys
+        // so plain operator JSON in conversation stays intact.
+        const visibleTextScrubbed = visibleText.replace(
+          /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"args"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\}/g,
+          "",
+        ).replace(/\n{3,}/g, "\n\n").trim();
+        emit({ type: "text", delta: visibleTextScrubbed });
         if (createdTasks.length > 0) {
           emit({ type: "tasks_created", tasks: createdTasks });
         }
