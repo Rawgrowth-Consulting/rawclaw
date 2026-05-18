@@ -340,10 +340,16 @@ registerTool({
             .join(", ")}.\n\n`
         : "";
 
+    // BUG-12c: "Actor ${actorId}" leaked raw provider name to operator
+    // ("Actor apify/instagram-scraper returned 50 items"). Even with the
+    // jargon scrub for "apify/X" → "the scraper" the leading "Actor"
+    // noun is operator jargon. Replace the noun with "Scrape" (matches
+    // the verb the agent already uses) and drop the actorId reference -
+    // operator does not need to see the underlying actor route.
     return text(
       items.length === 0
-        ? `Actor ${actorId} ran - 0 items returned.`
-        : `${topHeader}Actor ${actorId} returned ${items.length} item(s):\n${lines.join("\n")}${more}`,
+        ? `Scrape ran - 0 items returned.`
+        : `${topHeader}Scrape returned ${items.length} item(s):\n${lines.join("\n")}${more}`,
     );
   },
 });
