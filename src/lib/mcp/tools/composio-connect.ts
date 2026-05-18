@@ -68,6 +68,40 @@ registerTool({
     const providerConfigKey = `composio:${catalogEntry?.key ?? appRaw}`;
     const displayName = catalogEntry?.name ?? toolkitSlug;
 
+    // BUG-41 (D 2026-05-18, walk-CLEAN task#1): if a row already
+    // exists status=connected for this (org, key), short-circuit and
+    // tell the agent the toolkit is already wired. Prior behaviour
+    // tried to create a fresh OAuth grant every call, which fails
+    // when Composio refuses to issue a second connected_account for
+    // a user_id that already has one (or when the row is org-shared
+    // and the caller_user_id doesn't match - BUG-37 sister case).
+    // Both code paths produce Action FAILED chips that the agent
+    // then narrates as "tool not supported".
+    //
+    // Skipping the create-grant path when status=connected avoids
+    // the failure entirely. The agent gets a clear "use composio_use_tool"
+    // hint instead of a stack-trace-style error.
+    const dbEarly = supabaseAdmin();
+    try {
+      const existingConnected = await dbEarly
+        .from("rgaios_connections")
+        .select("id, status")
+        .eq("organization_id", ctx.organizationId)
+        .eq("provider_config_key", providerConfigKey)
+        .eq("status", "connected")
+        .limit(1);
+      if (
+        !existingConnected.error &&
+        (existingConnected.data?.length ?? 0) > 0
+      ) {
+        return text(
+          `${displayName} is already connected for this workspace. No OAuth grant needed - call composio_use_tool with app=${toolkitSlug} action=<ACTION_SLUG> directly. Run composio_list_tools with app=${toolkitSlug} first to see available action slugs.`,
+        );
+      }
+    } catch {
+      // Lookup failure isn't fatal - fall through to create-grant path.
+    }
+
     const { resolveComposioApiKey, resolveOrCreateAuthConfig } = await import(
       "@/lib/composio/proxy"
     );
