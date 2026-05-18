@@ -17,12 +17,12 @@ test("extractThinking scrubs em-dash from thinking trace", () => {
   const reply =
     "<thinking>Pure content judgment — I answer directly.</thinking>\nFinal: ok";
   const r = extractThinking(reply);
-  // Single em-dash with surrounding spaces becomes "  -  " (double
-  // space each side). Mirrors apply-filter.ts:51's substitution shape.
+  // GAP-cosmetic-3 fix: spaced em-dash now normalises to single " - "
+  // (was producing double-spaces "  -  " before regex update).
   assert.equal(
     r.thinking,
-    "Pure content judgment  -  I answer directly.",
-    "em-dash must be replaced by ' - '",
+    "Pure content judgment - I answer directly.",
+    "spaced em-dash must collapse to single ' - '",
   );
   assert.doesNotMatch(r.thinking ?? "", /[—–−]/);
   assert.equal(r.visibleReply, "Final: ok");

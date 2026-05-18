@@ -48,7 +48,11 @@ export async function applyBrandFilter(
   // minus (U+2212) → ASCII " - ". AGENTS.md §12 + Pedro style ban em-dashes
   // across every language; banned-word regen pass below cannot enforce this
   // since dashes are not words.
-  const raw = text.trim().replace(/[—–−]/g, " - ");
+  // GAP-cosmetic-3 (2026-05-18): consume surrounding whitespace so a
+  // spaced em-dash ("judgment — I") doesn't produce double-spaces
+  // ("judgment  -  I") after substitution. thinking.ts scrubThinkingDashes
+  // shares this regex shape.
+  const raw = text.trim().replace(/\s*[—–−]\s*/g, " - ");
   if (!raw) {
     return { ok: true, text: raw, regenerated: false };
   }

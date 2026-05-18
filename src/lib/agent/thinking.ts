@@ -102,7 +102,11 @@ export { humanizeJargon };
 // Mirror apply-filter.ts:51's lang-agnostic em-dash / en-dash / minus
 // substitution: " - " with surrounding spaces so words don't collide.
 export function scrubThinkingDashes(text: string): string {
-  return text.replace(/[—–−]/g, " - ");
+  // GAP-cosmetic-3 (2026-05-18): consume surrounding whitespace so a
+  // spaced em-dash ("judgment — I") doesn't produce double-spaces
+  // ("judgment  -  I") after substitution. apply-filter.ts:51 has the
+  // same shape - keep both in sync.
+  return text.replace(/\s*[—–−]\s*/g, " - ");
 }
 
 /**
