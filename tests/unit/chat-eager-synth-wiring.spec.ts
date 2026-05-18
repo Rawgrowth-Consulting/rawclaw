@@ -4,19 +4,23 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
- * Guard rail for PR #127 (D TICK-48) - the BUG-9 eager-synth block
- * in src/app/api/agents/[id]/chat/route.ts.
+ * Guard rail for the BUG-9 eager-synth block in
+ * src/app/api/agents/[id]/chat/route.ts. Originally pinned to
+ * apify_top_reels_from_file (PR #127 / D TICK-48) as a narrow
+ * defense-in-depth for the canonical preset. Generalised on
+ * 2026-05-18 to lift result_preview from any tool that exposes
+ * one, after BUG-9 reproduced on (a) free-form Apify scrapes
+ * (R-MARTI-SCRAPE-RETEST 05:05) and (b) composio_use_tool chains
+ * post-discovery (R-COMPOSIO-1 05:41).
  *
- * Why a regex guard and not a behavioral test: the eager-synth lives
- * inline in the chat route handler, between the pass-1 ext catch and
- * the pass-2 conditional. Exercising it end-to-end means standing up
- * the entire chat surface (auth, SSE, persistence, Composio, Apify)
- * which is out of scope for unit tests. The risk we actually need to
- * cover is "a future refactor silently drops the block" - exactly
- * the regression class that the budget-policy-wiring.spec.ts pattern
- * was designed for. We pin the call-site contract via grep on the
- * route source so the layered BUG-9 defense (PRs #120 + #124 + #126
- * + #127) cannot quietly lose its pre-pass-2 component.
+ * Why a regex guard and not a behavioral test: the eager-synth
+ * lives inline in the chat route handler between the pass-1 ext
+ * catch and the pass-2 conditional. Exercising end-to-end would
+ * stand up auth + SSE + persistence + Composio + Apify, out of
+ * scope for unit tests. The risk we cover is "a future refactor
+ * silently drops the block or re-narrows the find()" - which
+ * would silently re-open BUG-9 for the 7 Apify tools + composio
+ * paths the generalisation now defends.
  */
 
 const CHAT_ROUTE_SRC = readFileSync(
@@ -24,19 +28,11 @@ const CHAT_ROUTE_SRC = readFileSync(
   "utf8",
 );
 
-test("chat route lifts apify_top_reels_from_file result_preview into preFilterText (PR #127 TICK-48)", () => {
-  // Anchored: tool slug + result_preview field + assignment to
-  // preFilterText must all coexist in the route. A refactor that
-  // renames the variable OR drops the lift entirely flips this red.
-  assert.match(
-    CHAT_ROUTE_SRC,
-    /apify_top_reels_from_file/,
-    "chat route must reference the apify_top_reels_from_file slug",
-  );
+test("eager-synth lifts result_preview from any tool into preFilterText (post 2026-05-18 generalisation)", () => {
   assert.match(
     CHAT_ROUTE_SRC,
     /result_preview/,
-    "chat route must read detail.result_preview from the preset result",
+    "chat route must read detail.result_preview from a preset result",
   );
   assert.match(
     CHAT_ROUTE_SRC,
@@ -45,26 +41,48 @@ test("chat route lifts apify_top_reels_from_file result_preview into preFilterTe
   );
 });
 
+test("eager-synth find() is generalised, not pinned to a specific tool slug", () => {
+  // After 2026-05-18: the find() must not be hardcoded to
+  // apify_top_reels_from_file or any other single tool name. The
+  // BUG-9 silent-stuck reproduces across Apify + composio_use_tool
+  // chains; pinning to one slug re-opens the bug class.
+  assert.doesNotMatch(
+    CHAT_ROUTE_SRC,
+    /commandResults\.find\([\s\S]*?===\s*"apify_top_reels_from_file"/,
+    "find() must not be hardcoded to apify_top_reels_from_file - 7 other Apify tools + composio paths must be covered",
+  );
+});
+
 test("eager-synth gates on r.ok before lifting (no failed-tool lift)", () => {
-  // The find() in PR #127 narrows on r.ok so a failed preset call
-  // does not poison preFilterText with an error summary. Pin that
-  // shape - a refactor that drops the ok-check would surface tool
-  // errors as the operator-visible reply.
+  // A failed preset call must NOT poison preFilterText with an
+  // error summary. Pin the ok-gate.
   assert.match(
     CHAT_ROUTE_SRC,
-    /commandResults\.find\(\s*\([\s\S]*?r\.ok[\s\S]*?apify_top_reels_from_file/,
-    "eager-synth find() must require r.ok in addition to the slug match",
+    /commandResults\.find\(\s*\([\s\S]*?r\.ok/,
+    "eager-synth find() must require r.ok",
   );
 });
 
 test("eager-synth lift is gated on non-empty string presetText", () => {
   // Defense in depth: typeof + length guards prevent lifting an
-  // undefined / empty string when the preset returned ok but had no
-  // result_preview payload (theoretical, shouldn't happen, but the
-  // guard keeps the block harmless).
+  // undefined / empty string when a tool returned ok but no
+  // result_preview payload.
   assert.match(
     CHAT_ROUTE_SRC,
     /typeof presetText === "string"[\s\S]*?presetText\.length > 0/,
     "eager-synth lift must guard on typeof+length before assigning",
+  );
+});
+
+test("eager-synth find() also gates on non-empty result_preview string inline", () => {
+  // The generalised find() requires result_preview to be a
+  // non-empty string at the find() level too - otherwise the very
+  // first ok tool without a result_preview wins the find() and
+  // presetText comes back undefined, defeating the lift even when
+  // a LATER ok tool DOES have a result_preview to use.
+  assert.match(
+    CHAT_ROUTE_SRC,
+    /typeof\s*\([\s\S]*?result_preview[\s\S]*?\)\s*\?[\s\S]*?===\s*"string"/,
+    "find() must require result_preview to be a string so a later ok tool with a preview is not pre-empted",
   );
 });
