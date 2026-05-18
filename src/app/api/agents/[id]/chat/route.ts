@@ -1304,11 +1304,27 @@ export async function POST(
               const looksLikeIntermediate =
                 /^(retrying|trying|attempting|let me retry|one moment|hold on|working on|let me try|let me pull|let me check|let me look|let me search|let me query|couldn't find|file (name )?didn't|missing|need to (look|find|check|pull|search|query)|searching|querying|pulling|checking|looking up|i'?ll (try|retry|check|pull|look|search|query)|hit (a|the|our) (rate|run|quota)[-\s]?limit|dispatch failed|delegation failed|run-limit|rate-limit)/i
                   .test(visibleForIntermediate);
+              // BUG-9 RECUR (R-MARTI-CANONICAL-RETRY-5, A 22:52): synth
+              // fallback predicate `pass2EmittedCommands` required NEW
+              // commands from pass-2 to fire. But the scrape-then-
+              // synthesise walk pattern is exactly the opposite: pass-1
+              // emits the scrape command, pass-2 should produce visible
+              // synthesis TEXT (no new commands). When that text comes
+              // back empty/trivial, fallback skipped because
+              // `pass2EmittedCommands === false`. Result: operator saw
+              // "scrape OK" badge then dead air. Widen the predicate:
+              // also synthesise from the PASS-1 results when pass-2
+              // visible is empty/intermediate AND pass-1 had any results.
+              const hasPass1Results = preTry2ResultCount > 0;
+              const pass2HasNoUsableText =
+                visibleAfterStrip.length < 20 || looksLikeIntermediate;
               if (
-                pass2EmittedCommands &&
-                (visibleAfterStrip.length < 20 || looksLikeIntermediate)
+                (pass2EmittedCommands || hasPass1Results) &&
+                pass2HasNoUsableText
               ) {
-                const pass2Results = commandResults.slice(preTry2ResultCount);
+                const pass2Results = pass2EmittedCommands
+                  ? commandResults.slice(preTry2ResultCount)
+                  : commandResults;
                 const allFailed =
                   pass2Results.length > 0 &&
                   pass2Results.every((r) => !r.ok);
