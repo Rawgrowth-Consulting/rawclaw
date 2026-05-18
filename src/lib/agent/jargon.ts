@@ -46,6 +46,12 @@ const JARGON_MAP: ReadonlyArray<{ pattern: RegExp; replacement: Replacement }> =
   { pattern: /\bcomposio_use_tool\b/gi, replacement: "use the integration" },
   { pattern: /\bcomposio_list_tools\b/gi, replacement: "list integration actions" },
   { pattern: /\bapify_top_reels_from_file\b/gi, replacement: "scrape reels from the creator list" },
+  // BUG-12: actor_id slugs like "apify/instagram-scraper" / "apify/web-scraper"
+  // leaked verbatim into operator-visible result-preview headers when the
+  // bare \bapify\b rule below would turn them into "the scraper/instagram-
+  // scraper" instead. Match the full slug shape FIRST so it consumes both
+  // halves cleanly. Covers any apify org actor (alphanumeric, hyphens).
+  { pattern: /\bapify\/[\w-]+\b/gi, replacement: "the scraper" },
   { pattern: /\bapify_run_actor\b/gi, replacement: "scrape" },
   { pattern: /\bapify_race_scrape\b/gi, replacement: "scrape" },
   { pattern: /\bapify_batch_scrape\b/gi, replacement: "scrape" },
