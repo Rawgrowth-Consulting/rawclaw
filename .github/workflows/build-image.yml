@@ -57,6 +57,14 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          # BUG-43 follow-up (D 2026-05-18): explicitly point at
+          # Dockerfile.v3. Default was unset = buildx falls back to
+          # `Dockerfile` (the self-hosted variant), so PR #179 + #181
+          # changes against Dockerfile.v3 produced images that did
+          # not actually contain those layers. The v3 compose stack
+          # builds from Dockerfile.v3 locally, so the GHCR image
+          # needs the same source to match.
+          file: Dockerfile.v3
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
