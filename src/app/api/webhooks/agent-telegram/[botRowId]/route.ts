@@ -126,27 +126,68 @@ function startPlainProgress(opts: {
   chatId: number;
   messageId: number;
   intervalMs?: number;
+  // Hermes-style tool-call progress (Pedro 2026-05-19): when the CEO
+  // fans out to specialists, show LIVE dispatch counts ("🔧 4 dispatched
+  // · 2 done") instead of a blind elapsed timer. Read from the control
+  // plane: agent_invoke runs this org created since the turn started.
+  orgId?: string;
+  db?: ReturnType<typeof supabaseAdmin>;
 }): () => void {
   const intervalMs = opts.intervalMs ?? 5_000;
   const startedAt = Date.now();
+  const sinceIso = new Date(startedAt - 5_000).toISOString();
   let frame = 0;
   let stopped = false;
+  let inFlight = false;
 
   const timer = setInterval(() => {
-    if (stopped) return;
-    const phrase = THINKING_FRAMES[frame % THINKING_FRAMES.length];
-    frame += 1;
-    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-    const elapsedStr =
-      elapsed < 60
-        ? `${elapsed}s`
-        : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
-    editMessageText(
-      opts.token,
-      opts.chatId,
-      opts.messageId,
-      `${phrase}…\n_working · ${elapsedStr}_`,
-    ).catch(() => {});
+    if (stopped || inFlight) return;
+    inFlight = true;
+    void (async () => {
+      try {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        const elapsedStr =
+          elapsed < 60
+            ? `${elapsed}s`
+            : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+
+        // Live dispatch counts from the fan-out, if we can read them.
+        let toolLine = "";
+        if (opts.orgId && opts.db) {
+          const { data } = await opts.db
+            .from("rgaios_routine_runs")
+            .select("status")
+            .eq("organization_id", opts.orgId)
+            .eq("source", "agent_invoke")
+            .gte("created_at", sinceIso);
+          const rows = (data ?? []) as Array<{ status: string }>;
+          if (rows.length > 0) {
+            const done = rows.filter((r) => r.status === "succeeded").length;
+            const failed = rows.filter((r) => r.status === "failed").length;
+            const phase =
+              done + failed >= rows.length ? "synthesizing" : "working";
+            toolLine = `🔧 ${rows.length} dispatched · ${done} done${
+              failed ? ` · ${failed} failed` : ""
+            } · ${phase}`;
+          }
+        }
+
+        if (stopped) return;
+        const phrase = THINKING_FRAMES[frame % THINKING_FRAMES.length];
+        frame += 1;
+        const body = toolLine
+          ? `${phrase}…\n_${toolLine} · ${elapsedStr}_`
+          : `${phrase}…\n_working · ${elapsedStr}_`;
+        await editMessageText(
+          opts.token,
+          opts.chatId,
+          opts.messageId,
+          body,
+        ).catch(() => {});
+      } finally {
+        inFlight = false;
+      }
+    })();
   }, intervalMs);
 
   return () => {
@@ -335,6 +376,8 @@ export async function POST(
             token,
             chatId: msg.chat.id,
             messageId: placeholderId,
+            orgId: organizationId,
+            db,
           })
         : () => {};
 
