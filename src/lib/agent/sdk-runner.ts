@@ -15,6 +15,32 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
 
+/**
+ * Raised when the Claude Code CLI subprocess fails because Anthropic
+ * revoked the Claude Max OAuth access_token (BUG-44). chat-sdk.ts
+ * catches this specifically and routes through claude-max-recovery
+ * instead of bubbling the failure to the operator. Subclass of Error
+ * so existing instanceof Error checks elsewhere still match.
+ */
+export class AuthRevokedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthRevokedError";
+  }
+}
+
+/**
+ * Inspect a raw SDK error message for the three canonical wordings the
+ * Claude Code CLI emits when its OAuth credential is rejected. Kept in
+ * sync with looksLikeAuthFail in claude-max-recovery.ts - both must
+ * agree or the recovery branch never fires.
+ */
+function isAuthRevokedMessage(msg: string): boolean {
+  return /invalid authentication credentials|not logged in|please run \/login|unauthorized|\b401\b/i.test(
+    msg,
+  );
+}
+
 export interface SdkRunResult {
   text: string | null;
   sessionId: string | undefined;
@@ -106,26 +132,69 @@ export async function cleanupAgentWorkspace(agentDir: string): Promise<void> {
 }
 
 /**
- * Write a temporary MCP config file pointing to the v3 app's /api/mcp endpoint.
- * This gives agents access to Composio tools, knowledge queries, etc.
- * as ADDITIVE capabilities on top of native Claude Code tools.
+ * Write an MCP config file pointing to the v3 app's /api/mcp endpoint.
+ *
+ * Returns the path to a temp project-scope config (passed via the SDK's
+ * `mcpConfigPath` option) AND simultaneously merges the same server into
+ * the subprocess's user-scope `~/.claude.json` settings file.
+ *
+ * Why both: Anthropic Claude Code subagents + project-scope MCP
+ * (`--mcp-config` flag) silently hallucinate "tool unavailable" - bugs
+ * #13898 + #14496 + #13254. User-scope MCP (~/.claude.json mcpServers)
+ * does propagate to subagents + Task tool forks. Wiring both is
+ * belt-and-suspenders: main agent uses project-scope as before; any
+ * subagent the main spawns inherits via user-scope.
+ *
+ * Single-tenant assumption: each per-client VPS runs one org, so writing
+ * the org's mcp_token into the shared user-scope file is safe. Multi-org
+ * containers would need per-run user dirs (HOME=/tmp/agent-<id>/.claude).
  */
 export async function writeMcpConfig(
   appUrl: string,
   mcpToken: string,
 ): Promise<string> {
-  const cfg = {
-    mcpServers: {
-      rawgrowth: {
-        type: "http",
-        url: `${appUrl.replace(/\/$/, "")}/api/mcp`,
-        headers: { Authorization: `Bearer ${mcpToken}` },
-      },
-    },
+  const endpoint = `${appUrl.replace(/\/$/, "")}/api/mcp`;
+  const serverDef = {
+    type: "http",
+    url: endpoint,
+    headers: { Authorization: `Bearer ${mcpToken}` },
   };
+  const cfg = { mcpServers: { rawgrowth: serverDef } };
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rawclaw-mcp-"));
   const configPath = path.join(dir, "mcp.json");
   await fs.writeFile(configPath, JSON.stringify(cfg), { mode: 0o600 });
+
+  // Subagent-bypass leg: ensure the same server is registered at
+  // user-scope so Task tool forks see it. The SDK subprocess inherits
+  // HOME from runAgentSdk's env override (CLAUDE_CLI_HOME ?? HOME ??
+  // "/home/node"); read that exact precedence here so we patch the
+  // file the CLI will actually load.
+  const home =
+    process.env.CLAUDE_CLI_HOME ?? process.env.HOME ?? "/home/node";
+  const userClaudeJson = path.join(home, ".claude.json");
+  try {
+    let existing: Record<string, unknown> = {};
+    try {
+      existing = JSON.parse(await fs.readFile(userClaudeJson, "utf8")) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      // file missing or unreadable: create from scratch
+    }
+    const servers = (existing.mcpServers as Record<string, unknown>) ?? {};
+    servers.rawgrowth = serverDef;
+    existing.mcpServers = servers;
+    const tmp = userClaudeJson + ".new";
+    await fs.writeFile(tmp, JSON.stringify(existing, null, 2));
+    await fs.rename(tmp, userClaudeJson);
+  } catch (err) {
+    // Non-fatal: project-scope path still works for main agent.
+    console.warn(
+      `[writeMcpConfig] user-scope merge skipped: ${(err as Error).message}`,
+    );
+  }
+
   return configPath;
 }
 
@@ -212,6 +281,13 @@ export async function runAgentSdk(
       env: {
         ...process.env,
         HOME: process.env.CLAUDE_CLI_HOME ?? process.env.HOME ?? "/home/node",
+        // BUG-44b (A 2026-05-19): CLI reads ANTHROPIC_API_KEY env
+        // directly when file-credentials is stale; explicit
+        // pass-through ensures recovery path works even if a future
+        // refactor narrows the `...process.env` spread above.
+        ...(process.env.ANTHROPIC_API_KEY
+          ? { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY }
+          : {}),
       },
 
       // Stream text for progressive updates
@@ -277,6 +353,18 @@ export async function runAgentSdk(
       // EMPTY even when streamedText already had ~hundreds of chars in flight.
       // Caller checks result.aborted to know it was truncated.
       return { text: streamedText || null, sessionId: newSessionId, usage, aborted: true };
+    }
+    // BUG-44 (2026-05-19): the SDK shells out to the Claude Code CLI,
+    // which reads ~/.claude/.credentials.json for OAuth. Anthropic
+    // occasionally revokes access_tokens server-side; the CLI then
+    // emits "Not logged in" / "Invalid authentication credentials" /
+    // 401 via stderr and the SDK rethrows it as a generic Error.
+    // Re-wrap as AuthRevokedError so chat-sdk's recovery branch can
+    // detect it via instanceof or by message and trigger the
+    // refresh_token rotation in claude-max-recovery.
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    if (isAuthRevokedMessage(rawMsg)) {
+      throw new AuthRevokedError(rawMsg);
     }
     throw err;
   } finally {
