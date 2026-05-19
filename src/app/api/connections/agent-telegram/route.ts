@@ -8,21 +8,25 @@ import { encryptSecret } from "@/lib/crypto";
 export const runtime = "nodejs";
 
 /**
- * Per-Department-Head Telegram bots.
+ * CEO-only Telegram bot wiring.
  *
  * GET  /api/connections/agent-telegram
- *      → list every bot for this org with its assigned head agent.
+ *      → list the bot for this org (at most one).
  *
  * POST /api/connections/agent-telegram
  *      Body: { agent_id: string, token: string }
  *      → validate the token via getMe, register the webhook back to
  *        /api/webhooks/agent-telegram/[bot_row_id], persist encrypted
- *        token. Agent must be marked as a department head.
+ *        token. Agent must be the CEO department head.
  *
- * One bot per agent. Junior sub-agents (not a dept head, not the
- * top-of-org / CEO) are rejected. The CEO (reports_to=null) is allowed
- * because Scan is the primary Telegram entry point that delegates to
- * dept heads via agent_invoke.
+ * Pedro 2026-05-19 mandate: one bot per organization, attached to
+ * the CEO agent only. CEO receives every DM and orchestrates via
+ * agent_invoke (delegates to Marta / Kasia / Ania / Zosia / Basia /
+ * Engineering Manager as needed). Per-agent bots are an anti-pattern
+ * that splits the customer-facing surface and lets sub-agents skip
+ * the orchestration step. DB-side enforcement lives in migration
+ * 0080_one_ceo_bot_per_org.sql (UNIQUE INDEX on organization_id +
+ * trigger that requires is_department_head=true and department='ceo').
  */
 
 export async function GET() {
@@ -63,22 +67,22 @@ export async function POST(req: NextRequest) {
     const organizationId = await currentOrganizationId();
     const db = supabaseAdmin();
 
-    // Agent must exist + belong to this org + be either a department
-    // head OR the CEO/top-of-org agent. The live rgaios_agents schema has
-    // no `is_ceo` column (confirmed against types.ts + migrations), so
-    // the CEO is identified solely by reports_to = null. Junior sub-agents
-    // (reports_to set, not a head) are rejected - bot wiring is
-    // dept-head + CEO only.
+    // Agent must exist + belong to this org + be the CEO department
+    // head (is_department_head=true AND department='ceo'). Pedro
+    // 2026-05-19 mandate: one bot per org, CEO-only. Sub-agents and
+    // non-CEO department heads are rejected here AND by the DB trigger
+    // in 0080_one_ceo_bot_per_org.sql. Belt-and-suspenders: the route
+    // returns a friendly 400, the DB rejects insert if the route is
+    // ever bypassed.
     type AgentRoleRow = {
       id: string;
       name: string;
       is_department_head: boolean | null;
       department: string | null;
-      reports_to: string | null;
     };
     const { data: agentData } = await db
       .from("rgaios_agents")
-      .select("id, name, is_department_head, department, reports_to")
+      .select("id, name, is_department_head, department")
       .eq("id", agent_id)
       .eq("organization_id", organizationId)
       .maybeSingle();
@@ -91,13 +95,13 @@ export async function POST(req: NextRequest) {
         { status: 404 },
       );
     }
-    const isHead = agent.is_department_head === true;
-    const isTopOfOrg = agent.reports_to === null;
-    if (!isHead && !isTopOfOrg) {
+    const isCeo =
+      agent.is_department_head === true && agent.department === "ceo";
+    if (!isCeo) {
       return NextResponse.json(
         {
           error:
-            "Telegram bots can only be assigned to department heads or the CEO/top-of-org agent. Mark this agent as a department head or as the org's CEO first.",
+            "Telegram bot wiring is reserved for the CEO agent. Mark this agent as the CEO department head (is_department_head=true, department='ceo') first. CEO orchestrates to other agents via agent_invoke.",
         },
         { status: 400 },
       );

@@ -11,10 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { jsonFetcher } from "@/lib/swr";
 
 /**
- * Per-agent Telegram bot connector. Renders inside the agent edit sheet
- * when the agent is marked as a Department Head. Lets the operator paste
- * a BotFather token, validates it server-side, and registers the webhook
- * so DMs to that bot route to this specific agent as the persona.
+ * CEO-only Telegram bot connector. Renders inside the agent edit
+ * sheet only when the agent is the CEO (is_department_head=true AND
+ * department='ceo'). Pedro 2026-05-19 mandate: one bot per
+ * organization, attached to the CEO. CEO orchestrates to every other
+ * agent via agent_invoke. For non-CEO agents the panel renders a
+ * single muted hint instead of the connect form, so operators do not
+ * try to wire per-agent bots (the route + DB trigger would reject).
  */
 
 type BotRow = {
@@ -31,9 +34,13 @@ type ListResponse = { bots: BotRow[] };
 export function AgentTelegramBotPanel({
   agentId,
   agentName,
+  isDepartmentHead,
+  department,
 }: {
   agentId: string;
   agentName: string;
+  isDepartmentHead?: boolean | null;
+  department?: string | null;
 }) {
   const { data, mutate } = useSWR<ListResponse>(
     "/api/connections/agent-telegram",
@@ -41,12 +48,25 @@ export function AgentTelegramBotPanel({
   );
 
   const myBot = data?.bots?.find((b) => b.agent_id === agentId) ?? null;
+  const isCeo = isDepartmentHead === true && department === "ceo";
 
   if (myBot) {
     return (
       <ConnectedCard bot={myBot} agentName={agentName} onChanged={mutate} />
     );
   }
+
+  if (!isCeo) {
+    return (
+      <div className="text-xs text-muted-foreground">
+        Telegram bot wiring is reserved for the CEO agent. Mark this
+        agent as the CEO department head (is_department_head=true,
+        department=&quot;ceo&quot;) to attach a bot. The CEO orchestrates
+        every other agent via agent_invoke.
+      </div>
+    );
+  }
+
   return <ConnectForm agentId={agentId} onConnected={mutate} />;
 }
 

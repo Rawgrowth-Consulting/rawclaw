@@ -614,15 +614,14 @@ export function AgentSheet(props: Props) {
               own rule: department head OR CEO/top-of-org.
             */}
 
-            {isEdit &&
-              (form.isDepartmentHead ||
-                props.agent.role === "ceo" ||
-                props.agent.reportsTo === null) && (
-                <AgentTelegramBotPanel
-                  agentId={props.agent.id}
-                  agentName={form.name || props.agent.name}
-                />
-              )}
+            {isEdit && (
+              <AgentTelegramBotPanel
+                agentId={props.agent.id}
+                agentName={form.name || props.agent.name}
+                isDepartmentHead={form.isDepartmentHead}
+                department={form.department === NONE ? null : form.department}
+              />
+            )}
 
             {!isSelfHosted && (
               <Field label="Model" hint="Which Claude model powers this agent.">
