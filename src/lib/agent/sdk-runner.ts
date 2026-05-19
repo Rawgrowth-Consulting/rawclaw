@@ -9,11 +9,90 @@
  * This is the same pattern the original Rawclaw used — agents ARE Claude Code.
  */
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, startup } from "@anthropic-ai/claude-agent-sdk";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import path from "node:path";
 import fs from "node:fs/promises";
 import os from "node:os";
+
+/**
+ * Pre-warm pool (Pedro 2026-05-19, web-search win #1). The Claude Agent
+ * SDK spends ~12-40s of cold-start spawning + initialising the Claude
+ * Code subprocess on the FIRST query of a process (SDK issue #34). The
+ * SDK's startup() returns a WarmQuery whose subprocess is already booted;
+ * its .query() (single-use) skips that cold start.
+ *
+ * Constraint: a WarmQuery's options are frozen at startup() time, and
+ * .query() only takes a prompt - so a warm handle can only serve a call
+ * with the SAME options AND no per-call resume (the pre-warmed subprocess
+ * has no session to resume). We therefore key the pool on a signature of
+ * the resume-independent options (cwd + mcpConfigPath + model) and only
+ * use it for fresh (non-resumed) turns. Every other call falls back to a
+ * cold query(), exactly as before - the pool is a pure speed-up with no
+ * behaviour change.
+ *
+ * Lifecycle: one warm handle per signature. Consume-then-refill: when a
+ * call takes the handle, we immediately startup() a replacement in the
+ * background so the next matching call is also warm. WarmQuery is
+ * single-use, so we must never reuse a consumed handle.
+ */
+type WarmHandle = Awaited<ReturnType<typeof startup>>;
+const warmPool = new Map<string, WarmHandle>();
+const warmPending = new Set<string>();
+
+function warmSignature(opts: Partial<Options>): string {
+  const loose = opts as Record<string, unknown>;
+  return JSON.stringify({
+    cwd: (loose.cwd as string) ?? "",
+    mcpConfigPath: (loose.mcpConfigPath as string) ?? "",
+    model: (loose.model as string) ?? "",
+  });
+}
+
+/**
+ * Fire-and-forget: ensure a warm handle exists for this signature. Safe
+ * to call repeatedly - dedupes in-flight warms and no-ops if one is
+ * already pooled. Never throws into the caller; a failed warm just means
+ * the next call pays the cold start, same as today.
+ */
+function ensureWarm(sig: string, opts: Partial<Options>): void {
+  if (warmPool.has(sig) || warmPending.has(sig)) return;
+  warmPending.add(sig);
+  // Strip per-call-only fields the warm subprocess can't carry.
+  const { resume: _resume, abortController: _ac, ...warmOpts } = opts;
+  void startup({ options: warmOpts as Options })
+    .then((handle) => {
+      warmPool.set(sig, handle);
+    })
+    .catch(() => {
+      /* warm failed; next call cold-starts. non-fatal. */
+    })
+    .finally(() => {
+      warmPending.delete(sig);
+    });
+}
+
+/**
+ * Take a warm handle for this signature if one is pooled AND the call is
+ * resume-free (a pre-warmed subprocess has no session to resume). Returns
+ * null to signal "cold query()". Always kicks off a refill so the pool
+ * stays warm for the next matching call.
+ */
+function takeWarm(opts: Partial<Options>): WarmHandle | null {
+  const sig = warmSignature(opts);
+  const isResume = "resume" in opts && !!opts.resume;
+  if (isResume) {
+    // Keep the pool warm for future fresh turns, but this call must be
+    // cold (warm subprocess can't resume a specific session).
+    ensureWarm(sig, opts);
+    return null;
+  }
+  const handle = warmPool.get(sig) ?? null;
+  if (handle) warmPool.delete(sig);
+  // Refill (or first-fill) asynchronously so the next call is warm too.
+  ensureWarm(sig, opts);
+  return handle;
+}
 
 /**
  * Raised when the Claude Code CLI subprocess fails because Anthropic
@@ -306,10 +385,16 @@ export async function runAgentSdk(
       maxTurns: 30,
     };
 
-    for await (const event of query({
-      prompt: singleTurn(message),
-      options: sdkOptions as Options,
-    })) {
+    // Warm-pool fast path: if a pre-warmed subprocess is pooled for this
+    // exact option signature and this is a fresh (non-resumed) turn, send
+    // the prompt to it and skip the ~12-40s cold start. Otherwise cold
+    // query() as before. Either way the iterable contract is identical.
+    const warm = takeWarm(sdkOptions);
+    const events = warm
+      ? warm.query(singleTurn(message))
+      : query({ prompt: singleTurn(message), options: sdkOptions as Options });
+
+    for await (const event of events) {
       const ev = event as Record<string, unknown>;
 
       // Session init
