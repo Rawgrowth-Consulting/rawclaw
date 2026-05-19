@@ -24,6 +24,37 @@ const THINKING_OPEN_RE = /<thinking>/i;
 const THINKING_CLOSE_RE = /<\/thinking>/i;
 const THINKING_FULL_BLOCK_RE = /<thinking>[\s\S]*?<\/thinking>/gi;
 const THINKING_UNPAIRED_TAG_RE = /<\/?thinking>/gi;
+
+// Pedro 2026-05-19: the model sometimes emits naked reasoning at the
+// TOP of the reply (no <thinking> tags) - lines starting with "💭 "
+// or meta-narration "User just said X..." / "Operator just said Y...".
+// These never belong in the operator-visible Telegram reply. Strip
+// every such line + any blank lines immediately after, until the
+// first line that is real prose.
+const NAKED_REASONING_LINE_RE =
+  /^[\s>*_-]*(?:💭|🧠|🤔)[^\n]*\n?/;
+const META_NARRATION_LINE_RE =
+  /^\s*(?:User|Operator|The user|The operator)\s+(?:just\s+(?:said|asked|wrote|typed)|is\s+(?:asking|saying|telling))[^\n]*\n?/i;
+
+/**
+ * Drop leading reasoning leak lines that the model emitted outside of
+ * <thinking> tags. Repeats until no more leading reasoning lines exist
+ * so multi-line preambles get stripped together.
+ */
+function stripNakedReasoningPreamble(text: string): string {
+  let out = text;
+  // Up to 5 passes - that is more than enough for the few leak shapes
+  // the model has been observed to produce and prevents any
+  // pathological infinite loop on an unexpected input.
+  for (let i = 0; i < 5; i++) {
+    const before = out;
+    out = out.replace(NAKED_REASONING_LINE_RE, "");
+    out = out.replace(META_NARRATION_LINE_RE, "");
+    out = out.replace(/^\s*\n+/, "");
+    if (out === before) break;
+  }
+  return out;
+}
 // P4 batch 1 (per B 02:53 → C, from C 02:40 simplify):
 // regex `/\s*\n\s*/g` appeared 4x inline; hoist to one module const.
 const NEWLINE_COLLAPSE = /\s*\n\s*/g;
@@ -175,11 +206,16 @@ export function extractThinking(reply: string): ExtractedThinking {
         visibleReply: humanizeJargon(reply.slice(0, idx).trim()),
       };
     }
-    // No thinking markup at all - but still strip any stray lone tag.
+    // No thinking markup at all - but still strip any stray lone tag
+    // AND any naked reasoning preamble the model leaked at the top of
+    // the reply (BUG-N 2026-05-19 - "💭 User just said hey" leaked into
+    // Telegram with no <thinking> tag wrap).
     return {
       thinking: null,
       visibleReply: humanizeJargon(
-        stripUnpairedThinkingTags(reply).trim(),
+        stripNakedReasoningPreamble(
+          stripUnpairedThinkingTags(reply),
+        ).trim(),
       ),
     };
   }
@@ -196,11 +232,15 @@ export function extractThinking(reply: string): ExtractedThinking {
 
   // Strip ALL <thinking> blocks (the matched one + any extras) PLUS any
   // stray unpaired <thinking>/</thinking> tag so no raw XML survives
-  // into the visible reply. Then humanize tool-name jargon so the
-  // operator never sees raw internal identifiers in the reply body.
+  // into the visible reply. Also strip any leading naked-reasoning
+  // preamble (💭 / "User just said X") that the model leaked outside
+  // the tagged block. Then humanize tool-name jargon so the operator
+  // never sees raw internal identifiers in the reply body.
   const visibleReply = humanizeJargon(
-    stripUnpairedThinkingTags(
-      reply.replace(THINKING_FULL_BLOCK_RE, ""),
+    stripNakedReasoningPreamble(
+      stripUnpairedThinkingTags(
+        reply.replace(THINKING_FULL_BLOCK_RE, ""),
+      ),
     ).trim(),
   );
 
@@ -209,13 +249,18 @@ export function extractThinking(reply: string): ExtractedThinking {
 
 /**
  * Telegram-surface variant. Pulls the <thinking> block, persists it to
- * rgaios_audit_log (kind chat_thinking) so the /trace timeline shows the
- * Telegram-side reasoning the same way the dashboard chat does, and
- * returns the operator-visible text with a one-line "💭 ..." reasoning
- * prefix. Plain text - no markdown parse_mode dependency.
+ * rgaios_audit_log (kind chat_thinking) so the /trace timeline still
+ * shows the Telegram-side reasoning the same way the dashboard chat
+ * does, and returns the operator-visible text WITHOUT the reasoning
+ * prefix.
  *
- * Best-effort: a failed audit insert never blocks the reply, and a reply
- * with no <thinking> block is returned untouched.
+ * Pedro 2026-05-19 mandate: the operator should never see the agent's
+ * private "💭 User just said X..." narration in Telegram - it reads as
+ * a bug, not as a feature. /trace + the dashboard Reasoning chip stay
+ * the homes for the trace. Telegram surface stays clean prose.
+ *
+ * Best-effort: a failed audit insert never blocks the reply, and a
+ * reply with no <thinking> block is returned untouched.
  */
 export async function surfaceThinkingTelegram(opts: {
   reply: string;
@@ -245,5 +290,5 @@ export async function surfaceThinkingTelegram(opts: {
     // Best-effort - never block the Telegram reply on the trace row.
   }
 
-  return `💭 ${thinking}\n\n${visibleReply}`;
+  return visibleReply;
 }

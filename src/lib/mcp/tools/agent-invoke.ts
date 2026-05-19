@@ -143,10 +143,25 @@ registerTool({
           "this delegation. Replayed to the sub-agent as the opening " +
           "user turn so it sees the conversation it is joining.",
       },
+      wait: {
+        type: "boolean",
+        description:
+          "Default true. When false, fire-and-forget mode: enqueue the run + return immediately with { run_id, status: 'dispatched' }. " +
+          "Used by Scan for multi-agent fan-out so the SDK doesn't serialise stateful tool calls that all block on poll. " +
+          "Caller must poll status separately (via supabase_run_sql on rgaios_routine_runs) once enough time has passed for sub-agents to finish.",
+      },
       timeout_ms: {
         type: "number",
         description:
-          "How long to wait for completion. Defaults to 90s (must be <120s wall-clock cap).",
+          "How long to wait for completion. Defaults to 180s (must be <300s wall-clock cap). " +
+          "Pedro 2026-05-19: drain spawn + Claude CLI subprocess + MCP tool calls + " +
+          "sub-agent synthesis routinely lands at 60-180s on InstaCEO Academy / Marti; " +
+          "the older 90s default + 120s cap left the dispatcher reporting 'timed out' on " +
+          "runs that completed minutes later in the background. Bumped to 180/300s so the " +
+          "happy path lands inside the poll window. If sub-agents grow heavier later, prefer " +
+          "switching to a notify-on-complete callback before pushing this cap higher (the " +
+          "drain claim + Claude CLI cold-start cost a fixed ~30s overhead that's not worth " +
+          "blocking the chat surface on).",
       },
     },
   },
@@ -157,7 +172,16 @@ registerTool({
     const constraints = String(args.constraints ?? "").trim();
     const context = String(args.context ?? "").trim();
     const operatorAsk = String(args.operator_ask ?? "").trim();
-    const timeoutMs = Math.min(Number(args.timeout_ms ?? 90_000) || 90_000, 120_000);
+    // Force the floor: even if Scan's session cached an older description
+    // that said "default 90s", we refuse to honor a too-short caller wait.
+    // Sub-agent runs on Marti routinely land at 30-100s; a 90s ceiling
+    // surfaced "did not complete" on runs that succeeded ~95s later, and
+    // Scan reports those as honest timeouts to the operator. Clamp the
+    // poll cap to [180s, 300s] regardless of what the caller passed.
+    const timeoutMs = Math.min(
+      Math.max(Number(args.timeout_ms ?? 180_000) || 180_000, 180_000),
+      300_000,
+    );
     if (!agentId || !basePrompt) {
       return textError("agent_id and prompt are required.");
     }
@@ -302,6 +326,33 @@ registerTool({
     // which always loses the race against the timeoutMs cap below.
     dispatchRun(run.id, ctx.organizationId);
 
+    // Fire-and-forget mode (Pedro 2026-05-19): Claude Code SDK
+    // serialises stateful tool calls when each one blocks on a poll, so
+    // a 4-agent fan-out runs serially even when the operator named them
+    // all together. wait:false returns immediately with the run_id; the
+    // caller (Scan) emits 4 of these in one assistant turn = SDK happily
+    // fires them concurrently, drain processes them in parallel (4-slot
+    // concurrency), and Scan polls them all via supabase_run_sql on
+    // rgaios_routine_runs in the next turn for a true parallel synthesis.
+    // Default ASYNC. Only block-and-poll when caller explicitly opts in
+    // with `wait: true`. Reason (Pedro 2026-05-19 second deadline pass):
+    // Claude Code SDK serialises stateful tool calls that block — even
+    // when the model emits 4 agent_invoke tool_use blocks in parallel,
+    // each one blocks the next at SDK level, so a 4-agent fan-out runs
+    // serially (4× the latency). Returning instantly by default lets
+    // the SDK dispatch all 4 truly concurrent + drain handle them with
+    // 4-slot concurrency. Callers that want blocking semantics (one-off
+    // sequential invocations) pass `wait: true` explicitly.
+    if (args.wait !== true) {
+      return text(
+        JSON.stringify({
+          run_id: run.id,
+          status: "dispatched",
+          note: `Fire-and-forget. Poll via SELECT status, output FROM rgaios_routine_runs WHERE id = '${run.id}' once the sub-agent has had ~60-90s to land.`,
+        }),
+      );
+    }
+
     // Poll for completion with a hard wall-clock cap.
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
@@ -313,7 +364,20 @@ registerTool({
         .maybeSingle();
       if (!current) break;
       if (current.status === "succeeded") {
-        const output = (current.output as { summary?: string } | null)?.summary;
+        // Sub-agent run output schema is { text, source } (see executor +
+        // chat-task return shape). The older `.summary` key was a planned
+        // shape that never landed; reading it alone returned undefined on
+        // every successful run, which the dispatcher then surfaced as
+        // "Sub-agent completed but returned no summary" - operator + Scan
+        // both saw it as an empty/failed delegation even though the real
+        // deliverable was sitting in `output.text`. Fall back to `.text`
+        // before declaring empty so the actual result reaches synthesis.
+        // Pedro 2026-05-19: caught on Marti while watching 8 succeeded
+        // runs report empty to Scan.
+        const outBlob = current.output as
+          | { summary?: string; text?: string }
+          | null;
+        const output = outBlob?.summary ?? outBlob?.text;
         return text(
           output ?? "Sub-agent completed but returned no summary.",
         );

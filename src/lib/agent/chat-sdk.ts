@@ -11,6 +11,10 @@
 
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { runAgentSdk, writeMcpConfig, cleanupMcpConfig, ensureAgentWorkspace, cleanupAgentWorkspace } from "@/lib/agent/sdk-runner";
+import {
+  looksLikeAuthFail,
+  recoverClaudeMaxAuth,
+} from "@/lib/agent/claude-max-recovery";
 
 type AgentChatResult =
   | { ok: true; reply: string; sessionId?: string }
@@ -220,6 +224,31 @@ export async function chatReplyViaSdk(input: {
         // Clear the stale id so the NEXT chat turn also starts fresh
         // if for any reason saveAgentSession below doesn't overwrite
         // (e.g. retry path itself fails). Best-effort.
+        await saveAgentSession(organizationId, agentId, "").catch(() => {});
+        result = await runOnce(undefined);
+      } else if (looksLikeAuthFail(err)) {
+        // BUG-44 (2026-05-19): Anthropic revoked the Claude Max OAuth
+        // access_token server-side outside the normal expiry window.
+        // The CLI subprocess fails with "Not logged in" / "Invalid
+        // authentication credentials" / 401 and no fallback existed -
+        // every agent went dark until Pedro re-ran /login by hand.
+        // Recovery path uses the DB-stored refresh_token to mint a
+        // fresh access_token, writes it into ~/.claude/.credentials.json,
+        // then retries the CLI call once with a clean session.
+        console.warn(
+          `[chat-sdk] Claude Max auth revoked for agent ${agentId}, attempting refresh-token recovery: ${(err as Error).message}`,
+        );
+        const recovery = await recoverClaudeMaxAuth(organizationId);
+        if (!recovery.ok) {
+          throw new Error(
+            `Marta SDK auth revoked; awaiting Pedro /login. Reason: ${recovery.reason}`,
+          );
+        }
+        console.warn(
+          `[chat-sdk] Claude Max auth recovered for org ${organizationId}, retrying without resume`,
+        );
+        // Drop the resume id - the previous session lived under the
+        // revoked token and may be unreachable; safer to start fresh.
         await saveAgentSession(organizationId, agentId, "").catch(() => {});
         result = await runOnce(undefined);
       } else {
