@@ -195,11 +195,22 @@ registerTool({
     if (Array.isArray(args.poll_run_ids) && args.poll_run_ids.length > 0) {
       const db = supabaseAdmin();
       const ids = args.poll_run_ids.map((x) => String(x)).filter(Boolean);
-      const POLL_CAP_MS = 300_000;
+      // BOUNDED wait, not block-until-done. Pedro 2026-05-19: the MCP
+      // transport between the Claude CLI subprocess and /api/mcp times
+      // a single tool call out at ~60s, so a poll that blocks 2+ min
+      // waiting for slow drain-spawned sub-agents gets killed mid-flight
+      // and the caller sees a false "collect timed out". Instead we wait
+      // a short window (~40s, safely under the transport cap), then
+      // return PARTIAL results: succeeded/failed runs carry their output,
+      // not-yet-finished runs come back status:"pending". The caller
+      // (Scan) re-calls poll_run_ids with the still-pending ids - that's
+      // a collect retry, NOT a re-dispatch, so it doesn't violate the
+      // no-retry rule and never re-fires the sub-agents.
+      const POLL_CAP_MS = 40_000;
+      const deadline = Date.now() + POLL_CAP_MS;
       const results = await Promise.all(
         ids.map(async (id) => {
-          const started = Date.now();
-          while (Date.now() - started < POLL_CAP_MS) {
+          while (true) {
             const { data } = await db
               .from("rgaios_routine_runs")
               .select("status, output, error")
@@ -219,12 +230,19 @@ registerTool({
             if (row?.status === "failed") {
               return { run_id: id, status: "failed", error: row.error ?? null };
             }
+            if (Date.now() >= deadline) {
+              return { run_id: id, status: "pending" };
+            }
             await new Promise((r) => setTimeout(r, 1500));
           }
-          return { run_id: id, status: "timeout" };
         }),
       );
-      return text(JSON.stringify(results, null, 2));
+      const pending = results.filter((r) => r.status === "pending").length;
+      const note =
+        pending > 0
+          ? `${pending} run(s) still pending - call poll_run_ids again with just the pending run_ids to finish collecting. This is a collect retry, not a re-dispatch.`
+          : "all runs resolved";
+      return text(JSON.stringify({ note, results }, null, 2));
     }
 
     const agentId = String(args.agent_id ?? "").trim();
