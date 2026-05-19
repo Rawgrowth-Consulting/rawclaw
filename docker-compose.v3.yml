@@ -102,6 +102,17 @@ services:
       # container correctly drops to uid 1001.
       - fastembed-cache-v2:/var/lib/rawclaw/fastembed
 
+      # Claude CLI OAuth credentials. 2026-05-19 incident: every
+      # `docker compose up --force-recreate app` wipes the container's
+      # /home/nextjs/.claude/ dir, so the OAuth token vanished and the
+      # CLI fell back to "Invalid API key" until re-login. Bind-mount the
+      # host's rawclaw-owned credentials file (kept fresh by the drain
+      # server's tick-sync, see scripts/provision-vps.sh CREDS_PATH) so
+      # the token survives recreates. claude-max-oauth orgs MUST leave
+      # ANTHROPIC_API_KEY empty (see .env.v3.example) - a stale key in
+      # that slot overrides this OAuth token and re-breaks auth.
+      - /home/rawclaw/.claude/.credentials.json:/home/nextjs/.claude/.credentials.json
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped

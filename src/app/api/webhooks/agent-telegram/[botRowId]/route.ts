@@ -7,6 +7,7 @@ import {
   editMessageText,
   getFilePath,
   sendChatAction,
+  sendChunkedReply,
   sendMessage,
   type TgUpdate,
 } from "@/lib/telegram/client";
@@ -105,6 +106,53 @@ function startProgressUpdates(opts: {
   setTimeout(() => {
     void tick();
   }, intervalMs);
+}
+
+/**
+ * Live in-place progress while the synchronous chatReply() runs.
+ *
+ * 2026-05-19: multi-agent fan-out chatReply calls take 2-5min while the
+ * CEO dispatches specialists and synthesizes. The typing indicator alone
+ * (refreshed every 4s below) kept the chat "alive" but the placeholder
+ * just said "💭 Thinking…" the whole time, so the operator had no signal
+ * the run was progressing. This edits the placeholder with an
+ * elapsed-time "Working…" line every few seconds. Best-effort: every
+ * edit is catch()'d so a Telegram hiccup never blocks the reply path,
+ * and the returned stop() must be called the instant chatReply resolves
+ * so we never race the final answer edit.
+ */
+function startPlainProgress(opts: {
+  token: string;
+  chatId: number;
+  messageId: number;
+  intervalMs?: number;
+}): () => void {
+  const intervalMs = opts.intervalMs ?? 5_000;
+  const startedAt = Date.now();
+  let frame = 0;
+  let stopped = false;
+
+  const timer = setInterval(() => {
+    if (stopped) return;
+    const phrase = THINKING_FRAMES[frame % THINKING_FRAMES.length];
+    frame += 1;
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    const elapsedStr =
+      elapsed < 60
+        ? `${elapsed}s`
+        : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+    editMessageText(
+      opts.token,
+      opts.chatId,
+      opts.messageId,
+      `${phrase}…\n_working · ${elapsedStr}_`,
+    ).catch(() => {});
+  }, intervalMs);
+
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }
 
 export const runtime = "nodejs";
@@ -276,6 +324,20 @@ export async function POST(
       },
     ).catch(() => "");
 
+    // Live progress while chatReply runs (2-5min for multi-agent
+    // fan-out). Edits the placeholder with an elapsed-time "working…"
+    // line so the operator sees motion, not a frozen "Thinking…".
+    // stopProgress() MUST run before any final edit so we never race the
+    // answer. Only meaningful when we actually have a placeholder.
+    const stopProgress =
+      placeholderId !== null
+        ? startPlainProgress({
+            token,
+            chatId: msg.chat.id,
+            messageId: placeholderId,
+          })
+        : () => {};
+
     // The key difference vs the legacy webhook: agentId is passed so the
     // persona is THIS bot's owner, not the org default.
     const result = await chatReply({
@@ -286,6 +348,11 @@ export async function POST(
       publicAppUrl,
       agentId,
       extraPreamble,
+    }).finally(() => {
+      // Stop progress edits the instant the run resolves (success OR
+      // throw) - otherwise a queued setInterval edit could overwrite the
+      // final answer a few seconds after we send it.
+      stopProgress();
     });
 
     if (!result.ok) {
@@ -395,12 +462,13 @@ export async function POST(
       : `⚠️ Reply blocked by brand-voice guard. Operator: see activity feed.`;
 
     // Plain reply — swap the placeholder for the real text.
+    // sendChunkedReply splits replies > Telegram's 4096-char cap into
+    // <=3900-char "(i/N)" chunks (2026-05-19: multi-agent synthesis
+    // answers routinely blew past 4096 and silently 400'd, so the
+    // operator saw the placeholder hang forever). Chunk 1 edits the
+    // placeholder; the rest are fresh sends.
     try {
-      if (placeholderId !== null) {
-        await editMessageText(token, msg.chat.id, placeholderId, replyToSend);
-      } else {
-        await sendMessage(token, msg.chat.id, replyToSend);
-      }
+      await sendChunkedReply(token, msg.chat.id, replyToSend, placeholderId);
     } catch {
       /* delivery failure logged elsewhere */
     }

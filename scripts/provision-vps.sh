@@ -225,8 +225,14 @@ BRAND_VOICE_LLM_PROVIDER=claude-max-oauth
 # Embedding stays local via fastembed - no API key required.
 EMBEDDING_PROVIDER=fastembed
 
-# Path B fallback: paste an Anthropic API key here if Claude Max OAuth
-# isn't an option on this box (corporate IP block, etc).
+# Path B fallback: paste an Anthropic API key here ONLY if Claude Max
+# OAuth isn't an option on this box (corporate IP block, etc).
+#
+# CRITICAL (2026-05-19 incident): on claude-max-oauth orgs this MUST stay
+# EMPTY. A stale OAuth token had been pasted into this slot; the container
+# threaded it through as ANTHROPIC_API_KEY, which overrides the
+# .credentials.json OAuth token the CLI reads and broke auth with
+# "Invalid API key". Leave it blank so the bind-mounted credentials win.
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 EOF
@@ -301,6 +307,13 @@ ln -sf /home/rawclaw/.local/bin/claude /usr/local/bin/claude
 
 # Register the rawgrowth MCP server at USER scope so it is visible no matter
 # what cwd Claude Code is spawned from (systemd, SSH, interactive).
+#
+# 2026-05-19: --force-recreate wipes the container's /home/nextjs/.claude/
+# (including .claude.json mcpServers). This host-side registration is for
+# the on-box rawclaw CLI; inside the container, src/lib/agent/sdk-runner.ts
+# writeMcpConfig re-merges the rawgrowth server into the user-scope
+# ~/.claude.json on the first chat after a recreate, so the MCP config
+# self-heals there without a manual re-add.
 sudo -iu rawclaw claude mcp remove rawgrowth 2>/dev/null || true
 sudo -iu rawclaw claude mcp add --scope user --transport http rawgrowth \
   "https://${DOMAIN}/api/mcp" \

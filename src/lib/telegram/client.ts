@@ -156,6 +156,69 @@ export function sendChatAction(
   });
 }
 
+/**
+ * Telegram hard-caps a single message at 4096 chars; anything longer is
+ * rejected with a 400 and (in our after()-deferred reply path) silently
+ * lost - the operator just saw the placeholder hang on "Thinking…".
+ *
+ * 2026-05-19 incident: multi-agent synthesis replies routinely exceed
+ * 4096 chars, so every fan-out answer vanished. Split into <=3900-char
+ * chunks (headroom for the "(i/N)\n\n" prefix added by sendChunkedReply)
+ * at the last paragraph break ("\n\n") under the limit, falling back to
+ * the last single newline, then a hard cut. Never returns an empty array.
+ */
+export const TG_CHUNK_LIMIT = 3900;
+
+export function splitTelegramText(
+  text: string,
+  limit: number = TG_CHUNK_LIMIT,
+): string[] {
+  if (!text) return [""];
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit);
+    // Prefer a paragraph boundary, then a line boundary, so we never cut
+    // mid-sentence unless the text has no break in the whole window.
+    let cut = window.lastIndexOf("\n\n");
+    if (cut < limit * 0.5) cut = window.lastIndexOf("\n");
+    if (cut <= 0) cut = limit; // hard cut: no break found in window
+    chunks.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).replace(/^\n+/, "");
+  }
+  if (rest.length > 0) chunks.push(rest);
+  return chunks.length > 0 ? chunks : [""];
+}
+
+/**
+ * Emit a (possibly long) agent reply to Telegram, transparently chunking
+ * when it exceeds the 4096-char cap. The first chunk edits the placeholder
+ * message (if one was sent) so the existing "thinking → answer" speech
+ * bubble swap still works; remaining chunks are fresh sendMessage calls.
+ * When there is more than one chunk each is prefixed with "(i/N)\n\n" so
+ * the operator can see the reply continues.
+ *
+ * Added 2026-05-19 to fix silently-dropped long multi-agent replies.
+ */
+export async function sendChunkedReply(
+  token: string,
+  chatId: number | string,
+  text: string,
+  placeholderId: number | null,
+): Promise<void> {
+  const parts = splitTelegramText(text);
+  const total = parts.length;
+  for (let i = 0; i < total; i++) {
+    const prefix = total > 1 ? `(${i + 1}/${total})\n\n` : "";
+    const body = prefix + parts[i];
+    if (i === 0 && placeholderId !== null) {
+      await editMessageText(token, chatId, placeholderId, body);
+    } else {
+      await sendMessage(token, chatId, body);
+    }
+  }
+}
+
 // Shape of the inbound webhook payload (only fields we care about).
 export type TgPhotoSize = {
   file_id: string;
