@@ -51,5 +51,26 @@ node --experimental-strip-types scripts/seed-onboarding-knowledge.ts || \
 echo "[entrypoint] running self-hosted seed (no-op if org already exists)"
 node --experimental-strip-types scripts/seed-self-hosted.ts || true
 
+# BUG-43 (D 2026-05-18, A solo recovery after broken prod): the
+# Claude Code CLI top-level config `.claude.json` lives at the user
+# HOME root, NOT inside `.claude/`. The bind-mounted `.claude/` dir
+# (docker-compose.v3.yml volume into /home/node/.claude:ro) carries
+# `.claude/backups/.claude.json.backup.*` snapshots but the active
+# `.claude.json` itself is outside the mount source, so a fresh
+# container without it has no top-level config to read. The SDK
+# subprocess (chat-sdk.ts:233 via @anthropic-ai/claude-agent-sdk)
+# then returns silent empty on every chat with no error in logs.
+# A's incident recovery was a manual `cp` of the newest backup. Do
+# the same on every boot so a force-recreate stops being destructive.
+CLAUDE_HOME="${CLAUDE_CLI_HOME:-$HOME}"
+if [ -n "$CLAUDE_HOME" ] && [ ! -f "${CLAUDE_HOME}/.claude.json" ]; then
+  bk="$(ls -t "${CLAUDE_HOME}/.claude/backups/.claude.json.backup."* 2>/dev/null | head -1)"
+  if [ -n "$bk" ] && cp "$bk" "${CLAUDE_HOME}/.claude.json" 2>/dev/null; then
+    echo "[entrypoint] restored .claude.json from $bk"
+  else
+    echo "[entrypoint] WARN: .claude.json missing at ${CLAUDE_HOME} and no backup to restore - chat may return empty (chat-sdk.ts:233)"
+  fi
+fi
+
 echo "[entrypoint] handing off to: $@"
 exec "$@"
