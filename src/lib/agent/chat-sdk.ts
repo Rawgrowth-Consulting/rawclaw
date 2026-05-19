@@ -195,7 +195,13 @@ export async function chatReplyViaSdk(input: {
       model: model ?? agent.runtime ?? undefined,
       onStreamText,
       mcpConfigPath: mcpConfigPath ?? undefined,
-      timeoutMs: 120_000,
+      // BUG-38b (A 2026-05-18): rerun5/6 GAIA Qs hit deterministic
+      // EMPTY at 127s = upstream Anthropic stream silent past 120s.
+      // SDK times out, returns aborted/empty, client gets nothing.
+      // Bump 120→500s so multi-hop GAIA-style reasoning has room to
+      // emit text. Caddy edge read_timeout is 125s but BUG-38 PR#170
+      // heartbeat keeps it warm.
+      timeoutMs: 500_000,
     });
   const looksLikeSessionMiss = (err: unknown): boolean => {
     const msg = err instanceof Error ? err.message : String(err);
