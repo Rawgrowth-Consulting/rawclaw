@@ -126,18 +126,20 @@ RUN npm install -g @anthropic-ai/claude-code
 # /home/rawclaw/.claude → /home/nextjs/.claude (provision-vps.sh handles
 # the copy on bootstrap; docker-compose.v3.yml volume-mounts it on
 # subsequent restarts).
+# BUG-43 perm fix (D 2026-05-18 incident, follow-up to PR #179):
+# Fold the /home/node chown into the existing /home/nextjs RUN so
+# both ownership grants land in a single proven-executing layer. The
+# standalone RUN from PR #179 silently no-op'd on the runner image
+# (verified tonight: image revision a3acd89 had the layer in source
+# but /home/node still showed node:node at container runtime, so the
+# entrypoint cp at boot kept failing perm-denied). One coalesced RUN
+# avoids whatever buildkit edge made the standalone layer ineffective
+# AND keeps both ownership grants atomic. The trailing `stat` makes
+# the chown effect visible in build logs so any regression is loud.
 RUN mkdir -p /home/nextjs && chown nextjs:nodejs /home/nextjs \
-      && usermod -d /home/nextjs nextjs
-
-# BUG-43 perm fix (D 2026-05-18 incident post PR#177): the entrypoint
-# .claude.json auto-restore guard (docker/entrypoint.sh) runs as the
-# nextjs user (USER nextjs below) and writes to ${CLAUDE_CLI_HOME}/.claude.json.
-# When docker-compose.v3.yml sets CLAUDE_CLI_HOME=/home/node (the base
-# node image's user home, owned by uid 1000 not nextjs uid 1001), the
-# cp fails with "Permission denied" and the guard silently no-ops -
-# defeating the whole point of PR #177. Chown /home/node to nextjs so
-# the guard can actually write the restored file at boot.
-RUN mkdir -p /home/node && chown -R nextjs:nodejs /home/node
+      && usermod -d /home/nextjs nextjs \
+      && mkdir -p /home/node && chown -R nextjs:nodejs /home/node \
+      && stat -c "/home/node owner=%U:%G" /home/node
 
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/whisper-cli
 
