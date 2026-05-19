@@ -26,6 +26,14 @@ export const ORCHESTRATION_TAGS = [
   "task",
   "shared_memory",
   "agent",
+  // Pedro 2026-05-19: Scan was observed emitting `<request format="delegate">{...}</command>`
+  // - a hallucinated hybrid of the canonical <command> shape. The closing
+  // </command> already got stripped by the existing rule above, but the
+  // opening <request ...> tag survived and the JSON body leaked into
+  // Telegram. Add `request` to the strip set so any malformed delegate
+  // shape is wiped from operator-visible prose. The strip stays COSMETIC -
+  // no executor reads `<request>`; it is only ever leaked markup.
+  "request",
 ] as const;
 
 /**
