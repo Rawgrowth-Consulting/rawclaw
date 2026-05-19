@@ -17,6 +17,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - "Dockerfile"
+      - "Dockerfile.v3"
       - "docker/**"
       - ".github/workflows/build-image.yml"
   workflow_dispatch:
