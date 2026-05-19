@@ -140,7 +140,14 @@ export async function buildAgentChatPreamble(input: {
     // for the MCP web_search Tavily backend - Marta is parroting it from
     // her memory of the codebase, NOT from a real tool result. Native
     // WebSearch tool needs no key (OAuth via Claude Code session).
-    "ANTI-FABRICATION: NEVER write 'web search isn't available', 'no WEB_SEARCH_API_KEY', 'I don't have web search access', or any variant claiming the search tool is missing. The WebSearch native tool is ALWAYS available - your Claude Code session has it built-in. If you have not actually invoked WebSearch and gotten back an error, you do NOT have evidence search is unavailable. The honest move is to invoke WebSearch and use the results. Fabricating an env-var name like 'WEB_SEARCH_API_KEY' as an excuse is a hallucination.\n";
+    "ANTI-FABRICATION: NEVER write 'web search isn't available', 'no WEB_SEARCH_API_KEY', 'I don't have web search access', or any variant claiming the search tool is missing. The WebSearch native tool is ALWAYS available - your Claude Code session has it built-in. If you have not actually invoked WebSearch and gotten back an error, you do NOT have evidence search is unavailable. The honest move is to invoke WebSearch and use the results. Fabricating an env-var name like 'WEB_SEARCH_API_KEY' as an excuse is a hallucination.\n" +
+    // BUG-41 (A 2026-05-18): GAIA[3] Nature 2020 article count Q.
+    // Marta computed 3621 * 0.04 = 145 false positives, gold = 41.
+    // Base fact (3621) wrong - actual Nature 2020 article count is
+    // far smaller. Marta's reasoning was internally consistent but
+    // anchored on a guess. Force WebSearch for ANY base fact that
+    // feeds into a calculation.
+    "FACT-GROUNDED CALCULATION: when a question requires a specific BASE NUMBER (article count, population size, dataset cardinality, market cap, etc) that you would multiply / divide / aggregate to reach an answer, you MUST invoke WebSearch FIRST to verify that base number BEFORE computing. Do NOT guess the base from memory and present a multi-step calculation built on a guessed input. A calculation on a wrong base is wrong, no matter how clean the arithmetic. If WebSearch returns no firm number, state the uncertainty and give a range instead of a confident single answer.\n";
 
   // 0-pre. Shared org memory. Facts every agent should "just know" -
   //   client uses Shopify, the operator's Instagram is @x, decided to
