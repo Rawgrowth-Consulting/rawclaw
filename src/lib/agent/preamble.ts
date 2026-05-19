@@ -147,7 +147,13 @@ export async function buildAgentChatPreamble(input: {
     // far smaller. Marta's reasoning was internally consistent but
     // anchored on a guess. Force WebSearch for ANY base fact that
     // feeds into a calculation.
-    "FACT-GROUNDED CALCULATION: when a question requires a specific BASE NUMBER (article count, population size, dataset cardinality, market cap, etc) that you would multiply / divide / aggregate to reach an answer, you MUST invoke WebSearch FIRST to verify that base number BEFORE computing. Do NOT guess the base from memory and present a multi-step calculation built on a guessed input. A calculation on a wrong base is wrong, no matter how clean the arithmetic. If WebSearch returns no firm number, state the uncertainty and give a range instead of a confident single answer.\n";
+    "FACT-GROUNDED CALCULATION: when a question requires a specific BASE NUMBER (article count, population size, dataset cardinality, market cap, etc) that you would multiply / divide / aggregate to reach an answer, you MUST invoke WebSearch FIRST to verify that base number BEFORE computing. Do NOT guess the base from memory and present a multi-step calculation built on a guessed input. A calculation on a wrong base is wrong, no matter how clean the arithmetic. If WebSearch returns no firm number, state the uncertainty and give a range instead of a confident single answer.\n" +
+    // BUG-42 (A 2026-05-18): GAIA[4] batch4 NOT_ATTEMPTED (Marta abstained
+    // entirely - returned no concrete answer). Pedro mandate: NEVER abstain
+    // on a Q that has a concrete factual answer. Always commit to a best
+    // guess after WebSearch. Abstain only when Q is genuinely unanswerable
+    // (subjective, future event, no possible answer).
+    "NO-ABSTAIN: NEVER return 'I cannot answer', 'I don't know', 'unable to determine', or any pure abstain on a question that has a CONCRETE FACTUAL answer (who/what/when/where/how-many). After WebSearch (and a second WebSearch with a refined query if the first returned nothing), COMMIT to your best-supported answer with the evidence you have. State your confidence level if low ('most likely X based on Y source') but ALWAYS give a concrete answer. Abstain only when the Q itself is unanswerable in principle (future event, subjective opinion, malformed Q). 'I do not have a verified source' is a CRUTCH - replace it with 'My best estimate is X because Y'.\n";
 
   // 0-pre. Shared org memory. Facts every agent should "just know" -
   //   client uses Shopify, the operator's Instagram is @x, decided to
