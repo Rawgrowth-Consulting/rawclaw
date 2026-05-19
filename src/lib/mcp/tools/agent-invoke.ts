@@ -104,11 +104,28 @@ registerTool({
     "well-scoped handoff gives a sharper sub-agent reply.",
   inputSchema: {
     type: "object",
-    required: ["agent_id", "prompt"],
+    // No hard-required fields: the normal path needs agent_id+prompt, but
+    // the poll-only collect path (poll_run_ids) takes neither. The handler
+    // validates per-mode. Pedro 2026-05-19.
+    required: [],
     properties: {
       agent_id: {
         type: "string",
         description: "Which agent to invoke (UUID).",
+      },
+      poll_run_ids: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "COLLECT MODE. Array of run_id strings returned by prior " +
+          "wait:false dispatches. When set, this call ignores agent_id/" +
+          "prompt, polls all those runs IN PARALLEL server-side, and " +
+          "returns a JSON array of { run_id, status, output }. Use it " +
+          "after a fan-out (4x agent_invoke with wait:false) to gather " +
+          "every sub-agent result in ONE blocking call, then synthesise. " +
+          "This is the collect leg of the async fan-out pattern - the " +
+          "supabase_run_sql path does NOT work (it targets the agent's " +
+          "own Supabase project, not the rawclaw control plane).",
       },
       prompt: {
         type: "string",
@@ -166,6 +183,50 @@ registerTool({
     },
   },
   handler: async (args, ctx) => {
+    // COLLECT MODE: poll a batch of already-dispatched runs in parallel
+    // and return their outputs. This is the second leg of the async
+    // fan-out pattern - Scan fires N agent_invoke(wait:false) in one turn
+    // (truly concurrent because none block), then makes ONE collect call
+    // with all the run_ids. We poll them all via Promise.all so the wall-
+    // clock is the slowest single run, not the sum. Pedro 2026-05-19:
+    // supabase_run_sql can't read the control plane (it targets the org's
+    // own Supabase project), so this in-tool collect is the only reliable
+    // readback path on the Telegram surface.
+    if (Array.isArray(args.poll_run_ids) && args.poll_run_ids.length > 0) {
+      const db = supabaseAdmin();
+      const ids = args.poll_run_ids.map((x) => String(x)).filter(Boolean);
+      const POLL_CAP_MS = 300_000;
+      const results = await Promise.all(
+        ids.map(async (id) => {
+          const started = Date.now();
+          while (Date.now() - started < POLL_CAP_MS) {
+            const { data } = await db
+              .from("rgaios_routine_runs")
+              .select("status, output, error")
+              .eq("id", id)
+              .eq("organization_id", ctx.organizationId)
+              .maybeSingle();
+            const row = data as
+              | { status?: string; output?: { text?: string; summary?: string } | null; error?: string | null }
+              | null;
+            if (row?.status === "succeeded") {
+              return {
+                run_id: id,
+                status: "succeeded",
+                output: row.output?.text ?? row.output?.summary ?? null,
+              };
+            }
+            if (row?.status === "failed") {
+              return { run_id: id, status: "failed", error: row.error ?? null };
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+          return { run_id: id, status: "timeout" };
+        }),
+      );
+      return text(JSON.stringify(results, null, 2));
+    }
+
     const agentId = String(args.agent_id ?? "").trim();
     const basePrompt = String(args.prompt ?? "").trim();
     const outputFormat = String(args.output_format ?? "").trim();
