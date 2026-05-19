@@ -4,5 +4,17 @@
 
 {$CADDY_SITE_ADDRESS:localhost} {
   encode gzip
+
+  # BUG-44: SSE chat stream needs flush_interval -1 and long timeouts
+  # so multi-hop reasoning isn't cut at Caddy's default response window.
+  @sse path /api/agents/*/chat
+  reverse_proxy @sse app:3000 {
+    flush_interval -1
+    transport http {
+      read_timeout 600s
+      write_timeout 600s
+    }
+  }
+
   reverse_proxy app:3000
 }
