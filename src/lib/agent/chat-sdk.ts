@@ -233,6 +233,16 @@ export async function chatReplyViaSdk(input: {
     }
 
     if (result.aborted) {
+      // BUG-43: if partial text streamed before the timeout fired, prefer
+      // surfacing it (prefixed) over a generic timeout error. Bench EMPTYs
+      // showed reasoning was happening but result event never landed.
+      if (result.text && result.text.length > 0) {
+        return {
+          ok: true,
+          reply: `[partial - timed out after streaming]\n${result.text}`,
+          sessionId: result.sessionId,
+        };
+      }
       return { ok: false, error: "Agent query timed out" };
     }
 

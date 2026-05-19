@@ -272,7 +272,11 @@ export async function runAgentSdk(
     }
   } catch (err) {
     if (signal.aborted) {
-      return { text: null, sessionId: newSessionId, usage, aborted: true };
+      // BUG-43: surface partial stream on abort instead of dropping it.
+      // GAIA-style multi-hop reasoning hits 500s timeoutMs and was returning
+      // EMPTY even when streamedText already had ~hundreds of chars in flight.
+      // Caller checks result.aborted to know it was truncated.
+      return { text: streamedText || null, sessionId: newSessionId, usage, aborted: true };
     }
     throw err;
   } finally {
