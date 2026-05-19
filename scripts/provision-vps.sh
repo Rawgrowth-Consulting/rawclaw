@@ -153,6 +153,16 @@ POSTGRES_PASSWORD_VAL="$(openssl rand -hex 32)"
 JWT_SECRET_VAL="$(openssl rand -hex 32)"
 NEXTAUTH_SECRET_VAL="$(openssl rand -hex 32)"
 CRON_SECRET_VAL="$(openssl rand -hex 32)"
+
+# Auto-generate the seed admin password if the operator didn't pre-set one.
+# Failure mode this closes: operator forgetting to fill seed pwd before
+# first boot leaves the admin account un-loginable, blocking onboarding
+# for ~5min while they discover it. 24 raw bytes → 32-char url-safe.
+SEED_ADMIN_PASSWORD_AUTOGEN=0
+if [ -z "${SEED_ADMIN_PASSWORD:-}" ]; then
+  SEED_ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -d '=' | tr '+/' '-_')"
+  SEED_ADMIN_PASSWORD_AUTOGEN=1
+fi
 $SSH "cat > ${TARGET}/.env" <<EOF
 DEPLOY_MODE=self_hosted
 
@@ -193,7 +203,7 @@ COMPOSIO_API_KEY=${COMPOSIO_API_KEY:-}
 SEED_ORG_NAME=${ESCAPED_ORG}
 SEED_ORG_SLUG=$(printf '%s' "$ORG" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')
 SEED_ADMIN_EMAIL=${EMAIL}
-SEED_ADMIN_PASSWORD=
+SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}
 SEED_ADMIN_NAME=Owner
 
 # ────── LLM (Claude Max OAuth, standard) ──────
@@ -222,6 +232,18 @@ OPENAI_API_KEY=
 EOF
 green "✓ .env written"
 echo
+
+if [ "$SEED_ADMIN_PASSWORD_AUTOGEN" = "1" ]; then
+  bold "════════════════════════════════════════════════════════════"
+  bold "  STORE THIS - seed admin password (auto-generated, shown ONCE)"
+  bold "════════════════════════════════════════════════════════════"
+  echo "  email:    ${EMAIL}"
+  echo "  password: ${SEED_ADMIN_PASSWORD}"
+  bold "════════════════════════════════════════════════════════════"
+  echo "  Hand this to the client over a secure channel. The value is"
+  echo "  baked into ${TARGET}/.env on the VPS but is not printed again."
+  echo
+fi
 
 # ─── 4. Boot the stack ───────────────────────────────────────
 bold "▸ Booting docker compose (this takes ~2 min on first build)"
