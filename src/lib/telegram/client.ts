@@ -118,7 +118,21 @@ export async function editMessageText(
   chatId: number | string,
   messageId: number,
   text: string,
+  opts?: { plain?: boolean },
 ) {
+  // Streaming edits pass plain:true. Mid-stream text routinely holds
+  // unbalanced Markdown (an open `**` before its close arrives), which
+  // makes the parse_mode:"Markdown" attempt 400 on every tick and forces
+  // the fallback - two API calls per frame, half of them wasted. Plain
+  // text edits skip the parser entirely; the final non-streamed edit
+  // (via sendChunkedReply) restores Markdown rendering.
+  if (opts?.plain) {
+    return await call<TgSentMessage>(token, "editMessageText", {
+      chat_id: chatId,
+      message_id: messageId,
+      text,
+    });
+  }
   try {
     return await call<TgSentMessage>(token, "editMessageText", {
       chat_id: chatId,
@@ -230,6 +244,91 @@ export async function sendChunkedReply(
       void sendChatAction(token, chatId, "typing").catch(() => {});
     }
   }
+}
+
+/**
+ * Live token-streaming editor for a Telegram placeholder message, modelled
+ * on the Hermes gateway stream consumer (NousResearch/hermes-agent
+ * gateway/platforms/telegram.py). The agent SDK emits the reply token by
+ * token; this coalesces those deltas into throttled editMessageText calls so
+ * the operator watches the answer type out in place instead of staring at a
+ * frozen "Thinking…".
+ *
+ * Throttle rationale: Telegram's flood envelope for edits to one message is
+ * ~1/sec; bursting faster earns a 429 + retry_after. We hold edits to one
+ * per FRAME_MS and coalesce intermediate deltas, always editing with the
+ * latest accumulated text on the trailing edge so nothing is skipped.
+ *
+ * - push(text): record the latest full accumulated text. Fires an edit now
+ *   if the throttle window is open, else schedules a trailing edit.
+ * - stop(): cancel any pending edit. The caller then sends the final,
+ *   Markdown-rendered answer via sendChunkedReply (authoritative).
+ *
+ * Edits are plain-text (no parse_mode) - mid-stream Markdown is usually
+ * unbalanced and would 400. A live "▍" cursor is appended so the bubble
+ * reads as actively typing. Cut to TG_CHUNK_LIMIT so a long in-progress
+ * answer never 400s on the 4096 cap; the final sendChunkedReply handles
+ * real chunking. All failures are swallowed - streaming is best-effort and
+ * must never block or crash the reply path.
+ */
+const STREAM_FRAME_MS = 1100;
+const STREAM_CURSOR = " ▍";
+
+export function createStreamingEditor(
+  token: string,
+  chatId: number | string,
+  messageId: number,
+): { push: (text: string) => void; stop: () => void } {
+  let latest = "";
+  let rendered = "";
+  let lastEditAt = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let inFlight = false;
+  let stopped = false;
+
+  const flush = () => {
+    timer = null;
+    if (stopped || inFlight) return;
+    const trimmed = latest.trim();
+    if (!trimmed || trimmed === rendered) return;
+    rendered = trimmed;
+    lastEditAt = Date.now();
+    inFlight = true;
+    const body =
+      (trimmed.length > TG_CHUNK_LIMIT ? trimmed.slice(0, TG_CHUNK_LIMIT) : trimmed) +
+      STREAM_CURSOR;
+    void editMessageText(token, chatId, messageId, body, { plain: true })
+      .catch(() => {})
+      .finally(() => {
+        inFlight = false;
+        // A delta may have arrived while the edit was in flight - drain it
+        // on the next frame so the final streamed frame is never stale.
+        if (!stopped && latest.trim() !== rendered && timer === null) {
+          schedule();
+        }
+      });
+  };
+
+  const schedule = () => {
+    if (stopped || timer !== null) return;
+    const wait = Math.max(0, STREAM_FRAME_MS - (Date.now() - lastEditAt));
+    timer = setTimeout(flush, wait);
+  };
+
+  return {
+    push(text: string) {
+      if (stopped) return;
+      latest = text;
+      schedule();
+    },
+    stop() {
+      stopped = true;
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
 }
 
 // Shape of the inbound webhook payload (only fields we care about).
