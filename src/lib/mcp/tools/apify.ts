@@ -1485,6 +1485,140 @@ function extractHandles(input: string): string[] {
   return [...handles];
 }
 
+/**
+ * Rank + format a scraped reel dataset into the operator-facing top-N block.
+ * Extracted from apify_top_reels_from_file so both the synchronous path and
+ * the async collect path (resume_run_id) share one ranking implementation.
+ */
+function rankReels(
+  allItems: unknown[],
+  opts: {
+    handles: string[];
+    windowDays: number;
+    metricKey: string;
+    metricArg: string;
+    topN: number;
+    sourceFilename: string;
+  },
+): string {
+  const { handles, windowDays, metricKey, metricArg, topN, sourceFilename } =
+    opts;
+  const numOf = (raw: unknown, key: string): number => {
+    const o = (raw ?? {}) as Record<string, unknown>;
+    const singularKey =
+      key === "commentsCount"
+        ? "commentCount"
+        : key === "likesCount"
+          ? "likeCount"
+          : key === "playsCount"
+            ? "videoPlayCount"
+            : "";
+    const v =
+      o[key] ??
+      (singularKey ? o[singularKey] : undefined) ??
+      o[key.replace(/Count$/, "")];
+    const n = typeof v === "number" ? v : Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const handleOf = (raw: unknown): string => {
+    const o = (raw ?? {}) as Record<string, unknown>;
+    const v =
+      (typeof o.ownerUsername === "string" && o.ownerUsername) ||
+      (typeof o.username === "string" && o.username) ||
+      (typeof o.author === "string" && o.author) ||
+      "";
+    return String(v).toLowerCase();
+  };
+  const postTime = (raw: unknown): number => {
+    const o = (raw ?? {}) as Record<string, unknown>;
+    const t = o.timestamp ?? o.takenAt ?? o.postedAt ?? o.createdAt;
+    if (!t) return 0;
+    if (typeof t === "number") {
+      return t > 1e12 ? t : t * 1000;
+    }
+    const parsed = Date.parse(String(t));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - windowMs;
+  const inWindow = allItems.filter((it) => {
+    const t = postTime(it);
+    return t > 0 && t >= cutoff;
+  });
+  const handlesWithData = new Set(inWindow.map(handleOf).filter(Boolean));
+
+  const PER_CREATOR_CAP = 2;
+  const sortedAll = [...inWindow].sort(
+    (a, b) => numOf(b, metricKey) - numOf(a, metricKey),
+  );
+  const byCreator = new Map<string, number>();
+  const picked: unknown[] = [];
+  const overflow: unknown[] = [];
+  for (const it of sortedAll) {
+    const h = handleOf(it);
+    const seen = byCreator.get(h) ?? 0;
+    if (!h || seen < PER_CREATOR_CAP) {
+      picked.push(it);
+      if (h) byCreator.set(h, seen + 1);
+    } else {
+      overflow.push(it);
+    }
+  }
+  const top = [...picked, ...overflow].slice(0, topN);
+
+  const today = new Date();
+  const start = new Date(Date.now() - windowMs);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const missing = handles.filter((h) => !handlesWithData.has(h));
+  const perHandleRollup = handles
+    .filter((h) => handlesWithData.has(h))
+    .map((h) => {
+      const items = inWindow.filter((it) => handleOf(it) === h);
+      const totalMetric: number = items.reduce(
+        (s: number, it: unknown) => s + numOf(it, metricKey),
+        0,
+      );
+      return `@${h}: ${items.length} reels, ${totalMetric.toLocaleString()} ${metricArg}`;
+    })
+    .join("; ");
+  const coverageBrief =
+    `ranked_by: ${metricKey}, window: ${fmt(start)} to ${fmt(today)}, ` +
+    `source: ${sourceFilename} via apify/instagram-scraper ` +
+    `(${handlesWithData.size}/${handles.length} handles returned posts in window, ` +
+    `${inWindow.length} reels in window)` +
+    (perHandleRollup ? `\nIn-window per handle: ${perHandleRollup}` : "");
+
+  const lines = top.map((raw) => {
+    const o = (raw ?? {}) as Record<string, unknown>;
+    const who = handleOf(raw);
+    const cap =
+      (typeof o.caption === "string" && o.caption) ||
+      (typeof o.title === "string" && o.title) ||
+      "";
+    const m = numOf(raw, metricKey);
+    const ts = postTime(raw);
+    const dStr = ts > 0 ? new Date(ts).toISOString().slice(0, 10) : "";
+    const urlVal =
+      (typeof o.url === "string" && o.url) ||
+      (typeof o.postUrl === "string" && o.postUrl) ||
+      "";
+    const head = cap.replace(/\s+/g, " ").slice(0, 100) || "(no caption)";
+    return `@${who} - ${m.toLocaleString()} ${metricArg} - "${head}" (${dStr})${
+      urlVal ? `\n  ${urlVal}` : ""
+    }`;
+  });
+
+  const missingNote =
+    missing.length > 0
+      ? `\n\nNo posts in window for: ${missing.map((h) => `@${h}`).join(", ")}`
+      : "";
+
+  return `${coverageBrief}\n\nTop ${top.length} reels by ${metricArg}:\n${lines.join(
+    "\n",
+  )}${missingNote}`;
+}
+
 registerTool({
   name: "apify_top_reels_from_file",
   description:
@@ -1530,6 +1664,21 @@ registerTool({
         type: "number",
         description:
           "How many recent reels per handle to fetch before ranking (default 20). Lower = faster but may miss high-comment older posts inside the window.",
+      },
+      wait: {
+        type: "boolean",
+        description:
+          "Default true (synchronous, blocks until the scrape + ranking finish). Set false for a wide creator list that would blow the chat-turn budget: the tool starts ONE async scrape run and returns a run_id immediately. Then call this tool again with resume_run_id=<that id> (and the same file_name/window_days/top_n/metric) to collect the ranked result once the run finishes - re-callable, no re-scrape.",
+      },
+      resume_run_id: {
+        type: "string",
+        description:
+          "An async run_id from a prior wait:false call. The tool polls that run and, once it has SUCCEEDED, fetches its dataset and returns the ranked top-N. Pass the same file_name/window_days/top_n/metric you started with.",
+      },
+      dataset_id: {
+        type: "string",
+        description:
+          "Optional dataset_id returned alongside resume_run_id - lets the collect step skip a status lookup.",
       },
     },
   },
@@ -1598,6 +1747,102 @@ registerTool({
           `Dropping rph to ${capped}.`,
       );
       resultsPerHandle = capped;
+    }
+
+    // ── Async modes (2026-05-20) ──────────────────────────────────────
+    // A synchronous scrape of a wide creator list can exceed the MCP
+    // transport / chat-turn budget; the agent then saw a timeout and
+    // retried, each retry kicking a FRESH apify run (orphaned + wasteful).
+    // Async decouples the slow scrape from the tool-call timeout:
+    //   wait:false      -> start ONE run over all handles, return run_id +
+    //                      dataset_id immediately.
+    //   resume_run_id:X -> poll that run (bounded); once SUCCEEDED fetch its
+    //                      dataset + rank. Re-callable with the same id, so a
+    //                      slow scrape is collected, never re-scraped.
+    const ASYNC_ACTOR = "apify~instagram-reel-scraper";
+    const resumeRunId = String(args.resume_run_id ?? "").trim();
+
+    if (resumeRunId) {
+      const runResp = (await fetch(
+        `https://api.apify.com/v2/actor-runs/${resumeRunId}?token=${resolved.key}`,
+        { signal: AbortSignal.timeout(20_000) },
+      )
+        .then((r) => r.json())
+        .catch(() => null)) as {
+        data?: { status?: string; defaultDatasetId?: string };
+      } | null;
+      const run = runResp?.data;
+      const status = run?.status ?? "UNKNOWN";
+      if (status === "SUCCEEDED") {
+        const dsId =
+          String(args.dataset_id ?? "").trim() || (run?.defaultDatasetId ?? "");
+        if (!dsId) {
+          return textError(
+            `run ${resumeRunId} SUCCEEDED but returned no dataset id - pass dataset_id explicitly.`,
+          );
+        }
+        const items = (await fetch(
+          `https://api.apify.com/v2/datasets/${dsId}/items?token=${resolved.key}&clean=true&limit=${MAX_LIMIT}`,
+          { signal: AbortSignal.timeout(30_000) },
+        )
+          .then((r) => r.json())
+          .catch(() => [])) as unknown;
+        const arr = Array.isArray(items) ? items : [];
+        if (arr.length === 0) {
+          return textError(
+            `scrape run ${resumeRunId} finished but its dataset is empty.`,
+          );
+        }
+        return text(
+          rankReels(arr, {
+            handles,
+            windowDays,
+            metricKey,
+            metricArg,
+            topN,
+            sourceFilename: fileRes.filename,
+          }),
+        );
+      }
+      if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
+        return textError(`scrape run ${resumeRunId} ${status}.`);
+      }
+      return text(
+        `Scrape run ${resumeRunId} still ${status}. Call apify_top_reels_from_file again ` +
+          `with resume_run_id="${resumeRunId}"` +
+          `${run?.defaultDatasetId ? ` dataset_id="${run.defaultDatasetId}"` : ""} ` +
+          `in ~30s to collect the ranked top ${topN}.`,
+      );
+    }
+
+    if (args.wait === false) {
+      const startResp = (await fetch(
+        `https://api.apify.com/v2/acts/${ASYNC_ACTOR}/runs?token=${resolved.key}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            username: handles,
+            resultsLimit: resultsPerHandle,
+          }),
+          signal: AbortSignal.timeout(20_000),
+        },
+      )
+        .then((r) => r.json())
+        .catch(() => null)) as {
+        data?: { id?: string; defaultDatasetId?: string };
+      } | null;
+      const run = startResp?.data;
+      if (!run?.id) {
+        return textError("failed to start async apify run.");
+      }
+      return text(
+        `Scrape started for ${handles.length} handles ` +
+          `(run_id=${run.id}, dataset_id=${run.defaultDatasetId ?? "pending"}). ` +
+          `Call apify_top_reels_from_file again with resume_run_id="${run.id}"` +
+          `${run.defaultDatasetId ? ` dataset_id="${run.defaultDatasetId}"` : ""}, ` +
+          `same file_name / window_days / top_n / metric, in ~60-120s to get the ranked top ${topN}.`,
+      );
     }
 
     // Single-batch by default: apify/instagram-scraper can handle the
@@ -1758,132 +2003,15 @@ registerTool({
       }
     }
 
-    const numOf = (raw: unknown, key: string): number => {
-      const o = (raw ?? {}) as Record<string, unknown>;
-      // Mirror the field-fallback chain used by every other apify
-      // formatter in this file (commentsCount ?? commentCount ?? comments).
-      // Singular `commentCount` shows up on some apify/instagram-scraper
-      // run shapes; missing it collapses ranking to whichever creator
-      // happens to emit the plural variant - same root cause that gave
-      // codiesanchez 7/9 in eval 6/7.
-      const singularKey =
-        key === "commentsCount"
-          ? "commentCount"
-          : key === "likesCount"
-            ? "likeCount"
-            : key === "playsCount"
-              ? "videoPlayCount"
-              : "";
-      const v =
-        o[key] ??
-        (singularKey ? o[singularKey] : undefined) ??
-        o[key.replace(/Count$/, "")];
-      const n = typeof v === "number" ? v : Number(v);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const handleOf = (raw: unknown): string => {
-      const o = (raw ?? {}) as Record<string, unknown>;
-      const v =
-        (typeof o.ownerUsername === "string" && o.ownerUsername) ||
-        (typeof o.username === "string" && o.username) ||
-        (typeof o.author === "string" && o.author) ||
-        "";
-      return String(v).toLowerCase();
-    };
-    const postTime = (raw: unknown): number => {
-      const o = (raw ?? {}) as Record<string, unknown>;
-      const t = o.timestamp ?? o.takenAt ?? o.postedAt ?? o.createdAt;
-      if (!t) return 0;
-      if (typeof t === "number") {
-        return t > 1e12 ? t : t * 1000;
-      }
-      const parsed = Date.parse(String(t));
-      return Number.isFinite(parsed) ? parsed : 0;
-    };
-
-    const windowMs = windowDays * 24 * 60 * 60 * 1000;
-    const cutoff = Date.now() - windowMs;
-    const inWindow = allItems.filter((it) => {
-      const t = postTime(it);
-      return t > 0 && t >= cutoff;
-    });
-    const handlesWithData = new Set(inWindow.map(handleOf).filter(Boolean));
-
-    // Rank by metric desc, cap 2 per creator for diversity.
-    const PER_CREATOR_CAP = 2;
-    const sortedAll = [...inWindow].sort(
-      (a, b) => numOf(b, metricKey) - numOf(a, metricKey),
-    );
-    const byCreator = new Map<string, number>();
-    const picked: unknown[] = [];
-    const overflow: unknown[] = [];
-    for (const it of sortedAll) {
-      const h = handleOf(it);
-      const seen = byCreator.get(h) ?? 0;
-      if (!h || seen < PER_CREATOR_CAP) {
-        picked.push(it);
-        if (h) byCreator.set(h, seen + 1);
-      } else {
-        overflow.push(it);
-      }
-    }
-    const top = [...picked, ...overflow].slice(0, topN);
-
-    const today = new Date();
-    const start = new Date(Date.now() - windowMs);
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-    const missing = handles.filter((h) => !handlesWithData.has(h));
-    // Per-handle rollup: in-window reel count + total metric per handle.
-    // Surfaces "@aiwithremy: 3 reels, 6,706 comments" so the operator
-    // can see the engagement distribution at a glance, not just the
-    // top-N picks. Per [B 21:46 SUGG #2] in marti-control.html TALK.
-    const perHandleRollup = handles
-      .filter((h) => handlesWithData.has(h))
-      .map((h) => {
-        const items = inWindow.filter((it) => handleOf(it) === h);
-        const totalMetric: number = items.reduce(
-          (s: number, it: unknown) => s + numOf(it, metricKey),
-          0,
-        );
-        return `@${h}: ${items.length} reels, ${totalMetric.toLocaleString()} ${metricArg}`;
-      })
-      .join("; ");
-    const coverageBrief =
-      `ranked_by: ${metricKey}, window: ${fmt(start)} to ${fmt(today)}, ` +
-      `source: ${fileRes.filename} via apify/instagram-scraper ` +
-      `(${handlesWithData.size}/${handles.length} handles returned posts in window, ` +
-      `${inWindow.length} reels in window)` +
-      (perHandleRollup ? `\nIn-window per handle: ${perHandleRollup}` : "");
-
-    const lines = top.map((raw) => {
-      const o = (raw ?? {}) as Record<string, unknown>;
-      const who = handleOf(raw);
-      const cap =
-        (typeof o.caption === "string" && o.caption) ||
-        (typeof o.title === "string" && o.title) ||
-        "";
-      const m = numOf(raw, metricKey);
-      const ts = postTime(raw);
-      const dStr = ts > 0 ? new Date(ts).toISOString().slice(0, 10) : "";
-      const urlVal =
-        (typeof o.url === "string" && o.url) ||
-        (typeof o.postUrl === "string" && o.postUrl) ||
-        "";
-      const head = cap.replace(/\s+/g, " ").slice(0, 100) || "(no caption)";
-      return `@${who} - ${m.toLocaleString()} ${metricArg} - "${head}" (${dStr})${
-        urlVal ? `\n  ${urlVal}` : ""
-      }`;
-    });
-
-    const missingNote =
-      missing.length > 0
-        ? `\n\nNo posts in window for: ${missing.map((h) => `@${h}`).join(", ")}`
-        : "";
-
     return text(
-      `${coverageBrief}\n\nTop ${top.length} reels by ${metricArg}:\n${lines.join(
-        "\n",
-      )}${missingNote}`,
+      rankReels(allItems, {
+        handles,
+        windowDays,
+        metricKey,
+        metricArg,
+        topN,
+        sourceFilename: fileRes.filename,
+      }),
     );
   },
 });
