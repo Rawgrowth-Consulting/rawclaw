@@ -1493,7 +1493,7 @@ function extractHandles(input: string): string[] {
 // Map survives across requests in the running Next.js server; 10-min TTL.
 const INFLIGHT_SCRAPES = new Map<
   string,
-  { runs: { id: string; datasetId: string }[]; ts: number }
+  { runs: { id: string; datasetId: string }[]; ts: number; retried?: boolean }
 >();
 const INFLIGHT_TTL_MS = 10 * 60_000;
 // Once the kick is this old and at least one batch run has SUCCEEDED, collect
@@ -1783,6 +1783,9 @@ registerTool({
     type RunRef = { id: string; datasetId: string };
     let runRefs: RunRef[] | null = null;
     let inflightTs = 0;
+    let cachedEntry:
+      | { runs: RunRef[]; ts: number; retried?: boolean }
+      | undefined;
     const explicitResume = String(args.resume_run_id ?? "").trim();
     if (explicitResume) {
       runRefs = [{ id: explicitResume, datasetId: String(args.dataset_id ?? "").trim() }];
@@ -1791,6 +1794,7 @@ registerTool({
       if (cached && Date.now() - cached.ts < INFLIGHT_TTL_MS) {
         runRefs = cached.runs;
         inflightTs = cached.ts;
+        cachedEntry = cached;
       }
     }
 
@@ -1881,7 +1885,6 @@ registerTool({
             `the same arguments (wait:false) in ~30s - I will collect, not re-scrape.`,
         );
       }
-      if (pending.length === 0) INFLIGHT_SCRAPES.delete(dedupKey);
       const merged: unknown[] = [];
       for (const s of doneOk) {
         const items = (await fetch(
@@ -1892,6 +1895,72 @@ registerTool({
           .catch(() => [])) as unknown;
         if (Array.isArray(items)) for (const it of items) merged.push(it);
       }
+
+      // Per-handle recovery (one-shot): once every original run is terminal,
+      // any handle that returned nothing was almost certainly dropped by the
+      // scraper (rate-limit / silent miss), not "no posts" - big accounts
+      // (garyvee, hormozi) always post inside the window. Kick a retry over
+      // just the missing handles with the OTHER actor (reel-scraper has
+      // different blind spots than instagram-scraper), append its runs, and
+      // collect on the next call. Mirrors the sync path's recovery pass.
+      if (pending.length === 0 && cachedEntry && !cachedEntry.retried) {
+        const ho = (raw: unknown): string => {
+          const o = (raw ?? {}) as Record<string, unknown>;
+          return String(
+            (typeof o.ownerUsername === "string" && o.ownerUsername) ||
+              (typeof o.username === "string" && o.username) ||
+              (typeof o.author === "string" && o.author) ||
+              "",
+          ).toLowerCase();
+        };
+        const covered = new Set(merged.map(ho).filter(Boolean));
+        const missing = handles.filter((h) => !covered.has(h));
+        if (missing.length > 0 && missing.length <= 12) {
+          const RETRY_ACTOR = "apify~instagram-reel-scraper";
+          const rbatches: string[][] = [];
+          for (let i = 0; i < missing.length; i += ASYNC_BATCH) {
+            rbatches.push(missing.slice(i, i + ASYNC_BATCH));
+          }
+          const retried = await Promise.all(
+            rbatches.map(async (batch): Promise<RunRef | null> => {
+              const resp = (await fetch(
+                `https://api.apify.com/v2/acts/${RETRY_ACTOR}/runs?token=${resolved.key}`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    username: batch,
+                    resultsLimit: resultsPerHandle,
+                  }),
+                  signal: AbortSignal.timeout(20_000),
+                },
+              )
+                .then((r) => r.json())
+                .catch(() => null)) as {
+                data?: { id?: string; defaultDatasetId?: string };
+              } | null;
+              const run = resp?.data;
+              return run?.id
+                ? { id: run.id, datasetId: run.defaultDatasetId ?? "" }
+                : null;
+            }),
+          );
+          const okRetry = retried.filter((r): r is RunRef => r !== null);
+          if (okRetry.length > 0) {
+            cachedEntry.runs = [...cachedEntry.runs, ...okRetry];
+            cachedEntry.retried = true;
+            cachedEntry.ts = Date.now();
+            INFLIGHT_SCRAPES.set(dedupKey, cachedEntry);
+            return text(
+              `Recovering ${missing.length} handles that returned no data on the first pass ` +
+                `(retry scrape started with a second scraper). Call apify_top_reels_from_file again ` +
+                `with the same arguments (wait:false) in ~60s for the fuller ranking.`,
+            );
+          }
+        }
+      }
+
+      if (pending.length === 0) INFLIGHT_SCRAPES.delete(dedupKey);
       if (merged.length === 0) {
         return textError("scrape runs finished but returned no items.");
       }
