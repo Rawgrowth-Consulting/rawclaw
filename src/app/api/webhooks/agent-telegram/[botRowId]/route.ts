@@ -15,6 +15,7 @@ import {
 import { tryDecryptSecret } from "@/lib/crypto";
 import { chatReply, CHAT_HANDOFF_SENTINEL_PREFIX } from "@/lib/agent/chat";
 import { surfaceThinkingTelegram } from "@/lib/agent/thinking";
+import { humanizeJargon } from "@/lib/agent/jargon";
 import {
   buildTelegramPreambleV2,
   ROLE_BASED_BUDGET_POLICY,
@@ -395,6 +396,13 @@ export async function POST(
     //      target the same placeholder, so the first real streamed token
     //      stops the timer - streaming owns the bubble from there.
     let streamer: ReturnType<typeof createStreamingEditor> | null = null;
+    const ensureStreamer = () => {
+      if (!streamer) {
+        stopProgress();
+        streamer = createStreamingEditor(token, msg.chat.id, placeholderId!);
+      }
+      return streamer;
+    };
     const onStreamText =
       placeholderId !== null
         ? (full: string) => {
@@ -404,11 +412,20 @@ export async function POST(
               CHAT_HANDOFF_SENTINEL_PREFIX.startsWith(s) ||
               s.startsWith(CHAT_HANDOFF_SENTINEL_PREFIX);
             if (isHandoff) return;
-            if (!streamer) {
-              stopProgress();
-              streamer = createStreamingEditor(token, msg.chat.id, placeholderId);
-            }
-            streamer.push(s);
+            ensureStreamer().push(s);
+          }
+        : undefined;
+    // While the model runs a tool it streams no text, so the placeholder
+    // would freeze. Surface the tool as a humanized "working / <activity>"
+    // status the streaming editor pulses during the stall (Hermes
+    // tool-progress). humanizeJargon maps the raw tool name to operator-safe
+    // copy (agent_invoke -> "delegate", apify_* -> "scrape", etc) so no raw
+    // tool jargon ever reaches the chat.
+    const onToolUse =
+      placeholderId !== null
+        ? (toolName: string) => {
+            const bare = toolName.replace(/^mcp__[^_]+__/, "");
+            ensureStreamer().setStatus(humanizeJargon(bare));
           }
         : undefined;
 
@@ -423,6 +440,7 @@ export async function POST(
       agentId,
       extraPreamble,
       onStreamText,
+      onToolUse,
     }).finally(() => {
       // Stop progress + streaming edits the instant the run resolves
       // (success OR throw) - otherwise a queued edit could overwrite the

@@ -36,6 +36,7 @@ export async function chatReply(input: {
   maxTokens?: number;
   callerUserId?: string | null;
   onStreamText?: (text: string) => void;
+  onToolUse?: (toolName: string) => void;
 }): Promise<AgentChatResult> {
   const {
     organizationId,
@@ -92,6 +93,7 @@ export async function chatReply(input: {
     extraPreamble: fullExtraPreamble || undefined,
     publicAppUrl: input.publicAppUrl,
     onStreamText: input.onStreamText,
+    onToolUse: input.onToolUse,
   });
 
   if (!result.ok) {

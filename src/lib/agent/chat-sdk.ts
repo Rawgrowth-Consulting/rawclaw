@@ -99,6 +99,8 @@ export async function chatReplyViaSdk(input: {
   publicAppUrl: string;
   /** Called on streaming text updates */
   onStreamText?: (text: string) => void;
+  /** Called with the raw name of each top-level tool the model starts */
+  onToolUse?: (toolName: string) => void;
   /** Model override */
   model?: string;
 }): Promise<AgentChatResult> {
@@ -110,6 +112,7 @@ export async function chatReplyViaSdk(input: {
     extraPreamble,
     publicAppUrl,
     onStreamText,
+    onToolUse,
     model,
   } = input;
 
@@ -198,6 +201,7 @@ export async function chatReplyViaSdk(input: {
       cwd: agentDir,
       model: model ?? agent.runtime ?? undefined,
       onStreamText,
+      onToolUse,
       mcpConfigPath: mcpConfigPath ?? undefined,
       // BUG-38b (A 2026-05-18): rerun5/6 GAIA Qs hit deterministic
       // EMPTY at 127s = upstream Anthropic stream silent past 120s.
