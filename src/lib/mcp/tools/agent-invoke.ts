@@ -285,6 +285,20 @@ registerTool({
       .maybeSingle();
     if (!target) return textError("Agent not found in this organization.");
 
+    // Self-identity header (2026-05-20 audit). The MCP surface authenticates
+    // by the org-level token, so ctx.agentId is never set on a dispatched
+    // sub-agent run - per-agent tools (knowledge_query, lookup_my_files,
+    // company_query, apify_top_reels_from_file) then fail with "agent_id
+    // could not be derived". Those tools accept an explicit agent_id arg as
+    // the documented fallback, but the dispatched prompt never told the
+    // sub-agent its own id. Prepend it so the agent passes agent_id on every
+    // tool that asks. This is what unblocks Kasia's reel scrape + per-agent
+    // RAG when fired through agent_invoke.
+    const identityHeader =
+      `You are ${target.name} (your agent_id is "${agentId}"). ` +
+      `Whenever a tool takes an agent_id and does not fill it automatically, ` +
+      `pass this exact id.`;
+
     // Cycle + depth guard (GAP #18 / Marti client-acceptance.html PHASE-0).
     // PRE-FIX: this keyed the incoming-chain lookup off ctx.userId. But
     // loadIncomingChain joins through rgaios_routines on
@@ -373,7 +387,7 @@ registerTool({
     // above for models that ignore history, but writing them structured
     // lets the read side surface each as its own labelled section.
     const inputPayload: Record<string, unknown> = {
-      prompt,
+      prompt: `${identityHeader}\n\n${prompt}`,
       invoked_by: "manager",
       // Delegation chain bookkeeping (see loadIncomingChain). Written
       // on every run so the depth/cycle guard has data to read when
