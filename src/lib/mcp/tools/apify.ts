@@ -1496,6 +1496,11 @@ const INFLIGHT_SCRAPES = new Map<
   { runs: { id: string; datasetId: string }[]; ts: number }
 >();
 const INFLIGHT_TTL_MS = 10 * 60_000;
+// Once the kick is this old and at least one batch run has SUCCEEDED, collect
+// the finished runs rather than blocking on a slow/queued laggard (apify
+// starter-tier queues a run for minutes). Partial coverage is surfaced in the
+// ranking's coverage_brief, matching the sync path's honest-partial behaviour.
+const COLLECT_PARTIAL_MS = 150_000;
 
 /**
  * Rank + format a scraped reel dataset into the operator-facing top-N block.
@@ -1777,6 +1782,7 @@ registerTool({
 
     type RunRef = { id: string; datasetId: string };
     let runRefs: RunRef[] | null = null;
+    let inflightTs = 0;
     const explicitResume = String(args.resume_run_id ?? "").trim();
     if (explicitResume) {
       runRefs = [{ id: explicitResume, datasetId: String(args.dataset_id ?? "").trim() }];
@@ -1784,6 +1790,7 @@ registerTool({
       const cached = INFLIGHT_SCRAPES.get(dedupKey);
       if (cached && Date.now() - cached.ts < INFLIGHT_TTL_MS) {
         runRefs = cached.runs;
+        inflightTs = cached.ts;
       }
     }
 
@@ -1857,17 +1864,26 @@ registerTool({
           s.status === "READY" ||
           s.status === "UNKNOWN",
       );
-      if (pending.length > 0) {
+      const doneOk = statuses.filter(
+        (s) => s.status === "SUCCEEDED" && s.datasetId,
+      );
+      // Collect the finished runs once they are ALL terminal, or - if the kick
+      // is old enough - as soon as at least one has data, so a single queued
+      // laggard never blocks the whole result.
+      const collectPartial =
+        inflightTs > 0 &&
+        Date.now() - inflightTs > COLLECT_PARTIAL_MS &&
+        doneOk.length > 0;
+      if (pending.length > 0 && !collectPartial) {
         return text(
           `Scrape ${statuses.length - pending.length}/${statuses.length} runs done, ` +
             `${pending.length} still running. Call apify_top_reels_from_file again with ` +
             `the same arguments (wait:false) in ~30s - I will collect, not re-scrape.`,
         );
       }
-      INFLIGHT_SCRAPES.delete(dedupKey);
+      if (pending.length === 0) INFLIGHT_SCRAPES.delete(dedupKey);
       const merged: unknown[] = [];
-      for (const s of statuses) {
-        if (s.status !== "SUCCEEDED" || !s.datasetId) continue;
+      for (const s of doneOk) {
         const items = (await fetch(
           `https://api.apify.com/v2/datasets/${s.datasetId}/items?token=${resolved.key}&clean=true&limit=${MAX_LIMIT}`,
           { signal: AbortSignal.timeout(30_000) },
@@ -1879,15 +1895,18 @@ registerTool({
       if (merged.length === 0) {
         return textError("scrape runs finished but returned no items.");
       }
+      const ranked = rankReels(merged, {
+        handles,
+        windowDays,
+        metricKey,
+        metricArg,
+        topN,
+        sourceFilename: fileRes.filename,
+      });
       return text(
-        rankReels(merged, {
-          handles,
-          windowDays,
-          metricKey,
-          metricArg,
-          topN,
-          sourceFilename: fileRes.filename,
-        }),
+        pending.length > 0
+          ? `${ranked}\n\n(${pending.length}/${statuses.length} scrape batches still running - partial coverage; re-call to refresh once they finish.)`
+          : ranked,
       );
     }
 
