@@ -1920,34 +1920,57 @@ registerTool({
         const covered = new Set(merged.map(ho).filter(Boolean));
         const missing = handles.filter((h) => !covered.has(h));
         if (missing.length > 0 && missing.length <= 12) {
-          const RETRY_ACTOR = "apify~instagram-reel-scraper";
+          // Two actors with different blind spots, fired in parallel per
+          // batch. reel-scraper (username[]) recovers handles
+          // instagram-scraper dropped; instagram-scraper (directUrls) with
+          // a deeper resultsLimit catches handles that post rarely enough
+          // that the first 20 posts didn't land inside the window. Both
+          // datasets are merged on the next collect call. Empirically
+          // ~5/13 -> ~8/13 on the InstaCEO creator list.
+          const RETRY_ACTOR_A = "apify~instagram-reel-scraper";
+          const RETRY_ACTOR_B = "apify~instagram-scraper";
+          const RETRY_DEPTH = Math.max(resultsPerHandle * 3, 60);
           const rbatches: string[][] = [];
           for (let i = 0; i < missing.length; i += ASYNC_BATCH) {
             rbatches.push(missing.slice(i, i + ASYNC_BATCH));
           }
+          const kickActor = async (
+            actor: string,
+            batch: string[],
+            bodyShape: "username" | "directUrls",
+          ): Promise<RunRef | null> => {
+            const body =
+              bodyShape === "username"
+                ? { username: batch, resultsLimit: RETRY_DEPTH }
+                : {
+                    directUrls: batch.map((h) => `https://www.instagram.com/${h}/`),
+                    resultsType: "posts",
+                    resultsLimit: RETRY_DEPTH,
+                    addParentData: false,
+                  };
+            const resp = (await fetch(
+              `https://api.apify.com/v2/acts/${actor}/runs?token=${resolved.key}`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(body),
+                signal: AbortSignal.timeout(20_000),
+              },
+            )
+              .then((r) => r.json())
+              .catch(() => null)) as {
+              data?: { id?: string; defaultDatasetId?: string };
+            } | null;
+            const run = resp?.data;
+            return run?.id
+              ? { id: run.id, datasetId: run.defaultDatasetId ?? "" }
+              : null;
+          };
           const retried = await Promise.all(
-            rbatches.map(async (batch): Promise<RunRef | null> => {
-              const resp = (await fetch(
-                `https://api.apify.com/v2/acts/${RETRY_ACTOR}/runs?token=${resolved.key}`,
-                {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
-                    username: batch,
-                    resultsLimit: resultsPerHandle,
-                  }),
-                  signal: AbortSignal.timeout(20_000),
-                },
-              )
-                .then((r) => r.json())
-                .catch(() => null)) as {
-                data?: { id?: string; defaultDatasetId?: string };
-              } | null;
-              const run = resp?.data;
-              return run?.id
-                ? { id: run.id, datasetId: run.defaultDatasetId ?? "" }
-                : null;
-            }),
+            rbatches.flatMap((batch) => [
+              kickActor(RETRY_ACTOR_A, batch, "username"),
+              kickActor(RETRY_ACTOR_B, batch, "directUrls"),
+            ]),
           );
           const okRetry = retried.filter((r): r is RunRef => r !== null);
           if (okRetry.length > 0) {
