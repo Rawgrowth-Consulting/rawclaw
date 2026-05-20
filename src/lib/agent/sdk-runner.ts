@@ -147,6 +147,8 @@ export interface SdkRunOptions {
   abortController?: AbortController;
   /** Called on streaming text deltas */
   onStreamText?: (accumulated: string) => void;
+  /** Called with the raw name of each top-level tool the model starts */
+  onToolUse?: (toolName: string) => void;
   /** Called when typing indicator should refresh */
   onTyping?: () => void;
   /** MCP config for additive tools (Composio, knowledge, etc.) */
@@ -323,6 +325,7 @@ export async function runAgentSdk(
     model,
     abortController,
     onStreamText,
+    onToolUse,
     onTyping,
     mcpConfigPath,
     timeoutMs = 120_000,
@@ -370,7 +373,7 @@ export async function runAgentSdk(
       },
 
       // Stream text for progressive updates
-      includePartialMessages: !!onStreamText,
+      includePartialMessages: !!onStreamText || !!onToolUse,
 
       // Model override
       ...(model ? { model } : {}),
@@ -414,6 +417,17 @@ export async function runAgentSdk(
         }
         if (streamEvent?.type === "message_start") {
           streamedText = "";
+        }
+        // Surface top-level tool starts so the caller can show "working /
+        // <tool>" while the model runs it (no text streams during a tool
+        // call, so this is what keeps a live progress indicator moving).
+        if (streamEvent?.type === "content_block_start" && onToolUse) {
+          const block = streamEvent.content_block as
+            | { type?: string; name?: string }
+            | undefined;
+          if (block?.type === "tool_use" && typeof block.name === "string") {
+            onToolUse(block.name);
+          }
         }
       }
 

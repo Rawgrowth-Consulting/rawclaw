@@ -92,6 +92,43 @@ test("streaming editor: oversized in-progress text is cut to the chunk limit", a
   }
 });
 
+test("streaming editor: heartbeat pulses a working footer when streaming stalls", async () => {
+  const { calls, restore } = mockFetch();
+  try {
+    const ed = createStreamingEditor("tok", 1, 10);
+    ed.push("Planning the launch");
+    await sleep(60); // first stream frame (cursor)
+    // No more tokens. After the stall window the heartbeat must keep the
+    // bubble moving with a "working" footer instead of freezing.
+    await sleep(3200);
+    ed.stop();
+    assert.ok(calls.length >= 2, "heartbeat fired at least one extra edit");
+    assert.equal(calls[0].text, "Planning the launch ▍");
+    assert.match(calls[calls.length - 1].text, /working.*·/);
+    assert.ok(
+      calls[calls.length - 1].text.startsWith("Planning the launch"),
+      "heartbeat keeps the streamed text above the footer",
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("streaming editor: setStatus surfaces a humanized tool label in the footer", async () => {
+  const { calls, restore } = mockFetch();
+  try {
+    const ed = createStreamingEditor("tok", 1, 10);
+    ed.push("Working on it");
+    await sleep(60);
+    ed.setStatus("delegate");
+    await sleep(3200); // stall -> heartbeat shows the status
+    ed.stop();
+    assert.match(calls[calls.length - 1].text, /🔧 delegate ·/);
+  } finally {
+    restore();
+  }
+});
+
 test("streaming editor: identical text is not re-sent", async () => {
   const { calls, restore } = mockFetch();
   try {

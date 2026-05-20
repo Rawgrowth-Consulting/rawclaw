@@ -273,40 +273,79 @@ export async function sendChunkedReply(
  */
 const STREAM_FRAME_MS = 1100;
 const STREAM_CURSOR = " ▍";
+// While the model runs a tool (a fan-out, a scrape, a search) it emits no
+// text for tens of seconds to minutes, so the placeholder would freeze on
+// the last streamed frame and look dead. A heartbeat keeps it alive: once
+// the token stream has stalled, pulse a "working · 1m 4s" footer (or the
+// current tool label via setStatus) every few seconds so the bubble always
+// moves - the Hermes tool-progress behaviour. Heartbeat and the streaming
+// cursor are mutually exclusive: while tokens flow, push() drives the
+// cursor; only a stall lets the heartbeat take over.
+const STREAM_HEARTBEAT_MS = 2000;
+const STREAM_STALL_MS = 1800;
 
 export function createStreamingEditor(
   token: string,
   chatId: number | string,
   messageId: number,
-): { push: (text: string) => void; stop: () => void } {
+): { push: (text: string) => void; setStatus: (label: string) => void; stop: () => void } {
   let latest = "";
   let rendered = "";
+  let status = "";
+  const startAt = Date.now();
+  let lastTokenAt = Date.now();
   let lastEditAt = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inFlight = false;
   let stopped = false;
+  let hbTick = 0;
 
-  const flush = () => {
-    timer = null;
-    if (stopped || inFlight) return;
-    const trimmed = latest.trim();
-    if (!trimmed || trimmed === rendered) return;
-    rendered = trimmed;
+  const elapsed = (): string => {
+    const s = Math.floor((Date.now() - startAt) / 1000);
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  };
+
+  const clip = (t: string, room: number): string =>
+    t.length > room ? t.slice(0, room) : t;
+
+  // Active-streaming frame: latest text + a typing cursor.
+  const streamBody = (): string =>
+    clip(latest.trim(), TG_CHUNK_LIMIT) + STREAM_CURSOR;
+
+  // Stalled frame: latest text + a live "working / <tool>" footer that
+  // changes every tick (rotating dots + elapsed) so Telegram never rejects
+  // it as "not modified".
+  const heartbeatBody = (): string => {
+    const dots = ".".repeat((hbTick % 3) + 1);
+    const line = status
+      ? `🔧 ${status} · ${elapsed()}`
+      : `⚙️ working${dots} · ${elapsed()}`;
+    const footer = `\n\n_${line}_`;
+    return clip(latest.trim(), TG_CHUNK_LIMIT - footer.length) + footer;
+  };
+
+  const doEdit = (body: string) => {
+    if (stopped || inFlight || body === rendered) return;
+    rendered = body;
     lastEditAt = Date.now();
     inFlight = true;
-    const body =
-      (trimmed.length > TG_CHUNK_LIMIT ? trimmed.slice(0, TG_CHUNK_LIMIT) : trimmed) +
-      STREAM_CURSOR;
     void editMessageText(token, chatId, messageId, body, { plain: true })
       .catch(() => {})
       .finally(() => {
         inFlight = false;
-        // A delta may have arrived while the edit was in flight - drain it
-        // on the next frame so the final streamed frame is never stale.
-        if (!stopped && latest.trim() !== rendered && timer === null) {
+        // Only chase a NEW token that landed mid-edit. Without the
+        // lastTokenAt guard the finally would flip a heartbeat footer back
+        // to a frozen cursor frame the instant the stall edit completed.
+        if (!stopped && lastTokenAt > lastEditAt && timer === null) {
           schedule();
         }
       });
+  };
+
+  const flush = () => {
+    timer = null;
+    if (stopped || !latest.trim()) return;
+    doEdit(streamBody());
   };
 
   const schedule = () => {
@@ -315,11 +354,31 @@ export function createStreamingEditor(
     timer = setTimeout(flush, wait);
   };
 
+  const heartbeat: ReturnType<typeof setInterval> = setInterval(() => {
+    if (stopped || inFlight) return;
+    // Only pulse once the token stream has gone quiet - otherwise push()
+    // owns the frames. The interval itself paces the edits, so no extra
+    // last-edit guard is needed (and the inFlight check prevents overlap).
+    if (Date.now() - lastTokenAt < STREAM_STALL_MS) return;
+    hbTick += 1;
+    doEdit(heartbeatBody());
+  }, STREAM_HEARTBEAT_MS);
+
   return {
     push(text: string) {
       if (stopped) return;
-      latest = text;
+      if (text !== latest) {
+        latest = text;
+        lastTokenAt = Date.now();
+      }
       schedule();
+    },
+    // Set the humanized activity shown while streaming is stalled (e.g.
+    // "delegating to a specialist"). Caller passes operator-safe copy -
+    // raw tool names are scrubbed upstream via humanizeJargon.
+    setStatus(label: string) {
+      if (stopped) return;
+      status = label;
     },
     stop() {
       stopped = true;
@@ -327,6 +386,7 @@ export function createStreamingEditor(
         clearTimeout(timer);
         timer = null;
       }
+      clearInterval(heartbeat);
     },
   };
 }
