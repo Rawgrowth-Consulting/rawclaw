@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import {
+  createStreamingEditor,
   downloadFile,
   editMessageText,
   getFilePath,
@@ -381,6 +382,36 @@ export async function POST(
           })
         : () => {};
 
+    // Live token streaming into the placeholder (Hermes stream-consumer
+    // pattern). The SDK emits the reply token by token via onStreamText;
+    // we type it out in place, throttled, so the operator watches the
+    // answer form instead of a frozen spinner. Two guards:
+    //   1. Handoff suppression - when the agent needs MCP tools it emits
+    //      CHAT_HANDOFF_SENTINEL_PREFIX as its text. Streaming that would
+    //      flash "[handoff] Give me a moment…" before the drain takes
+    //      over. Skip while the accumulated text is (or could still
+    //      become) the sentinel.
+    //   2. The elapsed-timer progress edits and the streaming edits both
+    //      target the same placeholder, so the first real streamed token
+    //      stops the timer - streaming owns the bubble from there.
+    let streamer: ReturnType<typeof createStreamingEditor> | null = null;
+    const onStreamText =
+      placeholderId !== null
+        ? (full: string) => {
+            const s = full.trimStart();
+            if (!s) return;
+            const isHandoff =
+              CHAT_HANDOFF_SENTINEL_PREFIX.startsWith(s) ||
+              s.startsWith(CHAT_HANDOFF_SENTINEL_PREFIX);
+            if (isHandoff) return;
+            if (!streamer) {
+              stopProgress();
+              streamer = createStreamingEditor(token, msg.chat.id, placeholderId);
+            }
+            streamer.push(s);
+          }
+        : undefined;
+
     // The key difference vs the legacy webhook: agentId is passed so the
     // persona is THIS bot's owner, not the org default.
     const result = await chatReply({
@@ -391,11 +422,14 @@ export async function POST(
       publicAppUrl,
       agentId,
       extraPreamble,
+      onStreamText,
     }).finally(() => {
-      // Stop progress edits the instant the run resolves (success OR
-      // throw) - otherwise a queued setInterval edit could overwrite the
-      // final answer a few seconds after we send it.
+      // Stop progress + streaming edits the instant the run resolves
+      // (success OR throw) - otherwise a queued edit could overwrite the
+      // final answer a few seconds after we send it. sendChunkedReply
+      // below does the authoritative Markdown-rendered final edit.
       stopProgress();
+      streamer?.stop();
     });
 
     if (!result.ok) {

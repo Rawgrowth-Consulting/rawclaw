@@ -35,6 +35,7 @@ export async function chatReply(input: {
   noHandoff?: boolean;
   maxTokens?: number;
   callerUserId?: string | null;
+  onStreamText?: (text: string) => void;
 }): Promise<AgentChatResult> {
   const {
     organizationId,
@@ -90,6 +91,7 @@ export async function chatReply(input: {
     agentId: resolvedAgentId,
     extraPreamble: fullExtraPreamble || undefined,
     publicAppUrl: input.publicAppUrl,
+    onStreamText: input.onStreamText,
   });
 
   if (!result.ok) {
