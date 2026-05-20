@@ -9,6 +9,118 @@ import {
 import { chatComplete } from "@/lib/llm/provider";
 import { chatCompleteOAuthFirst } from "@/lib/llm/oauth-first";
 
+// ───────────────────────────────────────────────────────────────────────
+// Late delegation postback (2026-05-20). The synchronous poll inside
+// execAgentInvoke caps at 480s; sub-agents that run long async tools
+// (apify_top_reels_from_file with wait:false multi-batch collect) can
+// overrun that. Without a late postback the chat thread shows
+// "Delegated to Kasia failed: timeout" even though Kasia finishes
+// successfully a few minutes later, and the operator never sees the
+// real result without manually asking again. Track those runs in a
+// module-scope Map and poll them with one shared interval until each
+// terminates, then insert the postback chat message exactly the way
+// the sync path would have. Best-effort: process restart drops the
+// queue (the chat surface still shows the original `Delegated to`
+// card + a "View delegated output" expand backed by the run row, so
+// nothing is *lost* - just no live notification).
+// ───────────────────────────────────────────────────────────────────────
+type LateDelegation = {
+  orgId: string;
+  speakerId: string;
+  speakerName: string;
+  runId: string;
+  assigneeId: string;
+  assigneeName: string;
+  startedAt: number;
+};
+const LATE_DELEGATIONS = new Map<string, LateDelegation>();
+const LATE_POLL_INTERVAL_MS = 15_000;
+const LATE_ABSOLUTE_DEADLINE_MS = 30 * 60_000;
+let latePollTimer: ReturnType<typeof setInterval> | null = null;
+
+function ensureLatePoller(): void {
+  if (latePollTimer) return;
+  latePollTimer = setInterval(async () => {
+    if (LATE_DELEGATIONS.size === 0) {
+      clearInterval(latePollTimer!);
+      latePollTimer = null;
+      return;
+    }
+    const db = supabaseAdmin();
+    for (const [runId, d] of LATE_DELEGATIONS) {
+      if (Date.now() - d.startedAt > LATE_ABSOLUTE_DEADLINE_MS) {
+        LATE_DELEGATIONS.delete(runId);
+        continue;
+      }
+      try {
+        const { data } = await db
+          .from("rgaios_routine_runs")
+          .select("status, output, error")
+          .eq("id", runId)
+          .maybeSingle();
+        const row = data as
+          | { status: string | null; output: unknown; error: string | null }
+          | null;
+        if (!row || !row.status || row.status === "pending" || row.status === "running") continue;
+        LATE_DELEGATIONS.delete(runId);
+        const out =
+          row.output && typeof row.output === "object" && !Array.isArray(row.output)
+            ? (row.output as Record<string, unknown>)
+            : null;
+        if (row.status === "succeeded") {
+          const raw =
+            (out?.summary as string | undefined) ??
+            (out?.reply as string | undefined) ??
+            (out?.text as string | undefined) ??
+            "";
+          const clean = extractThinking(raw).visibleReply;
+          await db.from("rgaios_agent_chat_messages").insert({
+            organization_id: d.orgId,
+            agent_id: d.speakerId,
+            user_id: null,
+            role: "system",
+            // Prefix matches the sync-postback path so AgentChatTab's
+            // classifySystem routes it to the "Delegated to" card with
+            // the View delegated output expand - same UI affordance,
+            // just labelled "delivered after timeout" so the operator
+            // sees this is the late completion, not a fresh dispatch.
+            content: `Delegated to ${d.assigneeName} (delivered after timeout): ${clean.slice(0, 800)}`,
+            metadata: {
+              kind: "agent_invoke_completed_late",
+              delegated_to: d.assigneeId,
+              routine_run_id: runId,
+              delegated_output: clean,
+            },
+          } as never);
+        } else {
+          await db.from("rgaios_agent_chat_messages").insert({
+            organization_id: d.orgId,
+            agent_id: d.speakerId,
+            user_id: null,
+            role: "system",
+            content: `Delegated to ${d.assigneeName} failed (after timeout): ${(row.error ?? row.status).slice(0, 200)}`,
+            metadata: {
+              kind: "agent_invoke_failed_late",
+              delegated_to: d.assigneeId,
+              routine_run_id: runId,
+            },
+          } as never);
+        }
+      } catch (err) {
+        console.warn(
+          `[agent-commands.latePoller] runId=${runId} poll failed: ${(err as Error).message}`,
+        );
+      }
+    }
+  }, LATE_POLL_INTERVAL_MS);
+}
+
+function trackLateDelegation(d: LateDelegation): void {
+  if (LATE_DELEGATIONS.has(d.runId)) return;
+  LATE_DELEGATIONS.set(d.runId, d);
+  ensureLatePoller();
+}
+
 /**
  * Atlas / dept-head JSON command extraction. The chat reply may include
  * one or more <command type="..."> blocks whose body is a JSON object.
@@ -1127,7 +1239,16 @@ async function execAgentInvoke(
     // a complex DM-rewrite task), leaving the orchestrator with an empty
     // delegated_output even though the executor was still writing the
     // run row. Match the inner timeout so the poll outlives the work.
-    const pollDeadline = Date.now() + 120_000;
+    //
+    // 2026-05-20: bumped 120s -> 480s. Sub-agents that run async tools
+    // (apify_top_reels_from_file with wait:false collect-loop) need
+    // 4-6min to land their full result. At 120s the orchestrator's
+    // visible card said "Delegated to Kasia failed: timeout" while
+    // Kasia was still finishing - and the postback never reached the
+    // caller thread when the run eventually succeeded a few minutes
+    // later. Anything that still overruns 480s is handed off to the
+    // background late-poller below so a late postback still lands.
+    const pollDeadline = Date.now() + 480_000;
     while (Date.now() < pollDeadline) {
       const { data: polled } = await db
         .from("rgaios_routine_runs")
@@ -1160,6 +1281,25 @@ async function execAgentInvoke(
       agent: resolved.name,
       note: `run ${finalStatus ?? "timeout"}`,
     });
+
+    // Sync poll hit the 480s ceiling but the executor is still working
+    // (status stuck on pending/running). Hand the runId off to the
+    // module-scope late poller so when the run eventually terminates a
+    // postback chat message lands in the caller's thread automatically -
+    // no operator "ping Scan again" needed. The orchestrator's current
+    // turn still returns a timeout summary; the late postback shows up
+    // as a follow-up system message in the same chat.
+    if (finalStatus === null) {
+      trackLateDelegation({
+        orgId,
+        speakerId,
+        speakerName,
+        runId,
+        assigneeId: resolved.id,
+        assigneeName: resolved.name,
+        startedAt: Date.now(),
+      });
+    }
 
     try {
       if (finalStatus === "succeeded") {
