@@ -199,6 +199,13 @@ export function splitTelegramText(
  * the operator can see the reply continues.
  *
  * Added 2026-05-19 to fix silently-dropped long multi-agent replies.
+ *
+ * Hermes-pattern (NousResearch/hermes-agent gateway/platforms/telegram.py):
+ * Telegram clears the "…typing" bubble the instant a new message lands, so
+ * on a multi-chunk reply the indicator dies after chunk 1 and the operator
+ * thinks the bot stalled. Re-trigger sendChatAction("typing") after each
+ * non-final chunk so the bubble stays alive until the last part arrives.
+ * Best-effort - typing failures never block the reply.
  */
 export async function sendChunkedReply(
   token: string,
@@ -215,6 +222,12 @@ export async function sendChunkedReply(
       await editMessageText(token, chatId, placeholderId, body);
     } else {
       await sendMessage(token, chatId, body);
+    }
+    // Keep the typing bubble alive between chunks (Telegram clears it on
+    // each delivered message). Skip after the final chunk - the reply is
+    // done, no more is coming.
+    if (i < total - 1) {
+      void sendChatAction(token, chatId, "typing").catch(() => {});
     }
   }
 }
