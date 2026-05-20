@@ -1903,7 +1903,11 @@ registerTool({
       // just the missing handles with the OTHER actor (reel-scraper has
       // different blind spots than instagram-scraper), append its runs, and
       // collect on the next call. Mirrors the sync path's recovery pass.
-      if (pending.length === 0 && cachedEntry && !cachedEntry.retried) {
+      if (
+        (pending.length === 0 || collectPartial) &&
+        cachedEntry &&
+        !cachedEntry.retried
+      ) {
         const ho = (raw: unknown): string => {
           const o = (raw ?? {}) as Record<string, unknown>;
           return String(
