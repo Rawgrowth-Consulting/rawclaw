@@ -1493,7 +1493,7 @@ function extractHandles(input: string): string[] {
 // Map survives across requests in the running Next.js server; 10-min TTL.
 const INFLIGHT_SCRAPES = new Map<
   string,
-  { runId: string; datasetId: string; ts: number }
+  { runs: { id: string; datasetId: string }[]; ts: number }
 >();
 const INFLIGHT_TTL_MS = 10 * 60_000;
 
@@ -1761,114 +1761,133 @@ registerTool({
       resultsPerHandle = capped;
     }
 
-    // ── Async modes (2026-05-20) ──────────────────────────────────────
-    // A synchronous scrape of a wide creator list can exceed the MCP
-    // transport / chat-turn budget; the agent then saw a timeout and
-    // retried, each retry kicking a FRESH apify run (orphaned + wasteful).
-    // Async decouples the slow scrape from the tool-call timeout:
-    //   wait:false      -> start ONE run over all handles, return run_id +
-    //                      dataset_id immediately.
-    //   resume_run_id:X -> poll that run (bounded); once SUCCEEDED fetch its
-    //                      dataset + rank. Re-callable with the same id, so a
-    //                      slow scrape is collected, never re-scraped.
-    const ASYNC_ACTOR = "apify~instagram-reel-scraper";
+    // ── Async modes (multi-run for coverage, 2026-05-20) ─────────────
+    // A synchronous scrape of a wide creator list exceeds the MCP transport
+    // budget (timeout -> retry-storm), but a single async run over the whole
+    // username list only covered 1/13 handles in testing. So async kicks ONE
+    // run PER 5-handle batch using the coverage-proven apify/instagram-scraper
+    // (directUrls + posts) - the same actor/shape the sync path uses. The runs
+    // are tracked in INFLIGHT_SCRAPES so a repeated wait:false call polls them
+    // all and, once every run is terminal, merges the datasets and ranks.
+    //   wait:false        -> kick N batch runs, return immediately.
+    //   (re-call wait:false / resume_run_id) -> poll + collect + rank.
+    const COVERAGE_ACTOR = "apify~instagram-scraper";
+    const ASYNC_BATCH = 5;
     const dedupKey = `${(String(args.agent_id ?? "").trim() || ctx.agentId || "")}|${fileNameArg.toLowerCase()}|${windowDays}|${metricKey}`;
-    // Resume target: an explicit resume_run_id wins; otherwise, on a repeated
-    // wait:false call, fall back to the in-flight run for this exact request
-    // so we poll + collect it instead of kicking a fresh scrape.
-    let effectiveRunId = String(args.resume_run_id ?? "").trim();
-    let effectiveDatasetId = String(args.dataset_id ?? "").trim();
-    if (!effectiveRunId && args.wait === false) {
+
+    type RunRef = { id: string; datasetId: string };
+    let runRefs: RunRef[] | null = null;
+    const explicitResume = String(args.resume_run_id ?? "").trim();
+    if (explicitResume) {
+      runRefs = [{ id: explicitResume, datasetId: String(args.dataset_id ?? "").trim() }];
+    } else if (args.wait === false) {
       const cached = INFLIGHT_SCRAPES.get(dedupKey);
       if (cached && Date.now() - cached.ts < INFLIGHT_TTL_MS) {
-        effectiveRunId = cached.runId;
-        effectiveDatasetId = effectiveDatasetId || cached.datasetId;
+        runRefs = cached.runs;
       }
     }
 
-    if (effectiveRunId) {
-      const runResp = (await fetch(
-        `https://api.apify.com/v2/actor-runs/${effectiveRunId}?token=${resolved.key}`,
-        { signal: AbortSignal.timeout(20_000) },
-      )
-        .then((r) => r.json())
-        .catch(() => null)) as {
-        data?: { status?: string; defaultDatasetId?: string };
-      } | null;
-      const run = runResp?.data;
-      const status = run?.status ?? "UNKNOWN";
-      if (status === "SUCCEEDED") {
-        const dsId = effectiveDatasetId || (run?.defaultDatasetId ?? "");
-        if (!dsId) {
-          return textError(
-            `run ${effectiveRunId} SUCCEEDED but returned no dataset id - pass dataset_id explicitly.`,
-          );
-        }
+    // Fresh kick: one async run per batch, in parallel.
+    if (!runRefs && args.wait === false) {
+      const batches: string[][] = [];
+      for (let i = 0; i < handles.length; i += ASYNC_BATCH) {
+        batches.push(handles.slice(i, i + ASYNC_BATCH));
+      }
+      const kicked = await Promise.all(
+        batches.map(async (batch): Promise<RunRef | null> => {
+          const resp = (await fetch(
+            `https://api.apify.com/v2/acts/${COVERAGE_ACTOR}/runs?token=${resolved.key}`,
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                directUrls: batch.map((h) => `https://www.instagram.com/${h}/`),
+                resultsType: "posts",
+                resultsLimit: resultsPerHandle,
+                addParentData: false,
+              }),
+              signal: AbortSignal.timeout(20_000),
+            },
+          )
+            .then((r) => r.json())
+            .catch(() => null)) as {
+            data?: { id?: string; defaultDatasetId?: string };
+          } | null;
+          const run = resp?.data;
+          return run?.id
+            ? { id: run.id, datasetId: run.defaultDatasetId ?? "" }
+            : null;
+        }),
+      );
+      const started = kicked.filter((r): r is RunRef => r !== null);
+      if (started.length === 0) {
+        return textError("failed to start async apify runs.");
+      }
+      INFLIGHT_SCRAPES.set(dedupKey, { runs: started, ts: Date.now() });
+      return text(
+        `Scrape started for ${handles.length} handles across ${started.length} runs. ` +
+          `Call apify_top_reels_from_file again with the SAME arguments (wait:false) in ~60-120s ` +
+          `- I will collect + rank from all runs automatically, never re-scrape.`,
+      );
+    }
+
+    // Collect path: poll every run; rank once all are terminal.
+    if (runRefs) {
+      const statuses = await Promise.all(
+        runRefs.map(async (rr) => {
+          const resp = (await fetch(
+            `https://api.apify.com/v2/actor-runs/${rr.id}?token=${resolved.key}`,
+            { signal: AbortSignal.timeout(15_000) },
+          )
+            .then((r) => r.json())
+            .catch(() => null)) as {
+            data?: { status?: string; defaultDatasetId?: string };
+          } | null;
+          const d = resp?.data;
+          return {
+            id: rr.id,
+            datasetId: rr.datasetId || (d?.defaultDatasetId ?? ""),
+            status: d?.status ?? "UNKNOWN",
+          };
+        }),
+      );
+      const pending = statuses.filter(
+        (s) =>
+          s.status === "RUNNING" ||
+          s.status === "READY" ||
+          s.status === "UNKNOWN",
+      );
+      if (pending.length > 0) {
+        return text(
+          `Scrape ${statuses.length - pending.length}/${statuses.length} runs done, ` +
+            `${pending.length} still running. Call apify_top_reels_from_file again with ` +
+            `the same arguments (wait:false) in ~30s - I will collect, not re-scrape.`,
+        );
+      }
+      INFLIGHT_SCRAPES.delete(dedupKey);
+      const merged: unknown[] = [];
+      for (const s of statuses) {
+        if (s.status !== "SUCCEEDED" || !s.datasetId) continue;
         const items = (await fetch(
-          `https://api.apify.com/v2/datasets/${dsId}/items?token=${resolved.key}&clean=true&limit=${MAX_LIMIT}`,
+          `https://api.apify.com/v2/datasets/${s.datasetId}/items?token=${resolved.key}&clean=true&limit=${MAX_LIMIT}`,
           { signal: AbortSignal.timeout(30_000) },
         )
           .then((r) => r.json())
           .catch(() => [])) as unknown;
-        const arr = Array.isArray(items) ? items : [];
-        INFLIGHT_SCRAPES.delete(dedupKey);
-        if (arr.length === 0) {
-          return textError(
-            `scrape run ${effectiveRunId} finished but its dataset is empty.`,
-          );
-        }
-        return text(
-          rankReels(arr, {
-            handles,
-            windowDays,
-            metricKey,
-            metricArg,
-            topN,
-            sourceFilename: fileRes.filename,
-          }),
-        );
+        if (Array.isArray(items)) for (const it of items) merged.push(it);
       }
-      if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
-        INFLIGHT_SCRAPES.delete(dedupKey);
-        return textError(`scrape run ${effectiveRunId} ${status}.`);
+      if (merged.length === 0) {
+        return textError("scrape runs finished but returned no items.");
       }
       return text(
-        `Scrape run ${effectiveRunId} still ${status}. Call apify_top_reels_from_file again ` +
-          `with the same arguments (wait:false) in ~30s - I will collect the ranked top ${topN} ` +
-          `from this run, not start a new scrape.`,
-      );
-    }
-
-    if (args.wait === false) {
-      const startResp = (await fetch(
-        `https://api.apify.com/v2/acts/${ASYNC_ACTOR}/runs?token=${resolved.key}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            username: handles,
-            resultsLimit: resultsPerHandle,
-          }),
-          signal: AbortSignal.timeout(20_000),
-        },
-      )
-        .then((r) => r.json())
-        .catch(() => null)) as {
-        data?: { id?: string; defaultDatasetId?: string };
-      } | null;
-      const run = startResp?.data;
-      if (!run?.id) {
-        return textError("failed to start async apify run.");
-      }
-      INFLIGHT_SCRAPES.set(dedupKey, {
-        runId: run.id,
-        datasetId: run.defaultDatasetId ?? "",
-        ts: Date.now(),
-      });
-      return text(
-        `Scrape started for ${handles.length} handles (run_id=${run.id}). ` +
-          `Call apify_top_reels_from_file again with the SAME arguments (wait:false) ` +
-          `in ~60-120s - I will collect the ranked top ${topN} from this run automatically.`,
+        rankReels(merged, {
+          handles,
+          windowDays,
+          metricKey,
+          metricArg,
+          topN,
+          sourceFilename: fileRes.filename,
+        }),
       );
     }
 
