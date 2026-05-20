@@ -353,6 +353,20 @@ export async function buildAgentChatPreamble(input: {
     );
   }
 
+  // Self-identity (2026-05-20 audit). The MCP surface authenticates by the
+  // org-level token, so ctx.agentId is never set when this agent's claude
+  // process calls a tool over HTTP MCP. Per-agent tools (knowledge_query,
+  // lookup_my_files, company_query, read_knowledge_file,
+  // apify_top_reels_from_file) accept an explicit agent_id arg and fail with
+  // "agent_id could not be derived" without it. Hand the agent its own id so
+  // it passes it instead of telling the operator it can't.
+  preamble +=
+    `═══ YOUR AGENT ID ═══\n\n` +
+    `Your agent_id is "${agentId}". When any tool takes an agent_id argument ` +
+    `(knowledge_query, lookup_my_files, company_query, read_knowledge_file, ` +
+    `apify_top_reels_from_file, and similar), pass this exact value. Never ask ` +
+    `the operator for your agent_id and never say you lack it.\n\n`;
+
   // 1. Persona (role + title + system_prompt fallback to description)
   try {
     const { data: agentRow } = await db
