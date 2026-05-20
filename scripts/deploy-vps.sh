@@ -37,6 +37,23 @@ fi
 echo "[deploy] working dir: ${TARGET}"
 cd "${TARGET}"
 
+# Compose file selection. v3 boxes (e.g. Marti at /opt/rawclaw) MUST use
+# docker-compose.v3.yml: it bind-mounts the Claude OAuth credential to
+# /home/nextjs/.claude/.credentials.json (where the runner-stage app user
+# reads it). The default docker-compose.yml mounts to /home/node, so a
+# deploy through it leaves the agent with "Not logged in" while the web
+# app still serves - the exact login break seen on 2026-05-20. Prefer the
+# v3 compose when present; override with DEPLOY_COMPOSE_FILE.
+if [ -n "${DEPLOY_COMPOSE_FILE:-}" ]; then
+  COMPOSE_FILE="${DEPLOY_COMPOSE_FILE}"
+elif [ -f "${TARGET}/docker-compose.v3.yml" ]; then
+  COMPOSE_FILE="docker-compose.v3.yml"
+else
+  COMPOSE_FILE="docker-compose.yml"
+fi
+echo "[deploy] compose file: ${COMPOSE_FILE}"
+dc() { docker compose -f "${COMPOSE_FILE}" "$@"; }
+
 echo "[deploy] git pull origin v3"
 git pull origin v3
 
@@ -50,14 +67,23 @@ else
 fi
 
 echo "[deploy] docker compose pull (pulls latest v3 image from GHCR)"
-docker compose pull app
+dc pull app
 
 echo "[deploy] docker compose up -d (no rebuild, just swap container)"
-docker compose up -d app
+dc up -d app
 
 echo "[deploy] tailing app logs for 30s, watching for 'Ready'"
-timeout 30 docker compose logs -f app | grep -m1 "Ready in" || true
+timeout 30 dc logs -f app | grep -m1 "Ready in" || true
+
+# Sanity-check the swap actually landed the new image, since a silent
+# stale-image deploy is the failure mode this script exists to prevent.
+echo "[deploy] running image:"
+dc images app || true
 
 echo "[deploy] done. health check:"
 sleep 2
-curl -sS -o /dev/null -w "  /api/health %{http_code}\n" "http://127.0.0.1:3000/api/health" || true
+# The app listens on the compose network, not host :3000 (Caddy fronts
+# TLS). Probe inside the container so the check reflects the app, not a
+# host port that is never published.
+dc exec -T app sh -lc 'curl -sS -o /dev/null -w "  /api/health %{http_code}\n" http://127.0.0.1:3000/api/health' \
+  || echo "  /api/health check skipped (no curl in container) - see 'Ready in' above"
