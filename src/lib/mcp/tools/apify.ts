@@ -1273,10 +1273,18 @@ function normalize(s: string): string {
 async function readAgentFileBody(
   ctx: ToolContext,
   fileName: string,
+  agentIdOverride?: string | null,
 ): Promise<{ filename: string; body: string } | { error: string }> {
-  const agentId = ctx.agentId;
+  // The MCP surface authenticates by the org token, so ctx.agentId is null
+  // on a dispatched sub-agent run. Accept an explicit agent_id arg (the
+  // dispatched prompt's identity header tells the agent its own id) and fall
+  // back to ctx.agentId for the in-process chat surface.
+  const agentId = (agentIdOverride && agentIdOverride.trim()) || ctx.agentId;
   if (!agentId) {
-    return { error: "agent_id missing on this surface" };
+    return {
+      error:
+        "agent_id could not be derived - pass agent_id explicitly (your own id).",
+    };
   }
   const db = supabaseAdmin();
   const { data: agent } = await db
@@ -1500,6 +1508,11 @@ registerTool({
         description:
           "Substring match against your agent files (e.g. \"creator-list\"). The most recently uploaded match is used.",
       },
+      agent_id: {
+        type: "string",
+        description:
+          "Your own agent UUID. Required when the call runs through agent_invoke (the MCP surface is org-scoped and cannot infer which agent you are). Your preamble / dispatch header gives you this id - pass it.",
+      },
       window_days: {
         type: "number",
         description: "How far back to scrape (default 10, max 90).",
@@ -1547,7 +1560,11 @@ registerTool({
     // batch is slower than 3 parallel batches. Reverting.
     const PER_BATCH_TIMEOUT_MS = 100_000;
 
-    const fileRes = await readAgentFileBody(ctx, fileNameArg);
+    const fileRes = await readAgentFileBody(
+      ctx,
+      fileNameArg,
+      String(args.agent_id ?? "").trim() || null,
+    );
     if ("error" in fileRes) return textError(fileRes.error);
     const handles = extractHandles(fileRes.body);
     if (handles.length === 0) {
