@@ -20,6 +20,56 @@ All in `~/Downloads/` in the dev environment, linked here for context:
 - `rawclaw-v3-day1-reply.pdf` — engineering brief for Ali
 - `rawclaw-v3-execution-plan.pdf` — day-by-day plan D1 → D14
 
+## Multi-agent orchestration (production, 2026-05)
+
+Past the trial, the headline capability is **CEO-orchestrated multi-agent
+fan-out over Telegram**. One bot per organization is wired to the CEO
+agent (Scan on Marti Fox). The CEO receives every DM and orchestrates
+the specialist roster (marketing / sales / customer-service /
+recruitment / research / engineering) without the operator picking
+agents by hand.
+
+Request flow for a multi-specialist ask ("plan the July cohort launch:
+pricing, IG posts, DM script, refund policy"):
+
+1. **Brief** — the CEO translates the operator's high-level ask into a
+   scoped brief per specialist (not a verbatim forward).
+2. **Fan out (parallel)** — fires N `agent_invoke` MCP calls in ONE turn
+   with `wait:false`. Each returns instantly with a `run_id`, so the
+   Claude Agent SDK dispatches them truly concurrently instead of
+   serialising blocking tool calls. The host drain server claims them
+   in parallel (4-slot concurrency) and runs each as its own Claude Code
+   subprocess.
+3. **Collect** — the CEO calls `agent_invoke({ poll_run_ids: [...] })`,
+   which polls every run in parallel server-side, returns within ~40s
+   with partial results, and the CEO re-polls any still-pending ids
+   (a read-only collect-retry, never a re-dispatch).
+4. **Score + synthesise** — each specialist output is scored 0-10 and
+   woven into one executive plan. Failures/refusals are surfaced
+   honestly (`n/a` with the real reason); deliverables are NEVER
+   fabricated.
+
+The CEO's behaviour is governed by a single layered system prompt
+(seeded by `migrations/0081_seed_scan_system_prompt.sql`): dispatch
+protocol, quality scoring, true-parallel dispatch, chain-of-command,
+async fan-out + collect-loop, no-retry, anti-gun-shy (dispatch fresh
+every turn, never fabricate, `agents_list` if a UUID is missing).
+
+Telegram surface niceties (Hermes-pattern): a live typing indicator
+held for the whole run, an in-place progress placeholder showing live
+dispatch counts (`🔧 4 dispatched · 2 done · synthesizing`), and
+automatic chunking of replies over Telegram's 4096-char cap into
+sequential `(i/N)` messages.
+
+Operational hardening on the per-client VPS:
+- Claude CLI OAuth creds bind-mounted so `--force-recreate` no longer
+  wipes auth (`ANTHROPIC_API_KEY` must stay empty on claude-max-oauth
+  boxes — a stale token there overrides the OAuth credential).
+- SDK pre-warm pool to skip the ~12-40s subprocess cold start.
+- Drain server concurrency raised 1 → 4.
+- Cosmetic strip of thinking-trace / hallucinated `<command>` XML /
+  meta-narration from operator-visible replies.
+
 ## What's in here
 
 Every §9 acceptance item maps to a commit. Read the log in order —
@@ -52,12 +102,12 @@ explaining the decision, the diff, and the §9 item it covers.
 | `npm run lint` | ✅ 0 errors, 145 warnings (all legacy / pre-v3 pattern deprecations) |
 | `npm run build` | ✅ compiled in ~21s, every v3 route generated |
 | `npm run dev` (on fake Supabase) | ✅ 8/8 routes respond, middleware guards work, MCP + NextAuth boot |
-| Migrations apply on real Supabase | ⏳ needs Rawgrowth Supabase project access |
-| Fresh-droplet install <10 min | ⏳ needs Hetzner API token |
-| Live Telegram voice round-trip | ⏳ needs ANTHROPIC_API_KEY + public URL |
-| Playwright smoke on staging | ⏳ needs live VPS |
-| 48h Rawgrowth dogfood | ⏳ D13 once staging is up |
-| Final demo + Loom | ⏳ D14, May 7 |
+| Migrations apply on real Supabase | ✅ shared Supabase Cloud, migrations 0001–0081 applied |
+| Fresh-droplet install <10 min | ✅ `scripts/provision-vps.sh` (Caddy + Docker + drain + tick) |
+| Live Telegram round-trip | ✅ Marti Fox VPS live, CEO-orchestrated multi-agent fan-out verified |
+| Multi-agent orchestration end-to-end | ✅ dispatch → collect → score → synthesize, verified on clean + contaminated chats |
+| 48h Rawgrowth dogfood | ✅ Marti Fox in active operator testing |
+| Final demo + Loom | ⏳ recording with Chris (acceptance window) |
 
 ## Key architecture decisions
 
