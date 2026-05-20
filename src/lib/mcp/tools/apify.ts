@@ -1485,6 +1485,18 @@ function extractHandles(input: string): string[] {
   return [...handles];
 }
 
+// In-flight async scrape dedup (2026-05-20). The dispatched agent often
+// re-calls apify_top_reels_from_file with wait:false instead of switching to
+// resume_run_id, which would kick a fresh apify run every poll. Keyed by
+// agent+file+window+metric, this lets a repeated wait:false call resume the
+// run already in flight (poll + collect) instead of re-scraping. Module-scope
+// Map survives across requests in the running Next.js server; 10-min TTL.
+const INFLIGHT_SCRAPES = new Map<
+  string,
+  { runId: string; datasetId: string; ts: number }
+>();
+const INFLIGHT_TTL_MS = 10 * 60_000;
+
 /**
  * Rank + format a scraped reel dataset into the operator-facing top-N block.
  * Extracted from apify_top_reels_from_file so both the synchronous path and
@@ -1760,11 +1772,23 @@ registerTool({
     //                      dataset + rank. Re-callable with the same id, so a
     //                      slow scrape is collected, never re-scraped.
     const ASYNC_ACTOR = "apify~instagram-reel-scraper";
-    const resumeRunId = String(args.resume_run_id ?? "").trim();
+    const dedupKey = `${(String(args.agent_id ?? "").trim() || ctx.agentId || "")}|${fileNameArg.toLowerCase()}|${windowDays}|${metricKey}`;
+    // Resume target: an explicit resume_run_id wins; otherwise, on a repeated
+    // wait:false call, fall back to the in-flight run for this exact request
+    // so we poll + collect it instead of kicking a fresh scrape.
+    let effectiveRunId = String(args.resume_run_id ?? "").trim();
+    let effectiveDatasetId = String(args.dataset_id ?? "").trim();
+    if (!effectiveRunId && args.wait === false) {
+      const cached = INFLIGHT_SCRAPES.get(dedupKey);
+      if (cached && Date.now() - cached.ts < INFLIGHT_TTL_MS) {
+        effectiveRunId = cached.runId;
+        effectiveDatasetId = effectiveDatasetId || cached.datasetId;
+      }
+    }
 
-    if (resumeRunId) {
+    if (effectiveRunId) {
       const runResp = (await fetch(
-        `https://api.apify.com/v2/actor-runs/${resumeRunId}?token=${resolved.key}`,
+        `https://api.apify.com/v2/actor-runs/${effectiveRunId}?token=${resolved.key}`,
         { signal: AbortSignal.timeout(20_000) },
       )
         .then((r) => r.json())
@@ -1774,11 +1798,10 @@ registerTool({
       const run = runResp?.data;
       const status = run?.status ?? "UNKNOWN";
       if (status === "SUCCEEDED") {
-        const dsId =
-          String(args.dataset_id ?? "").trim() || (run?.defaultDatasetId ?? "");
+        const dsId = effectiveDatasetId || (run?.defaultDatasetId ?? "");
         if (!dsId) {
           return textError(
-            `run ${resumeRunId} SUCCEEDED but returned no dataset id - pass dataset_id explicitly.`,
+            `run ${effectiveRunId} SUCCEEDED but returned no dataset id - pass dataset_id explicitly.`,
           );
         }
         const items = (await fetch(
@@ -1788,9 +1811,10 @@ registerTool({
           .then((r) => r.json())
           .catch(() => [])) as unknown;
         const arr = Array.isArray(items) ? items : [];
+        INFLIGHT_SCRAPES.delete(dedupKey);
         if (arr.length === 0) {
           return textError(
-            `scrape run ${resumeRunId} finished but its dataset is empty.`,
+            `scrape run ${effectiveRunId} finished but its dataset is empty.`,
           );
         }
         return text(
@@ -1805,13 +1829,13 @@ registerTool({
         );
       }
       if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
-        return textError(`scrape run ${resumeRunId} ${status}.`);
+        INFLIGHT_SCRAPES.delete(dedupKey);
+        return textError(`scrape run ${effectiveRunId} ${status}.`);
       }
       return text(
-        `Scrape run ${resumeRunId} still ${status}. Call apify_top_reels_from_file again ` +
-          `with resume_run_id="${resumeRunId}"` +
-          `${run?.defaultDatasetId ? ` dataset_id="${run.defaultDatasetId}"` : ""} ` +
-          `in ~30s to collect the ranked top ${topN}.`,
+        `Scrape run ${effectiveRunId} still ${status}. Call apify_top_reels_from_file again ` +
+          `with the same arguments (wait:false) in ~30s - I will collect the ranked top ${topN} ` +
+          `from this run, not start a new scrape.`,
       );
     }
 
@@ -1836,12 +1860,15 @@ registerTool({
       if (!run?.id) {
         return textError("failed to start async apify run.");
       }
+      INFLIGHT_SCRAPES.set(dedupKey, {
+        runId: run.id,
+        datasetId: run.defaultDatasetId ?? "",
+        ts: Date.now(),
+      });
       return text(
-        `Scrape started for ${handles.length} handles ` +
-          `(run_id=${run.id}, dataset_id=${run.defaultDatasetId ?? "pending"}). ` +
-          `Call apify_top_reels_from_file again with resume_run_id="${run.id}"` +
-          `${run.defaultDatasetId ? ` dataset_id="${run.defaultDatasetId}"` : ""}, ` +
-          `same file_name / window_days / top_n / metric, in ~60-120s to get the ranked top ${topN}.`,
+        `Scrape started for ${handles.length} handles (run_id=${run.id}). ` +
+          `Call apify_top_reels_from_file again with the SAME arguments (wait:false) ` +
+          `in ~60-120s - I will collect the ranked top ${topN} from this run automatically.`,
       );
     }
 
