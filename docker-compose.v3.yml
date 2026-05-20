@@ -15,6 +15,12 @@
 
 services:
   app:
+    # GHCR image is the deploy target: `docker compose pull app` fetches
+    # this tag (CI publishes it on every v3 push). Without an `image:`
+    # line a build-only service is SKIPPED by `pull`, so deploy-vps.sh
+    # silently kept the stale local image. `up -d` (no --build) uses this
+    # pulled image, so the 4GB box never rebuilds (the OOM trap).
+    image: ghcr.io/rawgrowth-consulting/rawclaw:v3
     build:
       context: .
       dockerfile: Dockerfile.v3
