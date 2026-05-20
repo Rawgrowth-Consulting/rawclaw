@@ -1837,8 +1837,9 @@ registerTool({
       INFLIGHT_SCRAPES.set(dedupKey, { runs: started, ts: Date.now() });
       return text(
         `Scrape started for ${handles.length} handles across ${started.length} runs. ` +
-          `Call apify_top_reels_from_file again with the SAME arguments (wait:false) in ~60-120s ` +
-          `- I will collect + rank from all runs automatically, never re-scrape.`,
+          `WAIT AT LEAST 90 SECONDS, then call apify_top_reels_from_file again with the SAME ` +
+          `arguments (wait:false) - polling sooner cannot speed apify up and just burns turns. ` +
+          `I will collect + rank from all runs automatically, never re-scrape.`,
       );
     }
 
@@ -1879,10 +1880,23 @@ registerTool({
         Date.now() - inflightTs > COLLECT_PARTIAL_MS &&
         doneOk.length > 0;
       if (pending.length > 0 && !collectPartial) {
+        // Apify scrape progresses on apify's side, not ours - polling
+        // again immediately just returns the same "still running" reply
+        // and burns a model turn. Calling agents (Kasia in particular)
+        // were re-calling this tool 8-10 times in <60s on a single
+        // scrape, exhausting their patience before the partial-collect
+        // window (COLLECT_PARTIAL_MS) even opened. Tell the model the
+        // remaining time-to-partial explicitly so it sleeps that
+        // long before the next poll instead of spamming.
+        const msSincePartial = Math.max(0, COLLECT_PARTIAL_MS - (Date.now() - inflightTs));
+        const waitSeconds = Math.max(45, Math.ceil(msSincePartial / 1000));
         return text(
           `Scrape ${statuses.length - pending.length}/${statuses.length} runs done, ` +
-            `${pending.length} still running. Call apify_top_reels_from_file again with ` +
-            `the same arguments (wait:false) in ~30s - I will collect, not re-scrape.`,
+            `${pending.length} still running. ` +
+            `WAIT AT LEAST ${waitSeconds} SECONDS before re-calling apify_top_reels_from_file - ` +
+            `polling faster cannot speed the apify side up and just wastes turns. ` +
+            `Once you re-call with the same arguments (wait:false) after ${waitSeconds}s ` +
+            `I will collect what is ready (partial OK) and rank.`,
         );
       }
       const merged: unknown[] = [];
@@ -1980,8 +1994,9 @@ registerTool({
             INFLIGHT_SCRAPES.set(dedupKey, cachedEntry);
             return text(
               `Recovering ${missing.length} handles that returned no data on the first pass ` +
-                `(retry scrape started with a second scraper). Call apify_top_reels_from_file again ` +
-                `with the same arguments (wait:false) in ~60s for the fuller ranking.`,
+                `(retry scrape started with a second scraper). WAIT AT LEAST 60 SECONDS, then call ` +
+                `apify_top_reels_from_file again with the same arguments (wait:false) for the ` +
+                `fuller ranking. Polling sooner cannot speed apify up.`,
             );
           }
         }
