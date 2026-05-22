@@ -1,3 +1,13 @@
+# Rawgrowth Rawclaw v4 (Hermes Agent migration)
+
+> **You are on the `v4` branch.** This branch is the migration target: swap the home-grown rawclaw v3 runtime for **NousResearch Hermes Agent**. See `ARCHITECTURE-V4.md` for the new stack diagram and `HERMES-DEPLOY.md` for the per-VPS deployment recipe used in the May 2026 sprint.
+>
+> **Current state (2026-05-22):** five VPS running Hermes v0.14.0 (Admin + blair-prod + ccm-josh-prod + ccm-justin-prod + marti). Admin is fully wired (Codex 5.5 OAuth via Chris's ChatGPT, Composio MCP, Google Calendar smoke test passed end-to-end). Blair Codex OAuth done. Marti Telegram bot live as systemd service. Remaining work tracked in the sprint registry.
+>
+> Below is the original v3 README, kept for reference until the dashboard rebuild lands.
+
+---
+
 # Rawgrowth AIOS (Rawclaw v3)
 
 A per-client multi-agent operations platform. Each client runs an
