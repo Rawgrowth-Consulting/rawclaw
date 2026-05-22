@@ -17,7 +17,7 @@ This branch is the migration target: swap the home-grown rawclaw v3 agent runtim
 ## Top-level deploy shape per client
 
 ```
-client.rawgrowth.ai  →  Vercel (dashboard, branded per client)
+client.rawgrowth.ai  →  dashboard (branded per client, host TBD by Rami)
                                 |
                                 ├─→  Composio APIs (read tool data for the dashboard)
                                 └─→  Hermes HTTP gateway @ https://agent.client.rawgrowth.ai
@@ -28,7 +28,7 @@ client.rawgrowth.ai  →  Vercel (dashboard, branded per client)
                                               └─→  Telegram gateway (systemd, on the same VPS)
 ```
 
-One Hetzner VPS per client. Dashboard is hosted on Vercel and points back at the VPS's HTTP gateway for live agent ops + the "Hire New Agent" flow. All data (conversations, agent state, memory) lives on the VPS in `~/.hermes/`.
+One Hetzner VPS per client. Dashboard host is TBD by Rami and points back at the VPS's HTTP gateway for live agent ops + the "Hire New Agent" flow. All data (conversations, agent state, memory) lives on the VPS in `~/.hermes/`.
 
 ## What we keep from v3 (KEEP)
 
