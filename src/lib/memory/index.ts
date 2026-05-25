@@ -99,43 +99,66 @@ export class HermesLocalAdapter implements MemoryAdapter {
 /* -------------------------------------------------------------------- */
 
 /**
- * Honcho is a memory service from Plastic Labs. Self-hosted version
- * runs as a docker service against the same Supabase Postgres (pgvector
- * required). On v3 we wired this once, dropped it for the v4 sprint
- * because the chat surface SQLite was enough. We re-add it here as an
- * optional tier; enable by setting `MEMORY_TIERS` to include "honcho"
- * + `HONCHO_BASE_URL`.
+ * Honcho is a memory service from Plastic Labs. Self-hosted via the
+ * `ghcr.io/plastic-labs/honcho:latest` docker image + bundled
+ * postgres (pgvector) + redis (confirmed running on Admin VPS at
+ * http://127.0.0.1:8001 against a healthy 4-container compose stack).
  *
- * Honcho REST shape (v0.0.x):
- *   POST /apps/<app>/users/<user>/sessions/<session>/messages
- *   GET  /apps/<app>/users/<user>/sessions/<session>/messages
- *   GET  /apps/<app>/users/<user>/facts?query=<q>
+ * Honcho v3 REST shape (probed live via /openapi.json):
+ *   POST /v3/workspaces                                 create workspace
+ *   POST /v3/workspaces/{workspace_id}/peers            create peer
+ *   POST /v3/workspaces/{workspace_id}/peers/{peer_id}/chat
+ *                                                        send message
+ *   POST /v3/workspaces/{workspace_id}/peers/{peer_id}/search?query=
+ *                                                        semantic recall
+ *   GET  /v3/workspaces/{workspace_id}/peers/{peer_id}/representation
+ *                                                        user model
  *
- * App = organization. User = client end-user. Session = chat thread.
+ * Mapping for rawclaw:
+ *   workspace_id = `rgaios:${organizationId}`
+ *   peer_id      = userId || `agent:${agentId}`
+ *   session      = the chat thread name (Honcho models conversations
+ *                  inside a peer, with session metadata)
+ *
+ * Enable by setting `MEMORY_TIERS=hermes,honcho` + `HONCHO_BASE_URL`.
  */
 export class HonchoAdapter implements MemoryAdapter {
   name = "honcho" as const;
   private baseUrl: string;
-  private appHeader: string;
+  private apiKey: string;
   constructor() {
     this.baseUrl =
-      process.env.HONCHO_BASE_URL?.trim() || "http://localhost:8000";
-    this.appHeader = process.env.HONCHO_APP_NAME?.trim() || "rawclaw";
+      process.env.HONCHO_BASE_URL?.trim() || "http://localhost:8001";
+    this.apiKey = process.env.HONCHO_API_KEY?.trim() || "";
   }
+  private headers(extra: Record<string, string> = {}): HeadersInit {
+    const h: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...extra,
+    };
+    if (this.apiKey) h.Authorization = `Bearer ${this.apiKey}`;
+    return h;
+  }
+  private workspaceId(turn: { organizationId: string }): string {
+    return `rgaios:${turn.organizationId}`;
+  }
+  private peerId(turn: { agentId: string; userId?: string | null }): string {
+    return turn.userId || `agent:${turn.agentId}`;
+  }
+
   async write(turn: MemoryWrite): Promise<void> {
-    const user = turn.userId || `agent:${turn.agentId}`;
-    const url = `${this.baseUrl}/apps/${encodeURIComponent(
-      `${this.appHeader}:${turn.organizationId}`,
-    )}/users/${encodeURIComponent(user)}/sessions/${encodeURIComponent(
-      turn.session,
-    )}/messages`;
+    const ws = this.workspaceId(turn);
+    const peer = this.peerId(turn);
+    const url = `${this.baseUrl}/v3/workspaces/${encodeURIComponent(
+      ws,
+    )}/peers/${encodeURIComponent(peer)}/chat`;
     try {
       await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: this.headers(),
         body: JSON.stringify({
-          content: turn.content,
-          is_user: turn.role === "user",
+          messages: [{ role: turn.role, content: turn.content }],
+          session_id: turn.session,
           metadata: { role: turn.role, ...turn.metadata },
         }),
       });
@@ -144,19 +167,20 @@ export class HonchoAdapter implements MemoryAdapter {
     }
   }
   async read(req: MemoryRead): Promise<MemorySnippet[]> {
-    const user = req.userId || `agent:${req.agentId}`;
-    const url = `${this.baseUrl}/apps/${encodeURIComponent(
-      `${this.appHeader}:${req.organizationId}`,
-    )}/users/${encodeURIComponent(user)}/facts?query=${encodeURIComponent(
+    const ws = this.workspaceId(req);
+    const peer = this.peerId(req);
+    const url = `${this.baseUrl}/v3/workspaces/${encodeURIComponent(
+      ws,
+    )}/peers/${encodeURIComponent(peer)}/search?query=${encodeURIComponent(
       req.query,
     )}&limit=${req.limit ?? 5}`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { headers: this.headers() });
       if (!res.ok) return [];
       const data = (await res.json()) as {
-        facts?: Array<{ content: string; score?: number }>;
+        results?: Array<{ content: string; score?: number }>;
       };
-      return (data.facts ?? []).map((f) => ({
+      return (data.results ?? []).map((f) => ({
         source: "honcho" as const,
         content: f.content,
         score: f.score,
