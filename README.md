@@ -2,18 +2,42 @@
 
 > **You are on the `v4` branch.** Migration target: swap the home-grown rawclaw v3 runtime for **NousResearch Hermes Agent**. See `ARCHITECTURE-V4.md` for the new stack diagram and `HERMES-DEPLOY.md` for the per-VPS deployment recipe.
 >
-> **What is now wired (code, not yet smoke-tested in CI):**
+> ## What is wired in this branch (code, scaffold-complete, not yet smoke-tested end to end)
 >
-> - `src/lib/hermes/client.ts` - typed HTTP client for the Hermes gateway: `hermesResponses({...})` with SSE event parsing, plus `hermesJobs` (cron-style scheduled prompts, replaces drain server) and `hermesProfiles` (per-agent system_prompt + skills + mcp config).
-> - `src/lib/hermes/bridge.ts` - `chatReplyViaHermes()` translates the v3 chatReply contract to a streamed POST `/v1/responses`. Same `onStreamText` + `onToolUse` callback cadence so the Telegram streaming editor and the dashboard NDJSON consumer keep working unchanged.
-> - `src/lib/agent/chat.ts` - rewritten as the single entry point. Builds the existing v3 preamble (RAG + brand voice + memory) via `buildAgentChatPreamble`, then routes to Hermes by default. `CHAT_ENGINE=v3-sdk` env flag falls back to the old SDK runner for rollback safety.
-> - `scripts/sync-hermes-profiles.ts` - reads every `rgaios_agents` row for an org and upserts them as Hermes profiles via the gateway (idempotent, safe to re-run on every agent edit).
-> - `docker-compose.v4.yml` + `docker/Caddyfile.v4` - new compose with only app + caddy. Hermes runs natively on the host as a systemd unit (installed by `hermes gateway install --system`); the Next.js container reaches it via `host.docker.internal:8642`. Drops local postgres + postgrest + drain server.
-> - `.env.v4.example` - the four new env vars (`HERMES_GATEWAY_URL`, `HERMES_API_KEY`, `HERMES_DEFAULT_PROFILE`, `CHAT_ENGINE`) plus the v3 keys that still apply.
+> **Hermes dashboard client + chat bridge**
 >
-> **Sprint VPS state (2026-05-22):** five VPS running Hermes v0.14.0 (Admin + blair-prod + ccm-josh-prod + ccm-justin-prod + marti). Admin is fully wired (Codex 5.5 OAuth via Chris's ChatGPT, Composio MCP with seven tools, Google Calendar smoke test passed end-to-end). Blair Codex OAuth done. Marti Hermes installed; Telegram bot for Admin runs against Marti's bot token as a test rig until clients send their own. Remaining client deliverables (Composio `ck_` + Telegram tokens + OAuth windows) tracked in the sprint registry.
+> - `src/lib/hermes/client.ts` - typed REST + WebSocket client for the actual Hermes 0.14 dashboard API (probed via `/openapi.json` and source at `hermes_cli/web_server.py`): `getStatus`, `hermesProfiles` (list / create / patch / soul / delete), `hermesJobs` (list / create / update / remove / pause / resume / trigger — replaces the v3 drain server), `hermesSessions` (read message history + delete), and `hermesChat({ prompt, profile, session, onEvent })` over the JSON-RPC WebSocket at `/api/ws`.
+> - `src/lib/hermes/bridge.ts` - `chatReplyViaHermes()` keeps the v3 chatReply signature: same `onStreamText` + `onToolUse` callback cadence, deterministic session id `org:<orgId>:chat:<chatId>`, profile resolution `agentId -> rgaios_agents.name -> lowercased_underscored_name`, write-back mirror to `rgaios_agent_chat_messages` so the existing dashboard reader keeps working.
+> - `src/lib/agent/chat.ts` - single entry point. Builds the v3 preamble (RAG + brand voice + memory) via `buildAgentChatPreamble`, then routes to Hermes by default. `CHAT_ENGINE=v3-sdk` env flag falls back to the legacy SDK runner for rollback.
 >
-> **What is left for Rami on dashboard:** branded skin per client (Marti / Blair / CCM), Composio API integration for live numbers, the "Hire New Agent" section, and the chat surface refactor in `src/components/agents/AgentChatTab.tsx` to consume Hermes events from the bridge (the NDJSON event shape is unchanged, but the producer is now `chatReplyViaHermes` instead of `chatReplyViaSdk`).
+> **Autoresearch loop (Karpathy-style edit -> eval -> keep/revert -> repeat)**
+>
+> - `src/lib/hermes/autoresearch.ts` - generic `autoresearch<T>({ goal, maxCycles, patience, egl }, { propose, evaluate, revert })` runtime that drives any candidate-state mutation loop against a measurable score. Built on the pattern from [`zkarimi22/autoresearch-anything`](https://github.com/zkarimi22/autoresearch-anything). Plus `proposeViaHermes()` convenience: ask a Hermes profile to propose the next candidate given the goal + best-so-far + recent history.
+>
+> **Memory tiers (pluggable, parallel write, fan-out read)**
+>
+> - `src/lib/memory/index.ts` - `writeMemory(turn)` / `readMemory(req)` with three pluggable adapters:
+>   - `HermesLocalAdapter` - reads recent messages from Hermes's own SQLite via `/api/sessions/{id}/messages`. Default tier, no extra infra.
+>   - `HonchoAdapter` - self-hosted Honcho REST against Supabase pgvector. Enabled by adding `honcho` to `MEMORY_TIERS` + setting `HONCHO_BASE_URL`. Provides user_models + summaries + facts on top of raw history.
+>   - `Mem0Adapter` - mem0.ai SaaS (or self-hosted). Enabled by adding `mem0` to `MEMORY_TIERS` + `MEM0_API_KEY`. Episodic + procedural semantic memory.
+>   - Chain configured via `MEMORY_TIERS="hermes,honcho,mem0"` env var; disabled tiers skip cleanly. Default is `hermes` only (v3-equivalent behavior).
+>
+> **Profile sync**
+>
+> - `scripts/sync-hermes-profiles.ts` - `ORG_ID=<uuid> tsx ...` reads every `rgaios_agents` row for an org and upserts each as a Hermes profile (system_prompt -> profile soul). Idempotent. Includes a small department -> default-skill-set heuristic.
+>
+> **Infrastructure**
+>
+> - `docker-compose.v4.yml` + `docker/Caddyfile.v4` - new compose with only `app` + `caddy`. Hermes runs natively on the host as a systemd unit; the Next.js container reaches both gateway (`:8642`) and dashboard (`:9119`) via `host.docker.internal`. Drops local postgres + postgrest + drain server. Caddyfile.v4 optionally proxies `/agent/*` to the Hermes dashboard if the client wants the agent reachable on the dashboard subdomain.
+> - `.env.v4.example` - new env vars: `HERMES_DASHBOARD_URL`, `HERMES_DASHBOARD_TOKEN`, `HERMES_DEFAULT_PROFILE`, `CHAT_ENGINE`, `MEMORY_TIERS`, `HONCHO_BASE_URL`, `MEM0_API_KEY`, plus the v3 keys that still apply.
+>
+> ## Sprint VPS state (2026-05-22)
+>
+> Five VPS running Hermes v0.14.0 (Admin + blair-prod + ccm-josh-prod + ccm-justin-prod + marti). Admin is fully wired runtime side (Codex 5.5 OAuth via Chris's ChatGPT, Composio MCP with seven tools, Google Calendar smoke test passed end-to-end). Blair Codex OAuth done. Marti Hermes installed; Telegram bot for Admin runs against Marti's bot token as a test rig until clients send their own. Remaining client deliverables (Composio `ck_` + Telegram tokens + OAuth windows) tracked in the sprint registry.
+>
+> ## What is left for Rami on dashboard
+>
+> Branded skin per client (Marti / Blair / CCM), Composio API integration for live numbers, the "Hire New Agent" section, and the chat surface refactor in `src/components/agents/AgentChatTab.tsx` to consume Hermes events from the bridge (the NDJSON event shape is unchanged, but the producer is now `chatReplyViaHermes` instead of `chatReplyViaSdk`). The autoresearch loop module is wired in but no UI surface yet; expose as a `/admin/autoresearch` panel where operators can kick off a goal-driven optimisation run against a profile.
 >
 > Below is the original v3 README, kept for reference until the dashboard rebuild lands.
 

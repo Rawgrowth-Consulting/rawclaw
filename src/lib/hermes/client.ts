@@ -1,345 +1,476 @@
 /**
- * Hermes Agent HTTP client.
+ * Hermes Agent dashboard HTTP + WebSocket client.
  *
- * Thin wrapper around the Hermes gateway HTTP API. Two surfaces:
+ * Wraps the actual Hermes dashboard API surface discovered on 0.14.0:
  *
- *   - `hermesResponses({ prompt, agentId, stream, signal, onEvent })`
- *     POSTs `/v1/responses`, streams the SSE response back through
- *     `onEvent` per parsed event. Returns the final assembled reply
- *     string when done.
+ *   REST   /api/status                       healthcheck (no auth)
+ *   REST   /api/profiles                     list + create profiles
+ *   REST   /api/profiles/{name}              patch + delete profile
+ *   REST   /api/profiles/{name}/soul         get + put system prompt
+ *   REST   /api/cron/jobs                    list + create scheduled prompts
+ *   REST   /api/cron/jobs/{id}               get/put/delete
+ *   REST   /api/cron/jobs/{id}/{pause,resume,trigger}
+ *   REST   /api/sessions                     list past chat sessions
+ *   REST   /api/sessions/{id}/messages       read message history
+ *   REST   /api/skills                       list + toggle bundled skills
+ *   REST   /api/tools/toolsets               list tool sets
+ *   WS     /api/ws                           JSON-RPC chat sidecar (live)
+ *   WS     /api/events                       gateway event firehose
+ *   WS     /api/pty                          interactive terminal (for ops)
  *
- *   - `hermesJobs.create({...})`, `hermesJobs.history(jobId)`, etc.
- *     CRUD on scheduled jobs (replaces the old drain server + routine_runs
- *     claim/complete cycle).
+ * Auth: dashboard requires a Bearer token. Read `HERMES_DASHBOARD_TOKEN`
+ * from `/root/.hermes/.env` on the VPS (printed by `hermes dashboard --setup`).
  *
- * Auth: bearer token from HERMES_API_KEY. Gateway URL from HERMES_GATEWAY_URL.
- *
- * One Hermes instance per VPS; the gateway URL points at the VPS that
- * owns the org's agent profile. Profile selection is by `agentId` -> agent
- * name -> profile name, resolved per request.
+ * Default base URL: http://127.0.0.1:9119 (the dashboard listens on
+ * loopback by default; expose externally only via the Caddy reverse
+ * proxy with a separate auth layer).
  */
 
-const DEFAULT_GATEWAY_URL = "http://127.0.0.1:8642";
+const DEFAULT_DASHBOARD_URL = "http://127.0.0.1:9119";
 
 export interface HermesConfig {
-  gatewayUrl: string;
-  apiKey: string;
+  dashboardUrl: string;
+  token: string;
   defaultProfile?: string;
 }
 
 export function getHermesConfig(): HermesConfig {
-  const gatewayUrl =
-    process.env.HERMES_GATEWAY_URL?.trim() || DEFAULT_GATEWAY_URL;
-  const apiKey = process.env.HERMES_API_KEY?.trim() || "";
-  if (!apiKey) {
+  const dashboardUrl =
+    process.env.HERMES_DASHBOARD_URL?.trim() || DEFAULT_DASHBOARD_URL;
+  const token = process.env.HERMES_DASHBOARD_TOKEN?.trim() || "";
+  if (!token && process.env.NODE_ENV === "production") {
     throw new Error(
-      "[hermes] HERMES_API_KEY is not set. Read it from /root/.hermes/.env on the VPS.",
+      "[hermes] HERMES_DASHBOARD_TOKEN is not set in production. Read it from /root/.hermes/.env on the VPS (hermes dashboard --setup prints it).",
     );
   }
   return {
-    gatewayUrl,
-    apiKey,
+    dashboardUrl,
+    token,
     defaultProfile: process.env.HERMES_DEFAULT_PROFILE?.trim() || undefined,
   };
 }
 
-/** A single parsed event from the Hermes SSE stream. */
-export type HermesEvent =
-  | { type: "text_delta"; text: string }
-  | { type: "tool_call_start"; name: string; arguments?: unknown }
-  | { type: "tool_call_end"; name: string; result?: unknown }
-  | { type: "thinking"; text: string }
-  | { type: "spawn_agent"; profile: string; task: string }
-  | { type: "done"; final_text: string; usage?: unknown }
-  | { type: "error"; message: string }
-  | { type: "raw"; data: unknown };
-
-export interface HermesResponseInput {
-  prompt: string;
-  /** Agent name or profile name on the Hermes side. */
-  profile?: string;
-  /** Conversation id for memory threading. */
-  conversation?: string;
-  /** Force-disable streaming (gateway will buffer + return final JSON). */
-  stream?: boolean;
-  signal?: AbortSignal;
-  onEvent?: (event: HermesEvent) => void;
-  /** Max turns for inline tool execution. Defaults to gateway config. */
-  maxTurns?: number;
-}
-
-/**
- * POST /v1/responses, stream the SSE response, return the final reply text.
- * Translates Hermes-side event types to the discriminated `HermesEvent`
- * union so the dashboard's existing NDJSON consumer can keep its shape.
- */
-export async function hermesResponses(input: HermesResponseInput): Promise<{
-  reply: string;
-  usage?: unknown;
-}> {
+function headers(extra: Record<string, string> = {}): HeadersInit {
   const config = getHermesConfig();
-  const profile = input.profile || config.defaultProfile;
-  const stream = input.stream ?? true;
-
-  const body: Record<string, unknown> = {
-    input: input.prompt,
-    stream,
+  const h: Record<string, string> = {
+    Accept: "application/json",
+    ...extra,
   };
-  if (profile) body.profile = profile;
-  if (input.conversation) body.conversation = input.conversation;
-  if (input.maxTurns) body.max_turns = input.maxTurns;
-
-  const res = await fetch(`${config.gatewayUrl}/v1/responses`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-      Accept: stream ? "text/event-stream" : "application/json",
-    },
-    body: JSON.stringify(body),
-    signal: input.signal,
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(
-      `[hermes] HTTP ${res.status} from /v1/responses: ${text.slice(0, 200)}`,
-    );
-  }
-
-  if (!stream || !res.body) {
-    const json = (await res.json()) as { output?: string; usage?: unknown };
-    return { reply: json.output ?? "", usage: json.usage };
-  }
-
-  // Parse the SSE stream incrementally
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-  let finalText = "";
-  let usage: unknown;
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    // SSE frames are separated by a blank line
-    let idx: number;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const event = parseSseFrame(frame);
-      if (!event) continue;
-      input.onEvent?.(event);
-      if (event.type === "text_delta") finalText += event.text;
-      else if (event.type === "done") {
-        finalText = event.final_text || finalText;
-        usage = event.usage;
-      } else if (event.type === "error") {
-        throw new Error(`[hermes] gateway error: ${event.message}`);
-      }
-    }
-  }
-
-  return { reply: finalText, usage };
-}
-
-/**
- * Parse a single SSE frame (raw text of "data: ..." lines) into a
- * `HermesEvent`. Returns null for unknown / empty frames.
- *
- * Hermes gateway emits frames shaped like:
- *
- *   event: text_delta
- *   data: {"delta":"hello"}
- *
- *   event: tool_call.start
- *   data: {"name":"composio.gmail.search","arguments":{...}}
- *
- *   event: done
- *   data: {"output":"...","usage":{...}}
- *
- * Older Hermes versions emit OpenAI-compatible `data: {"choices":[...]}`
- * deltas, which we map to `text_delta` too.
- */
-function parseSseFrame(frame: string): HermesEvent | null {
-  let event = "message";
-  let data = "";
-  for (const line of frame.split("\n")) {
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("data:")) data += line.slice(5).trim();
-  }
-  if (!data || data === "[DONE]") return null;
-
-  let payload: unknown;
-  try {
-    payload = JSON.parse(data);
-  } catch {
-    return { type: "raw", data };
-  }
-
-  const p = payload as Record<string, unknown>;
-  switch (event) {
-    case "text_delta": {
-      const text = typeof p.delta === "string" ? p.delta : "";
-      return { type: "text_delta", text };
-    }
-    case "thinking": {
-      const text = typeof p.text === "string" ? p.text : "";
-      return { type: "thinking", text };
-    }
-    case "tool_call.start":
-    case "tool_call_start": {
-      const name = typeof p.name === "string" ? p.name : "(unknown)";
-      return { type: "tool_call_start", name, arguments: p.arguments };
-    }
-    case "tool_call.end":
-    case "tool_call_end": {
-      const name = typeof p.name === "string" ? p.name : "(unknown)";
-      return { type: "tool_call_end", name, result: p.result };
-    }
-    case "spawn_agent": {
-      const profile = typeof p.profile === "string" ? p.profile : "(unknown)";
-      const task = typeof p.task === "string" ? p.task : "";
-      return { type: "spawn_agent", profile, task };
-    }
-    case "done": {
-      const finalText = typeof p.output === "string" ? p.output : "";
-      return { type: "done", final_text: finalText, usage: p.usage };
-    }
-    case "error": {
-      const message =
-        typeof p.message === "string" ? p.message : "unknown error";
-      return { type: "error", message };
-    }
-    case "message": {
-      // OpenAI-compatible fallback: chunk with choices[].delta.content
-      const choices = (p as { choices?: Array<Record<string, unknown>> })
-        .choices;
-      const delta = choices?.[0]?.delta as
-        | { content?: string }
-        | undefined;
-      if (typeof delta?.content === "string") {
-        return { type: "text_delta", text: delta.content };
-      }
-      return { type: "raw", data: p };
-    }
-    default:
-      return { type: "raw", data: p };
-  }
+  if (config.token) h.Authorization = `Bearer ${config.token}`;
+  return h;
 }
 
 /* -------------------------------------------------------------------- */
-/* Jobs API (replaces the old drain server + rgaios_routine_runs)        */
+/* Status                                                                */
 /* -------------------------------------------------------------------- */
 
-export interface HermesJobSpec {
+export interface HermesStatus {
+  version: string;
+  release_date: string;
+  hermes_home: string;
+  config_version: number;
+  latest_config_version: number;
+  gateway_running: boolean;
+  gateway_pid: number | null;
+  gateway_state: string;
+  gateway_platforms: Record<
+    string,
+    { state: string; error_code: string | null; error_message: string | null; updated_at: string }
+  >;
+  active_sessions: number;
+}
+
+export async function getStatus(): Promise<HermesStatus> {
+  const config = getHermesConfig();
+  const res = await fetch(`${config.dashboardUrl}/api/status`);
+  if (!res.ok) throw new Error(`[hermes] /api/status: ${res.status}`);
+  return (await res.json()) as HermesStatus;
+}
+
+/* -------------------------------------------------------------------- */
+/* Profiles                                                              */
+/* -------------------------------------------------------------------- */
+
+export interface HermesProfileSummary {
   name: string;
-  schedule: string; // cron expression
+  description?: string;
+  is_default?: boolean;
+}
+
+export const hermesProfiles = {
+  async list(): Promise<HermesProfileSummary[]> {
+    const config = getHermesConfig();
+    const res = await fetch(`${config.dashboardUrl}/api/profiles`, {
+      headers: headers(),
+    });
+    if (!res.ok) throw new Error(`[hermes] list profiles: ${res.status}`);
+    const data = (await res.json()) as
+      | HermesProfileSummary[]
+      | { profiles?: HermesProfileSummary[] };
+    return Array.isArray(data) ? data : data.profiles ?? [];
+  },
+
+  /** Create a profile (optionally clone from default). */
+  async create(input: {
+    name: string;
+    clone_from_default?: boolean;
+    no_skills?: boolean;
+  }): Promise<void> {
+    const config = getHermesConfig();
+    const res = await fetch(`${config.dashboardUrl}/api/profiles`, {
+      method: "POST",
+      headers: headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(`[hermes] create profile: ${res.status}`);
+  },
+
+  /** Update profile metadata (rename, description, etc.). */
+  async patch(name: string, patch: Record<string, unknown>): Promise<void> {
+    const config = getHermesConfig();
+    const res = await fetch(
+      `${config.dashboardUrl}/api/profiles/${encodeURIComponent(name)}`,
+      {
+        method: "PATCH",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify(patch),
+      },
+    );
+    if (!res.ok) throw new Error(`[hermes] patch profile: ${res.status}`);
+  },
+
+  /** Read or set the system prompt ("soul") of a profile. */
+  async getSoul(name: string): Promise<string> {
+    const config = getHermesConfig();
+    const res = await fetch(
+      `${config.dashboardUrl}/api/profiles/${encodeURIComponent(name)}/soul`,
+      { headers: headers() },
+    );
+    if (!res.ok) throw new Error(`[hermes] get soul: ${res.status}`);
+    const data = (await res.json()) as { soul?: string; system_prompt?: string };
+    return data.soul ?? data.system_prompt ?? "";
+  },
+
+  async putSoul(name: string, systemPrompt: string): Promise<void> {
+    const config = getHermesConfig();
+    const res = await fetch(
+      `${config.dashboardUrl}/api/profiles/${encodeURIComponent(name)}/soul`,
+      {
+        method: "PUT",
+        headers: headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ soul: systemPrompt }),
+      },
+    );
+    if (!res.ok) throw new Error(`[hermes] put soul: ${res.status}`);
+  },
+
+  async remove(name: string): Promise<void> {
+    const config = getHermesConfig();
+    const res = await fetch(
+      `${config.dashboardUrl}/api/profiles/${encodeURIComponent(name)}`,
+      { method: "DELETE", headers: headers() },
+    );
+    if (!res.ok) throw new Error(`[hermes] delete profile: ${res.status}`);
+  },
+};
+
+/* -------------------------------------------------------------------- */
+/* Cron jobs (replaces v3 drain server + rgaios_routine_runs)            */
+/* -------------------------------------------------------------------- */
+
+export interface HermesCronJob {
+  id: string;
+  name: string;
+  cron: string;
   prompt: string;
   profile?: string;
-  enabled?: boolean;
-}
-
-export interface HermesJob extends HermesJobSpec {
-  id: string;
+  paused?: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export const hermesJobs = {
-  async list(): Promise<HermesJob[]> {
+  async list(): Promise<HermesCronJob[]> {
     const config = getHermesConfig();
-    const res = await fetch(`${config.gatewayUrl}/v1/jobs`, {
-      headers: { Authorization: `Bearer ${config.apiKey}` },
+    const res = await fetch(`${config.dashboardUrl}/api/cron/jobs`, {
+      headers: headers(),
     });
     if (!res.ok) throw new Error(`[hermes] list jobs: ${res.status}`);
-    return (await res.json()) as HermesJob[];
+    return (await res.json()) as HermesCronJob[];
   },
 
-  async create(spec: HermesJobSpec): Promise<HermesJob> {
+  async create(spec: Omit<HermesCronJob, "id" | "created_at" | "updated_at">): Promise<HermesCronJob> {
     const config = getHermesConfig();
-    const res = await fetch(`${config.gatewayUrl}/v1/jobs`, {
+    const res = await fetch(`${config.dashboardUrl}/api/cron/jobs`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(spec),
     });
     if (!res.ok) throw new Error(`[hermes] create job: ${res.status}`);
-    return (await res.json()) as HermesJob;
+    return (await res.json()) as HermesCronJob;
   },
 
-  async update(id: string, patch: Partial<HermesJobSpec>): Promise<HermesJob> {
+  async update(id: string, patch: Partial<HermesCronJob>): Promise<void> {
     const config = getHermesConfig();
-    const res = await fetch(`${config.gatewayUrl}/v1/jobs/${id}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
+    const res = await fetch(`${config.dashboardUrl}/api/cron/jobs/${id}`, {
+      method: "PUT",
+      headers: headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(patch),
     });
     if (!res.ok) throw new Error(`[hermes] update job: ${res.status}`);
-    return (await res.json()) as HermesJob;
   },
 
   async remove(id: string): Promise<void> {
     const config = getHermesConfig();
-    const res = await fetch(`${config.gatewayUrl}/v1/jobs/${id}`, {
+    const res = await fetch(`${config.dashboardUrl}/api/cron/jobs/${id}`, {
       method: "DELETE",
-      headers: { Authorization: `Bearer ${config.apiKey}` },
+      headers: headers(),
     });
     if (!res.ok) throw new Error(`[hermes] delete job: ${res.status}`);
   },
 
-  async history(id: string): Promise<unknown[]> {
-    const config = getHermesConfig();
-    const res = await fetch(`${config.gatewayUrl}/v1/jobs/${id}/history`, {
-      headers: { Authorization: `Bearer ${config.apiKey}` },
-    });
-    if (!res.ok) throw new Error(`[hermes] job history: ${res.status}`);
-    return (await res.json()) as unknown[];
+  async pause(id: string): Promise<void> {
+    await fireAction(`/api/cron/jobs/${id}/pause`);
+  },
+  async resume(id: string): Promise<void> {
+    await fireAction(`/api/cron/jobs/${id}/resume`);
+  },
+  async trigger(id: string): Promise<void> {
+    await fireAction(`/api/cron/jobs/${id}/trigger`);
   },
 };
 
-/* -------------------------------------------------------------------- */
-/* Profiles API (sync rgaios_agents -> Hermes profiles, idempotent)      */
-/* -------------------------------------------------------------------- */
-
-export interface HermesProfileSpec {
-  name: string;
-  system_prompt: string;
-  model?: string;
-  mcp_servers?: string[];
-  skills?: string[];
+async function fireAction(path: string): Promise<void> {
+  const config = getHermesConfig();
+  const res = await fetch(`${config.dashboardUrl}${path}`, {
+    method: "POST",
+    headers: headers(),
+  });
+  if (!res.ok) throw new Error(`[hermes] ${path}: ${res.status}`);
 }
 
-export const hermesProfiles = {
-  async list(): Promise<{ name: string }[]> {
-    const config = getHermesConfig();
-    const res = await fetch(`${config.gatewayUrl}/v1/profiles`, {
-      headers: { Authorization: `Bearer ${config.apiKey}` },
-    });
-    if (!res.ok) throw new Error(`[hermes] list profiles: ${res.status}`);
-    return (await res.json()) as { name: string }[];
-  },
+/* -------------------------------------------------------------------- */
+/* Sessions + messages (READ-only via REST, write via /api/ws)            */
+/* -------------------------------------------------------------------- */
 
-  async upsert(spec: HermesProfileSpec): Promise<void> {
+export interface HermesSessionSummary {
+  id: string;
+  profile?: string;
+  created_at: string;
+  updated_at: string;
+  title?: string | null;
+  message_count?: number;
+}
+
+export interface HermesMessage {
+  id: string;
+  role: "user" | "assistant" | "system" | "tool";
+  content: string;
+  created_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+export const hermesSessions = {
+  async list(limit = 20, offset = 0): Promise<HermesSessionSummary[]> {
     const config = getHermesConfig();
     const res = await fetch(
-      `${config.gatewayUrl}/v1/profiles/${encodeURIComponent(spec.name)}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(spec),
-      },
+      `${config.dashboardUrl}/api/sessions?limit=${limit}&offset=${offset}`,
+      { headers: headers() },
     );
-    if (!res.ok) throw new Error(`[hermes] upsert profile: ${res.status}`);
+    if (!res.ok) throw new Error(`[hermes] list sessions: ${res.status}`);
+    const data = (await res.json()) as
+      | HermesSessionSummary[]
+      | { sessions?: HermesSessionSummary[] };
+    return Array.isArray(data) ? data : data.sessions ?? [];
+  },
+
+  async messages(sessionId: string): Promise<HermesMessage[]> {
+    const config = getHermesConfig();
+    const res = await fetch(
+      `${config.dashboardUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+      { headers: headers() },
+    );
+    if (!res.ok) throw new Error(`[hermes] session messages: ${res.status}`);
+    const data = (await res.json()) as
+      | HermesMessage[]
+      | { messages?: HermesMessage[] };
+    return Array.isArray(data) ? data : data.messages ?? [];
+  },
+
+  async remove(sessionId: string): Promise<void> {
+    const config = getHermesConfig();
+    const res = await fetch(
+      `${config.dashboardUrl}/api/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE", headers: headers() },
+    );
+    if (!res.ok) throw new Error(`[hermes] delete session: ${res.status}`);
   },
 };
+
+/* -------------------------------------------------------------------- */
+/* Chat: JSON-RPC WebSocket bridge on /api/ws                            */
+/* -------------------------------------------------------------------- */
+
+export type HermesChatEvent =
+  | { type: "text_delta"; text: string }
+  | { type: "tool_call_start"; name: string; arguments?: unknown }
+  | { type: "tool_call_end"; name: string; result?: unknown }
+  | { type: "thinking"; text: string }
+  | { type: "done"; final_text: string }
+  | { type: "error"; message: string };
+
+export interface HermesChatRequest {
+  prompt: string;
+  profile?: string;
+  session?: string;
+  onEvent?: (event: HermesChatEvent) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Open a JSON-RPC WebSocket to /api/ws, send a chat request, accumulate
+ * deltas into a final reply, translate each frame into the
+ * HermesChatEvent union for the caller.
+ *
+ * The Hermes 0.14 dashboard speaks a JSON-RPC 2.0 frame shape on
+ * /api/ws. The schema below is the closest stable surface I could
+ * reverse out of `hermes_cli/web_server.py` line 3513-3554; if the
+ * upstream changes shape, adjust the `mapFrame` switch and the
+ * outbound `chat.send` method name.
+ */
+export async function hermesChat(req: HermesChatRequest): Promise<{
+  reply: string;
+}> {
+  const config = getHermesConfig();
+  const wsUrl =
+    config.dashboardUrl.replace(/^http/i, "ws") + "/api/ws" +
+    (config.token ? `?token=${encodeURIComponent(config.token)}` : "");
+
+  return new Promise((resolve, reject) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    let accumulated = "";
+    let id = 0;
+
+    const cleanup = () => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    if (req.signal) {
+      req.signal.addEventListener("abort", () => {
+        cleanup();
+        reject(new Error("aborted"));
+      });
+    }
+
+    ws.onopen = () => {
+      ws.send(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: ++id,
+          method: "chat.send",
+          params: {
+            input: req.prompt,
+            profile: req.profile ?? config.defaultProfile,
+            session: req.session,
+          },
+        }),
+      );
+    };
+
+    ws.onmessage = (e: MessageEvent) => {
+      let frame: unknown;
+      try {
+        frame = JSON.parse(typeof e.data === "string" ? e.data : "");
+      } catch {
+        return;
+      }
+      const event = mapFrame(frame);
+      if (!event) return;
+      req.onEvent?.(event);
+      if (event.type === "text_delta") accumulated += event.text;
+      else if (event.type === "done") {
+        accumulated = event.final_text || accumulated;
+        cleanup();
+        resolve({ reply: accumulated });
+      } else if (event.type === "error") {
+        cleanup();
+        reject(new Error(event.message));
+      }
+    };
+
+    ws.onerror = (err: Event) => {
+      cleanup();
+      reject(new Error("[hermes] ws error: " + JSON.stringify(err)));
+    };
+    ws.onclose = () => {
+      if (accumulated) resolve({ reply: accumulated });
+    };
+  });
+}
+
+function mapFrame(raw: unknown): HermesChatEvent | null {
+  if (!raw || typeof raw !== "object") return null;
+  const f = raw as Record<string, unknown>;
+  // JSON-RPC notifications: { method, params }
+  const method = typeof f.method === "string" ? f.method : "";
+  const params = (f.params ?? {}) as Record<string, unknown>;
+  switch (method) {
+    case "chat.text_delta":
+    case "text_delta":
+      return {
+        type: "text_delta",
+        text: typeof params.delta === "string" ? params.delta : "",
+      };
+    case "chat.thinking":
+    case "thinking":
+      return {
+        type: "thinking",
+        text: typeof params.text === "string" ? params.text : "",
+      };
+    case "chat.tool_call_start":
+    case "tool_call_start":
+      return {
+        type: "tool_call_start",
+        name: typeof params.name === "string" ? params.name : "(unknown)",
+        arguments: params.arguments,
+      };
+    case "chat.tool_call_end":
+    case "tool_call_end":
+      return {
+        type: "tool_call_end",
+        name: typeof params.name === "string" ? params.name : "(unknown)",
+        result: params.result,
+      };
+    case "chat.done":
+    case "done":
+      return {
+        type: "done",
+        final_text: typeof params.output === "string" ? params.output : "",
+      };
+    case "chat.error":
+    case "error":
+      return {
+        type: "error",
+        message:
+          typeof params.message === "string" ? params.message : "unknown",
+      };
+    default:
+      // JSON-RPC response: { result } or { error }
+      if (f.error)
+        return {
+          type: "error",
+          message: JSON.stringify(f.error).slice(0, 200),
+        };
+      return null;
+  }
+}

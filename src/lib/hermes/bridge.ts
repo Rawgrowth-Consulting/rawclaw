@@ -1,18 +1,12 @@
 /**
- * Hermes bridge — translates the existing `chatReply()` contract to the
- * Hermes HTTP gateway. Same signature, same return shape, same callback
- * cadence so the Telegram streaming editor and the dashboard NDJSON
- * consumer don't need to change.
- *
- * On the v3 stack, chatReply() called chatReplyViaSdk() which spawned
- * the Anthropic SDK runner locally. On v4 it calls hermesResponses()
- * over HTTP against the on-VPS Hermes gateway. Hermes spawns tools,
- * sub-agents and Composio calls natively; the bridge just streams the
- * SSE events back into the existing onStreamText / onToolUse hooks.
+ * Hermes bridge — adapts the v3 chatReply() contract to the Hermes
+ * dashboard's JSON-RPC WebSocket chat surface on /api/ws. Same signature,
+ * same return shape, same callback cadence so the Telegram streaming
+ * editor + dashboard NDJSON consumer keep working unchanged.
  */
 
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { hermesResponses, type HermesEvent } from "@/lib/hermes/client";
+import { hermesChat, type HermesChatEvent } from "@/lib/hermes/client";
 
 export const CHAT_HANDOFF_SENTINEL_PREFIX =
   "[handoff] Give me a moment while I work on that";
@@ -38,21 +32,24 @@ export interface ChatReplyInput {
 }
 
 /**
- * Drop-in replacement for the v3 chatReply(). Routes to Hermes gateway
- * via HTTP + SSE. Profile resolution: agentId -> rgaios_agents.name ->
- * Hermes profile name (lowercased, underscored). If no profile matches
- * server-side, Hermes falls back to its default profile.
+ * Drop-in replacement for v3 chatReply(). Routes to Hermes via WS /api/ws.
+ *
+ * Profile resolution: agentId -> rgaios_agents.name -> profile name
+ * (lowercase + underscored). If no profile matches server-side, Hermes
+ * falls back to the default profile configured via HERMES_DEFAULT_PROFILE.
+ *
+ * Session resolution: deterministic id `org:<orgId>:chat:<chatId>` so
+ * Hermes can attach to a long-running conversation per (org, chat) pair
+ * and preserve memory across turns.
  */
 export async function chatReplyViaHermes(
   input: ChatReplyInput,
 ): Promise<AgentChatResult> {
   const {
     organizationId,
-    organizationName,
     userMessage,
     agentId,
     chatId,
-    publicAppUrl,
     extraPreamble: routeExtraPreamble,
     onStreamText,
     onToolUse,
@@ -90,22 +87,19 @@ export async function chatReplyViaHermes(
   }
 
   // chat.ts upstream has already built the RAG + brand + memory preamble
-  // and passed it through `extraPreamble`. We just stitch it onto the
-  // user message before sending to Hermes.
-  void organizationName;
-  void publicAppUrl;
+  // and passed it through `extraPreamble`. We stitch it onto the user
+  // message before sending to Hermes; Hermes treats the whole thing as
+  // one user-side input and the profile soul (system_prompt) provides
+  // the agent persona on the Hermes side.
   const fullPrompt = routeExtraPreamble
     ? `${routeExtraPreamble}\n\n---\n\n${userMessage}`
     : userMessage;
 
   const profile = agentName ? toProfileName(agentName) : undefined;
-  const conversation = `org:${organizationId}:chat:${chatId}`;
+  const session = `org:${organizationId}:chat:${chatId}`;
 
-  // Translate Hermes events -> existing onStreamText / onToolUse callbacks
-  // so the Telegram streaming editor + AgentChatTab consumer keep their
-  // existing event cadence.
   let accumulated = "";
-  const onEvent = (event: HermesEvent) => {
+  const onEvent = (event: HermesChatEvent) => {
     switch (event.type) {
       case "text_delta":
         accumulated += event.text;
@@ -114,15 +108,9 @@ export async function chatReplyViaHermes(
       case "tool_call_start":
         onToolUse?.(event.name);
         break;
-      case "spawn_agent":
-        onToolUse?.(`spawn:${event.profile}`);
-        break;
       case "done":
         accumulated = event.final_text || accumulated;
         onStreamText?.(accumulated);
-        break;
-      case "error":
-        // surfaced via the throw inside hermesResponses, no-op here
         break;
       default:
         break;
@@ -130,19 +118,17 @@ export async function chatReplyViaHermes(
   };
 
   try {
-    const result = await hermesResponses({
+    const result = await hermesChat({
       prompt: fullPrompt,
       profile,
-      conversation,
-      stream: true,
+      session,
       onEvent,
     });
 
     // Write-back mirror so the dashboard's existing reader keeps working
-    // until we refactor AgentChatTab to read Hermes conversation history
-    // directly. Best-effort; if Supabase write fails the chat still went
-    // through and the user has the reply.
-    await supabaseAdmin()
+    // until we refactor AgentChatTab to read from Hermes /api/sessions
+    // directly. Best-effort.
+    void supabaseAdmin()
       .from("rgaios_agent_chat_messages")
       .insert([
         {
@@ -158,13 +144,10 @@ export async function chatReplyViaHermes(
           chat_id: chatId,
           role: "assistant",
           content: result.reply,
-          metadata: { engine: "hermes", profile },
+          metadata: { engine: "hermes", profile, session },
         },
       ])
-      .then(() => null)
-      .catch((err: unknown) => {
-        console.warn("[hermes-bridge] chat mirror failed:", err);
-      });
+      .then(() => null);
 
     return { ok: true, reply: result.reply };
   } catch (err) {
@@ -175,9 +158,10 @@ export async function chatReplyViaHermes(
 
 /**
  * Lowercase + underscore + strip non-alphanumerics. Mirrors how the
- * Hermes deploy script registers profiles from rgaios_agents.name.
- * "Scan" -> "scan", "Engineering Manager" -> "engineering_manager",
- * "Kasia" -> "kasia".
+ * sync-hermes-profiles script registers profiles from rgaios_agents.name.
+ *   "Scan" -> "scan"
+ *   "Engineering Manager" -> "engineering_manager"
+ *   "Kasia" -> "kasia"
  */
 function toProfileName(name: string): string {
   return name
