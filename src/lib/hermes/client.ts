@@ -34,15 +34,62 @@ export interface HermesConfig {
   defaultProfile?: string;
 }
 
+let cachedToken: string | null = null;
+let cachedAt = 0;
+
+/**
+ * Scrape the ephemeral `_SESSION_TOKEN` from the served SPA HTML.
+ *
+ * Hermes 0.14 generates `_SESSION_TOKEN = secrets.token_urlsafe(32)` at
+ * dashboard process startup and injects it into the HTML so only the
+ * legitimate web UI can use it (see hermes_cli/web_server.py:86). Server
+ * to-server callers have to fetch the HTML once and parse the token
+ * out. Token survives the lifetime of the dashboard process; cache it
+ * for `cacheMs` (default 5 min) and re-fetch on cache miss or 401.
+ *
+ * If HERMES_DASHBOARD_TOKEN env is set, use that directly (skip scrape).
+ */
+export async function scrapeHermesDashboardToken(opts?: {
+  baseUrl?: string;
+  cacheMs?: number;
+}): Promise<string> {
+  const baseUrl =
+    opts?.baseUrl ??
+    process.env.HERMES_DASHBOARD_URL?.trim() ??
+    DEFAULT_DASHBOARD_URL;
+  const envOverride = process.env.HERMES_DASHBOARD_TOKEN?.trim();
+  if (envOverride) return envOverride;
+
+  const cacheMs = opts?.cacheMs ?? 5 * 60 * 1000;
+  if (cachedToken && Date.now() - cachedAt < cacheMs) return cachedToken;
+
+  const res = await fetch(baseUrl + "/");
+  if (!res.ok) {
+    throw new Error(`[hermes] cannot fetch dashboard HTML: ${res.status}`);
+  }
+  const html = await res.text();
+  // Match a 43-char URL-safe base64 token (secrets.token_urlsafe(32) is
+  // always 43 chars). Hermes injects it inline so the match is reliable.
+  const match = html.match(/[A-Za-z0-9_-]{43}/);
+  if (!match) {
+    throw new Error(
+      "[hermes] could not scrape SESSION_TOKEN from dashboard HTML; if the upstream HTML changed shape, fall back to HERMES_DASHBOARD_TOKEN env",
+    );
+  }
+  cachedToken = match[0];
+  cachedAt = Date.now();
+  return cachedToken;
+}
+
 export function getHermesConfig(): HermesConfig {
   const dashboardUrl =
     process.env.HERMES_DASHBOARD_URL?.trim() || DEFAULT_DASHBOARD_URL;
-  const token = process.env.HERMES_DASHBOARD_TOKEN?.trim() || "";
-  if (!token && process.env.NODE_ENV === "production") {
-    throw new Error(
-      "[hermes] HERMES_DASHBOARD_TOKEN is not set in production. Read it from /root/.hermes/.env on the VPS (hermes dashboard --setup prints it).",
-    );
-  }
+  // Token lookup is async via scrapeHermesDashboardToken(); the
+  // synchronous getter returns whatever is cached or env. Callers that
+  // need a fresh token on first use should `await scrapeHermesDashboardToken()`
+  // explicitly during boot.
+  const token =
+    process.env.HERMES_DASHBOARD_TOKEN?.trim() || cachedToken || "";
   return {
     dashboardUrl,
     token,

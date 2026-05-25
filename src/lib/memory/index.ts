@@ -44,14 +44,14 @@ export interface MemoryRead {
 }
 
 export interface MemorySnippet {
-  source: "hermes" | "honcho" | "mem0";
+  source: "hermes" | "honcho" | "mem0" | "letta";
   content: string;
   score?: number;
   metadata?: Record<string, unknown>;
 }
 
 export interface MemoryAdapter {
-  name: "hermes" | "honcho" | "mem0";
+  name: "hermes" | "honcho" | "mem0" | "letta";
   /** Write a turn to this tier. Best-effort, errors logged but not thrown. */
   write(turn: MemoryWrite): Promise<void>;
   /** Retrieve relevant snippets for the next prompt build. */
@@ -102,23 +102,24 @@ export class HermesLocalAdapter implements MemoryAdapter {
  * Honcho is a memory service from Plastic Labs. Self-hosted via the
  * `ghcr.io/plastic-labs/honcho:latest` docker image + bundled
  * postgres (pgvector) + redis (confirmed running on Admin VPS at
- * http://127.0.0.1:8001 against a healthy 4-container compose stack).
+ * http://127.0.0.1:8001 with a healthy 4-container compose stack).
  *
- * Honcho v3 REST shape (probed live via /openapi.json):
- *   POST /v3/workspaces                                 create workspace
- *   POST /v3/workspaces/{workspace_id}/peers            create peer
- *   POST /v3/workspaces/{workspace_id}/peers/{peer_id}/chat
- *                                                        send message
- *   POST /v3/workspaces/{workspace_id}/peers/{peer_id}/search?query=
- *                                                        semantic recall
- *   GET  /v3/workspaces/{workspace_id}/peers/{peer_id}/representation
- *                                                        user model
+ * Honcho v3 IDs only accept `^[a-zA-Z0-9_-]+$`, so we map separators
+ * as underscores rather than colons:
  *
- * Mapping for rawclaw:
- *   workspace_id = `rgaios:${organizationId}`
- *   peer_id      = userId || `agent:${agentId}`
- *   session      = the chat thread name (Honcho models conversations
- *                  inside a peer, with session metadata)
+ *   workspace_id = `rgaios_${orgId.replace(/-/g, '')}`
+ *   peer_id      = (userId || `agent_${agentId}`).replace(/[^a-zA-Z0-9_-]/g, '_')
+ *   session_id   = turn.session.replace(/[^a-zA-Z0-9_-]/g, '_')
+ *
+ * Write path (confirmed live):
+ *   POST /v3/workspaces                                  upsert workspace
+ *   POST /v3/workspaces/{ws}/peers                        upsert peer
+ *   POST /v3/workspaces/{ws}/peers/{peer}/sessions        upsert session
+ *   POST /v3/workspaces/{ws}/sessions/{session}/messages  write message
+ *
+ * Read path:
+ *   POST /v3/workspaces/{ws}/peers/{peer}/search          semantic recall
+ *   POST /v3/workspaces/{ws}/peers/{peer}/chat            dialectic query
  *
  * Enable by setting `MEMORY_TIERS=hermes,honcho` + `HONCHO_BASE_URL`.
  */
@@ -126,6 +127,7 @@ export class HonchoAdapter implements MemoryAdapter {
   name = "honcho" as const;
   private baseUrl: string;
   private apiKey: string;
+  private ensured = new Set<string>();
   constructor() {
     this.baseUrl =
       process.env.HONCHO_BASE_URL?.trim() || "http://localhost:8001";
@@ -139,27 +141,61 @@ export class HonchoAdapter implements MemoryAdapter {
     if (this.apiKey) h.Authorization = `Bearer ${this.apiKey}`;
     return h;
   }
-  private workspaceId(turn: { organizationId: string }): string {
-    return `rgaios:${turn.organizationId}`;
+  private sanitize(s: string): string {
+    return s.replace(/[^a-zA-Z0-9_-]/g, "_");
+  }
+  private wsId(turn: { organizationId: string }): string {
+    return `rgaios_${this.sanitize(turn.organizationId)}`;
   }
   private peerId(turn: { agentId: string; userId?: string | null }): string {
-    return turn.userId || `agent:${turn.agentId}`;
+    const raw = turn.userId || `agent_${turn.agentId}`;
+    return this.sanitize(raw);
+  }
+  private sessionId(turn: { session: string }): string {
+    return this.sanitize(turn.session);
+  }
+
+  /** Ensure workspace + peer + session exist (best-effort, idempotent).
+   *  Cached per (ws, peer, session) so we only call create-once per process. */
+  private async ensureChain(
+    ws: string,
+    peer: string,
+    session: string,
+  ): Promise<void> {
+    const key = `${ws}|${peer}|${session}`;
+    if (this.ensured.has(key)) return;
+    const post = (path: string, body: unknown) =>
+      fetch(`${this.baseUrl}${path}`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(body),
+      }).catch(() => null);
+    await post(`/v3/workspaces`, { id: ws });
+    await post(`/v3/workspaces/${ws}/peers`, { id: peer });
+    await post(`/v3/workspaces/${ws}/peers/${peer}/sessions`, {
+      id: session,
+    });
+    this.ensured.add(key);
   }
 
   async write(turn: MemoryWrite): Promise<void> {
-    const ws = this.workspaceId(turn);
+    const ws = this.wsId(turn);
     const peer = this.peerId(turn);
-    const url = `${this.baseUrl}/v3/workspaces/${encodeURIComponent(
-      ws,
-    )}/peers/${encodeURIComponent(peer)}/chat`;
+    const session = this.sessionId(turn);
     try {
+      await this.ensureChain(ws, peer, session);
+      const url = `${this.baseUrl}/v3/workspaces/${ws}/sessions/${session}/messages`;
       await fetch(url, {
         method: "POST",
         headers: this.headers(),
         body: JSON.stringify({
-          messages: [{ role: turn.role, content: turn.content }],
-          session_id: turn.session,
-          metadata: { role: turn.role, ...turn.metadata },
+          messages: [
+            {
+              peer_id: peer,
+              content: turn.content,
+              metadata: { role: turn.role, ...turn.metadata },
+            },
+          ],
         }),
       });
     } catch (err) {
@@ -167,20 +203,25 @@ export class HonchoAdapter implements MemoryAdapter {
     }
   }
   async read(req: MemoryRead): Promise<MemorySnippet[]> {
-    const ws = this.workspaceId(req);
+    const ws = this.wsId(req);
     const peer = this.peerId(req);
-    const url = `${this.baseUrl}/v3/workspaces/${encodeURIComponent(
-      ws,
-    )}/peers/${encodeURIComponent(peer)}/search?query=${encodeURIComponent(
-      req.query,
-    )}&limit=${req.limit ?? 5}`;
+    const url = `${this.baseUrl}/v3/workspaces/${ws}/peers/${peer}/search`;
     try {
-      const res = await fetch(url, { headers: this.headers() });
+      const res = await fetch(url, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          query: req.query,
+          limit: req.limit ?? 5,
+        }),
+      });
       if (!res.ok) return [];
       const data = (await res.json()) as {
         results?: Array<{ content: string; score?: number }>;
+        items?: Array<{ content: string; score?: number }>;
       };
-      return (data.results ?? []).map((f) => ({
+      const list = data.results ?? data.items ?? [];
+      return list.map((f) => ({
         source: "honcho" as const,
         content: f.content,
         score: f.score,
@@ -197,70 +238,230 @@ export class HonchoAdapter implements MemoryAdapter {
 /* -------------------------------------------------------------------- */
 
 /**
- * mem0 (mem0.ai) is a semantic memory service with episodic +
- * procedural tiers. SaaS by default; self-hosted possible via
- * https://github.com/mem0ai/mem0.
+ * mem0 (openmemory self-hosted at github.com/mem0ai/mem0/openmemory).
  *
- * Enable by including "mem0" in MEMORY_TIERS + MEM0_API_KEY.
- * Optional MEM0_BASE_URL if self-hosting.
+ * Deployed via `docker compose up -d --build` in the cloned mem0 repo
+ * at openmemory/. Stack: qdrant vector store (:6333) + openmemory-mcp
+ * API (:8765, uvicorn FastAPI) + openmemory-ui (:3000, Next.js).
+ *
+ * v1 REST shape (probed live via /openapi.json):
+ *   POST /api/v1/memories/                                write memory
+ *   GET  /api/v1/memories/?user_id=&query=                list/search
+ *   POST /api/v1/memories/filter                          search by filter
+ *   GET  /api/v1/memories/{memory_id}                     get one
+ *   GET  /api/v1/memories/{memory_id}/related             related
+ *
+ * IMPORTANT: openmemory needs an embedder (default OpenAI
+ * text-embedding-3-small). Either set OPENAI_API_KEY on the
+ * openmemory api container, or override the embedder via
+ * EMBEDDER_PROVIDER=ollama + EMBEDDER_MODEL=nomic-embed-text +
+ * Ollama at OLLAMA_BASE_URL. Without a working embedder, write calls
+ * return 401 from the upstream LLM provider.
+ *
+ * Cloud SaaS endpoint at https://api.mem0.ai/v1 also works; set
+ * MEM0_BASE_URL + MEM0_API_KEY env to use the cloud version.
  */
 export class Mem0Adapter implements MemoryAdapter {
   name = "mem0" as const;
   private baseUrl: string;
   private apiKey: string;
+  private isSelfHosted: boolean;
   constructor() {
     this.baseUrl =
-      process.env.MEM0_BASE_URL?.trim() || "https://api.mem0.ai/v1";
+      process.env.MEM0_BASE_URL?.trim() || "http://localhost:8765";
     this.apiKey = process.env.MEM0_API_KEY?.trim() || "";
+    // Heuristic: localhost / 127.0.0.1 / no api key implies self-hosted
+    this.isSelfHosted =
+      /localhost|127\.0\.0\.1|::1/.test(this.baseUrl) || !this.apiKey;
   }
   private headers(extra: Record<string, string> = {}): HeadersInit {
-    return {
-      Authorization: `Token ${this.apiKey}`,
+    const h: Record<string, string> = {
       "Content-Type": "application/json",
       ...extra,
     };
+    if (!this.isSelfHosted && this.apiKey) {
+      h.Authorization = `Token ${this.apiKey}`;
+    }
+    return h;
+  }
+  private writePath(): string {
+    return this.isSelfHosted
+      ? `${this.baseUrl}/api/v1/memories/`
+      : `${this.baseUrl}/memories`;
+  }
+  private readPath(query: string, userId: string, limit: number): string {
+    return this.isSelfHosted
+      ? `${this.baseUrl}/api/v1/memories/?user_id=${encodeURIComponent(
+          userId,
+        )}&search_query=${encodeURIComponent(query)}&size=${limit}`
+      : `${this.baseUrl}/memories/search?query=${encodeURIComponent(
+          query,
+        )}&user_id=${encodeURIComponent(userId)}&limit=${limit}`;
   }
   async write(turn: MemoryWrite): Promise<void> {
-    if (!this.apiKey) return;
-    try {
-      await fetch(`${this.baseUrl}/memories`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify({
+    const userId = turn.userId || `agent_${turn.agentId}`;
+    const body = this.isSelfHosted
+      ? {
+          user_id: userId,
+          text: turn.content,
+          app: "rawclaw",
+          metadata: {
+            role: turn.role,
+            organization_id: turn.organizationId,
+            session: turn.session,
+            ...turn.metadata,
+          },
+        }
+      : {
           messages: [{ role: turn.role, content: turn.content }],
-          user_id: turn.userId || `agent:${turn.agentId}`,
+          user_id: userId,
           agent_id: turn.agentId,
           metadata: {
             organization_id: turn.organizationId,
             session: turn.session,
             ...turn.metadata,
           },
-        }),
+        };
+    try {
+      await fetch(this.writePath(), {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(body),
       });
     } catch (err) {
       console.warn("[memory:mem0] write failed:", err);
     }
   }
   async read(req: MemoryRead): Promise<MemorySnippet[]> {
-    if (!this.apiKey) return [];
+    const userId = req.userId || `agent_${req.agentId}`;
     try {
-      const res = await fetch(
-        `${this.baseUrl}/memories/search?query=${encodeURIComponent(
-          req.query,
-        )}&user_id=${encodeURIComponent(req.userId || `agent:${req.agentId}`)}&limit=${req.limit ?? 5}`,
-        { headers: this.headers() },
-      );
+      const res = await fetch(this.readPath(req.query, userId, req.limit ?? 5), {
+        headers: this.headers(),
+      });
       if (!res.ok) return [];
       const data = (await res.json()) as {
-        results?: Array<{ memory: string; score?: number }>;
+        items?: Array<{ content?: string; memory?: string; score?: number }>;
+        results?: Array<{ memory?: string; content?: string; score?: number }>;
       };
-      return (data.results ?? []).map((r) => ({
+      const list = data.items ?? data.results ?? [];
+      return list.map((r) => ({
         source: "mem0" as const,
-        content: r.memory,
+        content: r.content ?? r.memory ?? "",
         score: r.score,
       }));
     } catch (err) {
       console.warn("[memory:mem0] read failed:", err);
+      return [];
+    }
+  }
+}
+
+/* -------------------------------------------------------------------- */
+/* Letta (formerly MemGPT) tier                                          */
+/* -------------------------------------------------------------------- */
+
+/**
+ * Letta is the open-source rebrand of MemGPT with self-hosted REST. Run
+ * via `docker run -it -p 8283:8283 letta/letta:latest` or compose. It
+ * provides hierarchical memory (core/recall/archival) with automatic
+ * memory editing by the agent itself.
+ *
+ * Enable by including "letta" in MEMORY_TIERS + LETTA_BASE_URL (default
+ * http://localhost:8283). LETTA_PASSWORD optional.
+ *
+ * v1 REST shape:
+ *   POST /v1/agents                                       create agent
+ *   POST /v1/agents/{agent_id}/messages                   send message
+ *   POST /v1/agents/{agent_id}/archival                   write archival mem
+ *   GET  /v1/agents/{agent_id}/archival?query=            search archival
+ */
+export class LettaAdapter implements MemoryAdapter {
+  name = "letta" as const;
+  private baseUrl: string;
+  private password: string;
+  private agentCache = new Map<string, string>();
+  constructor() {
+    this.baseUrl =
+      process.env.LETTA_BASE_URL?.trim() || "http://localhost:8283";
+    this.password = process.env.LETTA_PASSWORD?.trim() || "";
+  }
+  private headers(extra: Record<string, string> = {}): HeadersInit {
+    const h: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...extra,
+    };
+    if (this.password) h.Authorization = `Bearer ${this.password}`;
+    return h;
+  }
+  /** Map (org, agent, user) to a stable Letta agent_id; lazily create. */
+  private async ensureAgent(turn: {
+    organizationId: string;
+    agentId: string;
+    userId?: string | null;
+  }): Promise<string> {
+    const key = `${turn.organizationId}|${turn.agentId}|${
+      turn.userId ?? "_"
+    }`;
+    const cached = this.agentCache.get(key);
+    if (cached) return cached;
+    const name = `rgaios_${turn.organizationId}_${turn.agentId}_${
+      turn.userId ?? "default"
+    }`.replace(/[^a-zA-Z0-9_-]/g, "_");
+    try {
+      const res = await fetch(`${this.baseUrl}/v1/agents`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ name }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { id?: string };
+        if (data.id) {
+          this.agentCache.set(key, data.id);
+          return data.id;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return name; // Some Letta versions accept name in place of id
+  }
+  async write(turn: MemoryWrite): Promise<void> {
+    try {
+      const agentId = await this.ensureAgent(turn);
+      await fetch(
+        `${this.baseUrl}/v1/agents/${encodeURIComponent(agentId)}/archival`,
+        {
+          method: "POST",
+          headers: this.headers(),
+          body: JSON.stringify({ text: turn.content }),
+        },
+      );
+    } catch (err) {
+      console.warn("[memory:letta] write failed:", err);
+    }
+  }
+  async read(req: MemoryRead): Promise<MemorySnippet[]> {
+    try {
+      const agentId = await this.ensureAgent(req);
+      const url = `${this.baseUrl}/v1/agents/${encodeURIComponent(
+        agentId,
+      )}/archival?query=${encodeURIComponent(req.query)}&limit=${
+        req.limit ?? 5
+      }`;
+      const res = await fetch(url, { headers: this.headers() });
+      if (!res.ok) return [];
+      const data = (await res.json()) as Array<{
+        text?: string;
+        content?: string;
+        score?: number;
+      }>;
+      return (data ?? []).map((r) => ({
+        source: "letta" as const,
+        content: r.text ?? r.content ?? "",
+        score: r.score,
+      }));
+    } catch (err) {
+      console.warn("[memory:letta] read failed:", err);
       return [];
     }
   }
@@ -283,6 +484,7 @@ export function getMemoryTiers(): MemoryAdapter[] {
     if (t === "hermes") chain.push(new HermesLocalAdapter());
     else if (t === "honcho") chain.push(new HonchoAdapter());
     else if (t === "mem0") chain.push(new Mem0Adapter());
+    else if (t === "letta") chain.push(new LettaAdapter());
   }
   cachedChain = chain;
   return chain;
