@@ -1,0 +1,26 @@
+# Caddyfile for v4 stack.
+#
+# Public TLS in front of the Next.js dashboard. Optional /agent reverse
+# proxy to the Hermes gateway for clients that want the agent reachable
+# from outside the VPS via the dashboard subdomain (instead of a
+# separate agent.<client>.rawgrowth.ai). Hermes still requires a Bearer
+# token (HERMES_API_KEY) on every request.
+
+{$CADDY_SITE_ADDRESS} {
+	encode zstd gzip
+
+	# Next.js dashboard (default route)
+	reverse_proxy /* app:3000 {
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Optional public Hermes proxy. Comment out if you want Hermes to
+	# stay on loopback only.
+	handle_path /agent/* {
+		reverse_proxy host.docker.internal:8642 {
+			header_up X-Real-IP {remote_host}
+			# Pass through SSE-friendly buffering
+			flush_interval -1
+		}
+	}
+}

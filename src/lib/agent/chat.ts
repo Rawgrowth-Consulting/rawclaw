@@ -1,15 +1,21 @@
 /**
- * chat-bridge.ts — Bridge between the existing route interface and the new
- * Agent SDK runner. Exports a `chatReply()` with the same signature the
- * routes currently call, but internally delegates to chatReplyViaSdk().
+ * chat.ts — v4 entry point. Delegates to the Hermes HTTP bridge by default,
+ * with an env-flag fallback to the legacy v3 Anthropic SDK runner during
+ * the migration window.
  *
- * Drop this in as `src/lib/agent/chat.ts` to replace the old implementation.
- * The routes don't need to change — same function name, same input/output shape.
+ * Same signature as v3 so the Telegram webhook (`createStreamingEditor` +
+ * heartbeat) and the dashboard NDJSON consumer keep working without code
+ * changes downstream.
+ *
+ * Flip the engine via env:
+ *   CHAT_ENGINE=hermes  (default on v4)
+ *   CHAT_ENGINE=v3-sdk  (fallback to the in-process SDK runner)
  */
 
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { buildAgentChatPreamble } from "@/lib/agent/preamble";
 import { chatReplyViaSdk } from "@/lib/agent/chat-sdk";
+import { chatReplyViaHermes } from "@/lib/hermes/bridge";
 
 /** Keep this export — the Telegram webhook handler checks for it. */
 export const CHAT_HANDOFF_SENTINEL_PREFIX =
@@ -19,11 +25,7 @@ type AgentChatResult =
   | { ok: true; reply: string }
   | { ok: false; error: string };
 
-/**
- * Drop-in replacement for the old chatReply(). Same signature, same return type.
- * Internally uses the Agent SDK instead of direct API calls.
- */
-export async function chatReply(input: {
+export interface ChatReplyInput {
   organizationId: string;
   organizationName: string | null;
   chatId: number;
@@ -37,7 +39,16 @@ export async function chatReply(input: {
   callerUserId?: string | null;
   onStreamText?: (text: string) => void;
   onToolUse?: (toolName: string) => void;
-}): Promise<AgentChatResult> {
+}
+
+/**
+ * Drop-in chatReply(). Builds the preamble (RAG + brand + memory)
+ * exactly like v3, then routes to either Hermes (v4 default) or the
+ * SDK runner (v3-sdk fallback).
+ */
+export async function chatReply(
+  input: ChatReplyInput,
+): Promise<AgentChatResult> {
   const {
     organizationId,
     organizationName,
@@ -46,7 +57,7 @@ export async function chatReply(input: {
     extraPreamble: routeExtraPreamble,
   } = input;
 
-  // If no agentId, use the org's first agent
+  // Resolve agent: explicit agentId wins, else first non-paused agent
   let resolvedAgentId = agentId;
   if (!resolvedAgentId) {
     const { data } = await supabaseAdmin()
@@ -57,15 +68,17 @@ export async function chatReply(input: {
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
-    resolvedAgentId = data?.id;
+    resolvedAgentId = (data as { id?: string } | null)?.id;
     if (!resolvedAgentId) {
-      return { ok: false, error: "No agents configured for this organization." };
+      return {
+        ok: false,
+        error: "No agents configured for this organization.",
+      };
     }
   }
 
-  // Build the extra preamble (RAG, brand voice, shared memory, signals, etc.)
-  // from the existing preamble builder. This injects brand context, agent files,
-  // company corpus, shared memory — all the good context stuff from v3.
+  // Build the existing preamble (RAG, brand voice, shared memory, etc.)
+  // from the v3 preamble builder so all the context stays intact.
   let fullExtraPreamble = "";
   try {
     const preambleContext = await buildAgentChatPreamble({
@@ -76,29 +89,24 @@ export async function chatReply(input: {
     });
     if (preambleContext) fullExtraPreamble += preambleContext;
   } catch (err) {
-    console.warn("[chat-bridge] preamble build failed:", (err as Error).message);
+    console.warn(
+      "[chat] preamble build failed:",
+      (err as Error).message,
+    );
   }
-
-  // Append any route-specific extra preamble
   if (routeExtraPreamble) {
     fullExtraPreamble += "\n\n" + routeExtraPreamble;
   }
 
-  // Delegate to the SDK runner
-  const result = await chatReplyViaSdk({
-    organizationId,
-    organizationName,
-    userMessage,
+  const merged: ChatReplyInput = {
+    ...input,
     agentId: resolvedAgentId,
     extraPreamble: fullExtraPreamble || undefined,
-    publicAppUrl: input.publicAppUrl,
-    onStreamText: input.onStreamText,
-    onToolUse: input.onToolUse,
-  });
+  };
 
-  if (!result.ok) {
-    return { ok: false, error: result.error };
+  const engine = process.env.CHAT_ENGINE?.trim() || "hermes";
+  if (engine === "v3-sdk") {
+    return chatReplyViaSdk(merged);
   }
-
-  return { ok: true, reply: result.reply };
+  return chatReplyViaHermes(merged);
 }

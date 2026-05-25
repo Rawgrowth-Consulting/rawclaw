@@ -1,8 +1,19 @@
 # Rawgrowth Rawclaw v4 (Hermes Agent migration)
 
-> **You are on the `v4` branch.** This branch is the migration target: swap the home-grown rawclaw v3 runtime for **NousResearch Hermes Agent**. See `ARCHITECTURE-V4.md` for the new stack diagram and `HERMES-DEPLOY.md` for the per-VPS deployment recipe used in the May 2026 sprint.
+> **You are on the `v4` branch.** Migration target: swap the home-grown rawclaw v3 runtime for **NousResearch Hermes Agent**. See `ARCHITECTURE-V4.md` for the new stack diagram and `HERMES-DEPLOY.md` for the per-VPS deployment recipe.
 >
-> **Current state (2026-05-22):** five VPS running Hermes v0.14.0 (Admin + blair-prod + ccm-josh-prod + ccm-justin-prod + marti). Admin is fully wired (Codex 5.5 OAuth via Chris's ChatGPT, Composio MCP, Google Calendar smoke test passed end-to-end). Blair Codex OAuth done. Marti Telegram bot live as systemd service. Remaining work tracked in the sprint registry.
+> **What is now wired (code, not yet smoke-tested in CI):**
+>
+> - `src/lib/hermes/client.ts` - typed HTTP client for the Hermes gateway: `hermesResponses({...})` with SSE event parsing, plus `hermesJobs` (cron-style scheduled prompts, replaces drain server) and `hermesProfiles` (per-agent system_prompt + skills + mcp config).
+> - `src/lib/hermes/bridge.ts` - `chatReplyViaHermes()` translates the v3 chatReply contract to a streamed POST `/v1/responses`. Same `onStreamText` + `onToolUse` callback cadence so the Telegram streaming editor and the dashboard NDJSON consumer keep working unchanged.
+> - `src/lib/agent/chat.ts` - rewritten as the single entry point. Builds the existing v3 preamble (RAG + brand voice + memory) via `buildAgentChatPreamble`, then routes to Hermes by default. `CHAT_ENGINE=v3-sdk` env flag falls back to the old SDK runner for rollback safety.
+> - `scripts/sync-hermes-profiles.ts` - reads every `rgaios_agents` row for an org and upserts them as Hermes profiles via the gateway (idempotent, safe to re-run on every agent edit).
+> - `docker-compose.v4.yml` + `docker/Caddyfile.v4` - new compose with only app + caddy. Hermes runs natively on the host as a systemd unit (installed by `hermes gateway install --system`); the Next.js container reaches it via `host.docker.internal:8642`. Drops local postgres + postgrest + drain server.
+> - `.env.v4.example` - the four new env vars (`HERMES_GATEWAY_URL`, `HERMES_API_KEY`, `HERMES_DEFAULT_PROFILE`, `CHAT_ENGINE`) plus the v3 keys that still apply.
+>
+> **Sprint VPS state (2026-05-22):** five VPS running Hermes v0.14.0 (Admin + blair-prod + ccm-josh-prod + ccm-justin-prod + marti). Admin is fully wired (Codex 5.5 OAuth via Chris's ChatGPT, Composio MCP with seven tools, Google Calendar smoke test passed end-to-end). Blair Codex OAuth done. Marti Hermes installed; Telegram bot for Admin runs against Marti's bot token as a test rig until clients send their own. Remaining client deliverables (Composio `ck_` + Telegram tokens + OAuth windows) tracked in the sprint registry.
+>
+> **What is left for Rami on dashboard:** branded skin per client (Marti / Blair / CCM), Composio API integration for live numbers, the "Hire New Agent" section, and the chat surface refactor in `src/components/agents/AgentChatTab.tsx` to consume Hermes events from the bridge (the NDJSON event shape is unchanged, but the producer is now `chatReplyViaHermes` instead of `chatReplyViaSdk`).
 >
 > Below is the original v3 README, kept for reference until the dashboard rebuild lands.
 

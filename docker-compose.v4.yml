@@ -1,0 +1,62 @@
+# =============================================================================
+# docker-compose.v4.yml  -  Hermes-based stack
+# =============================================================================
+# The v3 stack had: rawclaw-app (Next.js + Anthropic SDK runner inside),
+# rawclaw-caddy, rawclaw-postgrest, rawclaw-postgres (pgvector), and an
+# external drain server. On v4 we drop the local Anthropic runtime and the
+# drain server; the agent runs as Hermes natively on the same VPS, outside
+# this docker compose, as a systemd service installed by
+# `hermes gateway install --system --run-as-user root`.
+#
+# What stays in compose:
+#   app    - Next.js 16 dashboard, calls Hermes over loopback HTTP
+#   caddy  - public TLS in front of the app + optional /agent reverse proxy
+#
+# What goes away vs v3:
+#   - postgrest (Supabase Cloud handles read REST directly via PostgREST
+#     hosted alongside the project)
+#   - local postgres (no Honcho memory; Hermes uses its own SQLite store
+#     at /root/.hermes/state.db; rgaios_* schema lives in Supabase Cloud)
+#   - drain server (Hermes /v1/jobs replaces it)
+#
+# Hermes itself is NOT a service here. It runs natively on the host as a
+# systemd unit so it can manage its own state.db without docker-volume
+# friction and the gateway listens on host loopback :8642. The Next.js
+# container reaches Hermes via `host.docker.internal:8642` (or the host's
+# private IP).
+
+services:
+  app:
+    image: ghcr.io/rawgrowth-consulting/rawclaw:v4
+    container_name: rawclaw-app-1
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Hermes gateway reachable from inside the container
+      HERMES_GATEWAY_URL: http://host.docker.internal:8642
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on: []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: rawclaw-caddy-1
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile.v4:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    env_file:
+      - .env
+    depends_on:
+      - app
+
+volumes:
+  caddy-data:
+  caddy-config:
