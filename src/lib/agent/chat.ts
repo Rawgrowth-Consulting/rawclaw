@@ -16,6 +16,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { buildAgentChatPreamble } from "@/lib/agent/preamble";
 import { chatReplyViaSdk } from "@/lib/agent/chat-sdk";
 import { chatReplyViaHermes } from "@/lib/hermes/bridge";
+import { chatReplySelfHealingLearning } from "@/lib/hermes/self-healing";
 
 /** Keep this export — the Telegram webhook handler checks for it. */
 export const CHAT_HANDOFF_SENTINEL_PREFIX =
@@ -107,6 +108,10 @@ export async function chatReply(
   const engine = process.env.CHAT_ENGINE?.trim() || "hermes";
   if (engine === "v3-sdk") {
     return chatReplyViaSdk(merged);
+  }
+  if (engine === "hermes-self-heal") {
+    const r = await chatReplySelfHealingLearning(merged);
+    return r.ok ? { ok: true, reply: r.reply } : { ok: false, error: r.error };
   }
   return chatReplyViaHermes(merged);
 }
