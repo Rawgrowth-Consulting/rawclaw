@@ -341,13 +341,20 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text=json.dumps({"tiers": TIERS, "writes": results}, default=str))]
     if name == "self_heal_score":
         text = arguments.get("text", "") or ""
+        if not text:
+            return [TextContent(type="text", text=json.dumps(
+                {"score": 0.0, "has_error": True, "length": 0}
+            ))]
         import re
         signatures = [
             r"\berror\b", r"\bexception\b", r"\btraceback\b",
             r"\bfail(ed|ure)?\b", r"\bunavailable\b", r"\bnot found\b",
             r"\b401\b", r"\b403\b", r"\b5\d{2}\b",
         ]
-        has_error = any(re.search(p, text, re.IGNORECASE) for p in signatures)
+        too_short = len(text) < 5
+        has_error = too_short or any(
+            re.search(p, text, re.IGNORECASE) for p in signatures
+        )
         length_part = min(len(text) / 200.0, 1.0)
         score = length_part * 0.3 + (0.0 if has_error else 1.0) * 0.7
         return [TextContent(type="text", text=json.dumps(
