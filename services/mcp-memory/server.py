@@ -307,6 +307,19 @@ async def list_tools() -> list[Tool]:
             description="List which memory tiers are enabled in this process (MEMORY_TIERS env).",
             inputSchema={"type": "object", "properties": {}},
         ),
+        Tool(
+            name="self_heal_score",
+            description=("Score a candidate reply for the self-healing loop. Returns "
+                         "{score: 0..1, has_error: bool, length: int}. High score = long + "
+                         "no error/exception/unavailable/HTTP-error wording. Use this BEFORE "
+                         "emitting a reply to the user: if has_error=true or score<0.5, "
+                         "rephrase + retry."),
+            inputSchema={
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
+            },
+        ),
     ]
 
 
@@ -326,6 +339,20 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         }
         results = await fan_write(args)
         return [TextContent(type="text", text=json.dumps({"tiers": TIERS, "writes": results}, default=str))]
+    if name == "self_heal_score":
+        text = arguments.get("text", "") or ""
+        import re
+        signatures = [
+            r"\berror\b", r"\bexception\b", r"\btraceback\b",
+            r"\bfail(ed|ure)?\b", r"\bunavailable\b", r"\bnot found\b",
+            r"\b401\b", r"\b403\b", r"\b5\d{2}\b",
+        ]
+        has_error = any(re.search(p, text, re.IGNORECASE) for p in signatures)
+        length_part = min(len(text) / 200.0, 1.0)
+        score = length_part * 0.3 + (0.0 if has_error else 1.0) * 0.7
+        return [TextContent(type="text", text=json.dumps(
+            {"score": round(score, 3), "has_error": has_error, "length": len(text)}
+        ))]
     if name == "memory_read":
         args = {
             "organization_id": arguments["organization_id"],
