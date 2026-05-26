@@ -429,7 +429,7 @@ export class LettaAdapter implements MemoryAdapter {
     try {
       const agentId = await this.ensureAgent(turn);
       await fetch(
-        `${this.baseUrl}/v1/agents/${encodeURIComponent(agentId)}/archival`,
+        `${this.baseUrl}/v1/agents/${encodeURIComponent(agentId)}/archival-memory`,
         {
           method: "POST",
           headers: this.headers(),
@@ -445,17 +445,18 @@ export class LettaAdapter implements MemoryAdapter {
       const agentId = await this.ensureAgent(req);
       const url = `${this.baseUrl}/v1/agents/${encodeURIComponent(
         agentId,
-      )}/archival?query=${encodeURIComponent(req.query)}&limit=${
-        req.limit ?? 5
-      }`;
-      const res = await fetch(url, { headers: this.headers() });
+      )}/archival-memory/search`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ query: req.query, limit: req.limit ?? 5 }),
+      });
       if (!res.ok) return [];
-      const data = (await res.json()) as Array<{
-        text?: string;
-        content?: string;
-        score?: number;
-      }>;
-      return (data ?? []).map((r) => ({
+      const data = (await res.json()) as
+        | Array<{ text?: string; content?: string; score?: number }>
+        | { passages?: Array<{ text?: string; content?: string; score?: number }> };
+      const list = Array.isArray(data) ? data : data.passages ?? [];
+      return list.map((r) => ({
         source: "letta" as const,
         content: r.text ?? r.content ?? "",
         score: r.score,
