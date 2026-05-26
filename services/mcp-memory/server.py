@@ -51,23 +51,23 @@ def sanitize(s: str) -> str:
     return _SAN.sub("_", s)
 
 
-def hermes_token_cache: dict[str, str] = {}
+_hermes_token_cache: dict[str, str] = {}
 
 
 async def scrape_hermes_token(client: httpx.AsyncClient) -> str:
-    if "tok" in hermes_token_cache:
-        return hermes_token_cache["tok"]
+    if "tok" in _hermes_token_cache:
+        return _hermes_token_cache["tok"]
     env = os.environ.get("HERMES_DASHBOARD_TOKEN", "").strip()
     if env:
-        hermes_token_cache["tok"] = env
+        _hermes_token_cache["tok"] = env
         return env
     r = await client.get(f"{HERMES_DASHBOARD_URL}/")
     r.raise_for_status()
     m = re.search(r"[A-Za-z0-9_-]{43}", r.text)
     if not m:
         return ""
-    hermes_token_cache["tok"] = m.group(0)
-    return hermes_token_cache["tok"]
+    _hermes_token_cache["tok"] = m.group(0)
+    return _hermes_token_cache["tok"]
 
 
 async def honcho_ensure_chain(client: httpx.AsyncClient, ws: str, peer: str, session: str) -> None:
