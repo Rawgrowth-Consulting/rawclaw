@@ -20,6 +20,7 @@ import {
   Database,
   Inbox,
   GitBranch,
+  Brain,
 } from "lucide-react";
 
 import {
@@ -89,6 +90,7 @@ const navSections: NavSection[] = [
     adminOnly: true,
     items: [
       { label: "Provisioning", href: "/admin/provisioning", icon: ShieldCheck },
+      { label: "Autoresearch", href: "/admin/autoresearch", icon: Brain },
     ],
   },
 ];
