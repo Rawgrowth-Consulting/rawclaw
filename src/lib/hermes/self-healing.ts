@@ -29,6 +29,13 @@ import { autoresearch } from "@/lib/hermes/autoresearch";
 import { chatReplyViaHermes } from "@/lib/hermes/bridge";
 import { writeMemory, readMemory, type MemorySnippet } from "@/lib/memory";
 import type { ChatReplyInput } from "@/lib/agent/chat";
+import {
+  ERROR_SIGNATURES,
+  errorScore,
+  looksLikeError,
+} from "@/lib/hermes/self-healing-score";
+
+export { ERROR_SIGNATURES, errorScore, looksLikeError };
 
 type AgentChatResult =
   | { ok: true; reply: string; healed?: boolean; learned?: number; cycles?: number }
@@ -112,30 +119,6 @@ export async function withMemoryContext(
 /* -------------------------------------------------------------------- */
 /* Self-healing: detect error, run autoresearch loop until clean         */
 /* -------------------------------------------------------------------- */
-
-const ERROR_SIGNATURES = [
-  /\berror\b/i,
-  /\bexception\b/i,
-  /\btraceback\b/i,
-  /\bfail(ed|ure)?\b/i,
-  /\bunavailable\b/i,
-  /\bnot found\b/i,
-  /401\b/,
-  /403\b/,
-  /5\d{2}\b/,
-];
-
-export function looksLikeError(text: string): boolean {
-  if (!text || text.length < 5) return true;
-  return ERROR_SIGNATURES.some((re) => re.test(text));
-}
-
-export function errorScore(text: string): number {
-  if (!text) return 0;
-  const length = Math.min(text.length / 200, 1);
-  const hasError = ERROR_SIGNATURES.some((re) => re.test(text)) ? 0 : 1;
-  return length * 0.3 + hasError * 0.7;
-}
 
 export interface SelfHealOptions {
   maxCycles?: number;

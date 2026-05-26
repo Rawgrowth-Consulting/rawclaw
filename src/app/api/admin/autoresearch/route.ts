@@ -6,7 +6,7 @@ import {
 } from "@/lib/hermes/autoresearch";
 import { hermesChat } from "@/lib/hermes/client";
 import { writeMemory, readMemory } from "@/lib/memory";
-import { errorScore, looksLikeError } from "@/lib/hermes/self-healing";
+import { errorScore, looksLikeError } from "@/lib/hermes/self-healing-score";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
